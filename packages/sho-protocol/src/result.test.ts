@@ -4,6 +4,7 @@ import {
   SHO_RESULT_SCHEMA,
   SHO_UNRECOGNIZED,
   shoAsksDialogueModel,
+  shoAttrSchema,
   shoBlockingNeeds,
   shoCommandSchema,
   shoParamSchema,
@@ -24,6 +25,7 @@ const command = (overrides: Record<string, unknown> = {}) => ({
   ready: true,
   catalogued: true,
   confidence,
+  refPrevious: {},
   ...overrides,
 });
 
@@ -212,5 +214,59 @@ describe("shoResultSchema", () => {
     expect(
       shoCommandSchema.safeParse(command({ confidence: undefined })).success,
     ).toBe(false);
+    expect(
+      shoCommandSchema.safeParse(command({ refPrevious: undefined })).success,
+    ).toBe(false);
+  });
+
+  it("round-trips the D78 nearest and suggest of an unknown ref", () => {
+    const wire = {
+      text: "Софіїї",
+      status: "unknown",
+      nearest: [
+        { id: "cus_1", name: "Софія Мельник", score: 0.82 },
+        { id: null, name: "Соломія", score: 0.41, label: "клієнт" },
+      ],
+      suggest: {
+        action: "customers.create",
+        params: { new_name: { text: "Софіїї" }, phone: { value: "cash" } },
+      },
+    };
+
+    const parsed = shoRefSchema.parse(wire);
+
+    expect(parsed.nearest).toEqual(wire.nearest);
+    expect(parsed.suggest?.action).toBe("customers.create");
+    expect(parsed.suggest?.params.new_name).toEqual({ text: "Софіїї" });
+  });
+
+  it("round-trips the D78 nearest and suggest of an attr no variant has", () => {
+    const parsed = shoAttrSchema.parse({
+      text: "лате",
+      variantIds: [],
+      nearest: [{ id: "var_1", name: "латте", score: 0.93, productId: "p_1" }],
+      suggest: {
+        action: "catalog.createVariant",
+        params: { product: { text: "кава", status: "half-resolved" } },
+        attrs: ["лате"],
+      },
+    });
+
+    expect(parsed.nearest?.[0]?.score).toBe(0.93);
+    expect(parsed.suggest?.attrs).toEqual(["лате"]);
+    expect(parsed.suggest?.params.product).toMatchObject({
+      status: SHO_UNRECOGNIZED,
+    });
+  });
+
+  it("keeps a ref and an attr that carry neither nearest nor suggest", () => {
+    expect(shoRefSchema.parse({ text: "кава", status: "resolved" })).toEqual({
+      text: "кава",
+      status: "resolved",
+    });
+    expect(shoAttrSchema.parse({ text: "лате", variantIds: null })).toEqual({
+      text: "лате",
+      variantIds: null,
+    });
   });
 });

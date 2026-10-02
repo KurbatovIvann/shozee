@@ -24,6 +24,7 @@ const command = {
   ready: true,
   catalogued: true,
   confidence: { action: 0.98, margin: 0.9, certainty: 0.95, spans: 0.87 },
+  refPrevious: {},
 };
 
 const parseBody = {
@@ -159,6 +160,40 @@ describe("createShoClient.parse", () => {
     });
   });
 
+  it("maps a body that stalls after the headers to the timeout fallback", async () => {
+    const stalling: ShoFetch = (_url, init) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"model":'));
+          init.signal?.addEventListener("abort", () => {
+            controller.error(new Error("aborted"));
+          });
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 200 }));
+    };
+
+    const outcome = await client(stalling, 5).parse(parseRequest);
+    expect(outcome).toEqual({
+      outcome: "fallback",
+      reason: "timeout",
+      httpStatus: null,
+    });
+  });
+
+  it("reads the error code of a status it does not map on its own", async () => {
+    expect(
+      await client(json({ error: "busy" }, 500)).parse(parseRequest),
+    ).toEqual({ outcome: "fallback", reason: "busy", httpStatus: 500 });
+    expect(
+      await client(json({ error: "shrug" }, 500)).parse(parseRequest),
+    ).toEqual({
+      outcome: "fallback",
+      reason: "unexpected_status",
+      httpStatus: 500,
+    });
+  });
+
   it("maps an unreachable service to the unreachable fallback", async () => {
     const refused: ShoFetch = () => Promise.reject(new Error("ECONNREFUSED"));
     const outcome = await client(refused).parse(parseRequest);
@@ -225,6 +260,48 @@ describe("createShoClient.putContext", () => {
       await client(json({ error: "busy" }, 503)).putContext(contextRequest),
     ).toEqual({ outcome: "fallback", reason: "busy", httpStatus: 503 });
   });
+
+  it("refuses a malformed context key before it reaches the service", async () => {
+    let called = false;
+    const counting: ShoFetch = () => {
+      called = true;
+      return Promise.resolve(new Response(null, { status: 204 }));
+    };
+
+    expect(
+      await client(counting).putContext({
+        ...contextRequest,
+        contextKey: "not a context key",
+      }),
+    ).toEqual({ outcome: "fallback", reason: "input_rejected", httpStatus: null });
+    expect(
+      await client(counting).phrases({
+        companyId: contextRequest.companyId,
+        contextKey: "not a context key",
+      }),
+    ).toEqual({ outcome: "fallback", reason: "input_rejected", httpStatus: null });
+    expect(called).toBe(false);
+  });
+
+  it("refuses a context larger than the service accepts", async () => {
+    let called = false;
+    const counting: ShoFetch = () => {
+      called = true;
+      return Promise.resolve(new Response(null, { status: 204 }));
+    };
+
+    expect(
+      await client(counting).putContext({
+        ...contextRequest,
+        context: { names: ["x".repeat(9 * 1024 * 1024)] },
+      }),
+    ).toEqual({
+      outcome: "fallback",
+      reason: "context_limit",
+      httpStatus: null,
+    });
+    expect(called).toBe(false);
+  });
 });
 
 describe("createShoClient model, phrases and ready", () => {
@@ -275,6 +352,23 @@ describe("createShoClient model, phrases and ready", () => {
       false,
     );
     expect(await client(json({}, 503)).ready(urls[0] ?? "")).toBe(false);
+  });
+
+  it("never sends the service token to a url outside the configuration", async () => {
+    let called = false;
+    const counting: ShoFetch = () => {
+      called = true;
+      return Promise.resolve(new Response(null, { status: 200 }));
+    };
+    const foreign = "http://attacker.example/v1";
+
+    expect(await client(counting).model(foreign)).toEqual({
+      outcome: "fallback",
+      reason: "input_rejected",
+      httpStatus: null,
+    });
+    expect(await client(counting).ready(foreign)).toBe(false);
+    expect(called).toBe(false);
   });
 });
 

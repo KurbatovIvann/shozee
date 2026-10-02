@@ -7,7 +7,7 @@ export function shoReplicaFor(
   replicas: readonly string[],
   companyId: string,
 ): string {
-  let chosen = "";
+  let chosen: string | undefined;
   let highest = "";
   for (const replica of replicas) {
     const candidate = score(companyId, replica);
@@ -15,6 +15,9 @@ export function shoReplicaFor(
       highest = candidate;
       chosen = replica;
     }
+  }
+  if (chosen === undefined) {
+    throw new RangeError("shoReplicaFor needs at least one replica");
   }
   return chosen;
 }

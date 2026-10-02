@@ -19,6 +19,10 @@ describe("shoReplicaFor", () => {
     expect(replicas).toContain(first);
   });
 
+  it("refuses an empty replica list instead of returning no replica", () => {
+    expect(() => shoReplicaFor([], "c0ffee00")).toThrow(RangeError);
+  });
+
   it("does not depend on the order the replicas are listed in", () => {
     const companyId = "c0ffee00-0000-4000-8000-000000000002";
     const reversed = [...replicas].reverse();

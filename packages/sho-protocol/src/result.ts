@@ -110,6 +110,21 @@ export const shoCandidateSchema = z.object({
   label: z.string().optional(),
 });
 
+export const shoNearCandidateSchema = shoCandidateSchema.extend({
+  score: z.number(),
+});
+
+export interface ShoSuggestion {
+  readonly action: string;
+  readonly params: Readonly<Record<string, ShoParam>>;
+  readonly attrs?: readonly string[] | undefined;
+}
+
+const nearestAndSuggest = {
+  nearest: z.array(shoNearCandidateSchema).optional(),
+  suggest: z.lazy(() => shoSuggestionSchema).optional(),
+};
+
 export const shoRefSchema = z.object({
   text: z.string(),
   status: knownOr(SHO_REF_STATUSES),
@@ -123,12 +138,14 @@ export const shoRefSchema = z.object({
   focus: z.union([z.number().int(), z.literal(true)]).optional(),
   by: knownOr(SHO_CONTACT_KINDS).optional(),
   value: z.string().optional(),
+  ...nearestAndSuggest,
 });
 
 export const shoAttrSchema = z.object({
   text: z.string(),
   variantIds: z.array(z.string()).nullable(),
   confidence: z.number().optional(),
+  ...nearestAndSuggest,
 });
 
 const variantRefFields = {
@@ -196,6 +213,12 @@ export const shoParamSchema = z.union([
   shoEnumParamSchema,
 ]);
 
+export const shoSuggestionSchema: z.ZodType<ShoSuggestion> = z.object({
+  action: z.string(),
+  params: z.record(z.string(), shoParamSchema),
+  attrs: z.array(z.string()).optional(),
+});
+
 export const shoNeedSchema = z.object({
   path: z.string(),
   reason: knownOr(SHO_NEED_REASONS),
@@ -226,7 +249,7 @@ export const shoCommandSchema = z.object({
   ready: z.boolean(),
   catalogued: z.boolean(),
   confidence: shoConfidenceSchema,
-  refPrevious: z.record(z.string(), z.number()).optional(),
+  refPrevious: z.record(z.string(), z.number()),
   domain: z.string().optional(),
   verb: z.string().optional(),
   refines: z.string().optional(),
@@ -257,6 +280,7 @@ export type ShoNeedReason = (typeof SHO_NEED_REASONS)[number] | ShoUnrecognized;
 export type ShoRefStatus = (typeof SHO_REF_STATUSES)[number] | ShoUnrecognized;
 
 export type ShoCandidate = z.infer<typeof shoCandidateSchema>;
+export type ShoNearCandidate = z.infer<typeof shoNearCandidateSchema>;
 export type ShoRef = z.infer<typeof shoRefSchema>;
 export type ShoAttr = z.infer<typeof shoAttrSchema>;
 export type ShoVariantRef = z.infer<typeof shoVariantRefSchema>;
