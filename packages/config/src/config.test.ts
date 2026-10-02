@@ -542,7 +542,24 @@ describe("Шо service configuration (ADR-0051)", () => {
       nodeEnv: "production",
       port: 3100,
       serviceToken: TOKEN,
+      workers: undefined,
     });
+  });
+
+  it("takes an explicit worker pool size and refuses a zero", () => {
+    const config = loadShoServiceConfig({
+      NODE_ENV: "test",
+      SHO_SERVICE_TOKEN: TOKEN,
+      SHO_WORKERS: "4",
+    });
+    expect(config.workers).toBe(4);
+    expect(() =>
+      loadShoServiceConfig({
+        NODE_ENV: "test",
+        SHO_SERVICE_TOKEN: TOKEN,
+        SHO_WORKERS: "0",
+      }),
+    ).toThrow(ConfigValidationError);
   });
 
   it("refuses to boot the service without a token", () => {

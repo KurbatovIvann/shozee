@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   SHO_ERROR_CODES,
   SHO_MAX_CONTEXT_BYTES,
+  SHO_MAX_PARSE_BYTES,
   SHO_PHRASES_LIMIT,
   shoContextKey,
   shoContextKeySchema,
@@ -222,9 +223,13 @@ export function createShoClient(
         contextKey: shoContextKey(rest.companyId, scopeHash),
       });
       if (!wire.success) return fallback("input_rejected", null);
+      const payload = Buffer.from(JSON.stringify(wire.data), "utf8");
+      if (payload.byteLength > SHO_MAX_PARSE_BYTES) {
+        return fallback("input_rejected", null);
+      }
       const sent = await request(replicaFor(rest.companyId), "/v1/parse", {
         method: "POST",
-        body: JSON.stringify(wire.data),
+        body: payload,
         headers: { "content-type": "application/json" },
       });
       if (typeof sent !== "string" && sent.status === 409) {

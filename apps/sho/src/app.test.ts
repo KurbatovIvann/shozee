@@ -1,11 +1,13 @@
 import { gzipSync } from "node:zlib";
 import {
   compileContext,
+  parseContext,
   type ActionName,
   type CommandV2,
   type ResultV2,
 } from "@showzy/sho";
 import {
+  SHO_MAX_PARSE_BYTES,
   shoContextKey,
   shoModelResponseSchema,
   shoParseResponseSchema,
@@ -15,13 +17,14 @@ import {
 } from "@showzy/sho-protocol";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import {
-  SHO_MAX_PARSE_BYTES,
-  createShoApp,
-  type ShoParseLogEntry,
-} from "./app.ts";
+import { createShoApp, type ShoParseLogEntry } from "./app.ts";
 import { createShoContextCache } from "./contexts.ts";
-import type { ShoEngine, ShoParseJob } from "./engine.ts";
+import type {
+  ShoEngine,
+  ShoParseJob,
+  ShoPhrasesReply,
+  ShoRunReply,
+} from "./engine.ts";
 
 const TOKEN = "service-token-of-at-least-32-characters";
 const COMPANY = "company1";
@@ -80,18 +83,45 @@ interface Recorded {
   readonly engine: ShoEngine;
 }
 
-function fakeEngine(run?: (job: ShoParseJob) => Promise<ResultV2>): Recorded {
+function fakeEngine(
+  run?: (job: ShoParseJob) => Promise<ShoRunReply>,
+): Recorded {
   const jobs: ShoParseJob[] = [];
+  const cache = createShoContextCache();
   return {
     jobs,
     engine: {
       stamp: STAMP,
       actions: ["orders.create", "customers.create"],
       workers: 1,
-      compile: compileContext,
+      ready: true,
+      store: (upload) => {
+        cache.put(upload.key, {
+          fingerprint: upload.fingerprint,
+          revision: upload.revision,
+          compiled: compileContext(parseContext(upload.context)),
+          phrases: upload.phrases,
+          uploadBytes: upload.uploadBytes,
+        });
+        return Promise.resolve({ kind: "stored" });
+      },
+      phrases: (key) =>
+        Promise.resolve({
+          kind: "phrases",
+          phrases: cache.read(key)?.phrases ?? null,
+        }),
       run: async (job) => {
+        const entry = cache.fresh(job.key, job.fingerprint);
+        if (entry === null) return { kind: "context_required" };
         jobs.push(job);
-        return run === undefined ? RESULT : run(job);
+        return run === undefined
+          ? {
+              kind: "parsed",
+              result: RESULT,
+              contextRevision: entry.revision,
+              ms: 1,
+            }
+          : run(job);
       },
       dispose: () => Promise.resolve(),
     },
@@ -148,7 +178,6 @@ describe("apps/sho /v1", () => {
     app = createShoApp({
       serviceToken: TOKEN,
       engine: () => recorded.engine,
-      cache: createShoContextCache(),
       log: (entry) => logged.push(entry),
     });
   });
@@ -309,8 +338,8 @@ describe("apps/sho /v1", () => {
     );
     expect(phrases.status).toBe(409);
     expect(logged).toEqual([
-      { requestId: "req-1", outcome: "context_required", ms: null },
-      { requestId: "req-1", outcome: "context_required", ms: null },
+      { requestId: "req-1", outcome: "context_required", ms: null, code: null },
+      { requestId: "req-1", outcome: "context_required", ms: null, code: null },
     ]);
   });
 
@@ -432,105 +461,102 @@ describe("apps/sho /v1", () => {
     expect(recorded.jobs).toHaveLength(0);
   });
 
-  it("answers 504 when the deadline passes before the run", async () => {
-    let time = 0;
-    const slow = fakeEngine();
-    const deadlineApp = createShoApp({
-      serviceToken: TOKEN,
-      engine: () => slow.engine,
-      cache: createShoContextCache(),
-      clock: () => {
-        time += 2000;
-        return time;
-      },
-    });
-    await deadlineApp.fetch(
-      uploadRequest({ fingerprint: "fp-1", context: CONTEXT }),
-    );
-    const response = await deadlineApp.fetch(
-      new Request("http://sho.test/v1/parse", {
-        method: "POST",
-        headers: authorized,
-        body: JSON.stringify(parseBody({ deadlineMs: 1 })),
-      }),
-    );
-    expect(response.status).toBe(504);
-    await expect(response.json()).resolves.toEqual({ error: "deadline" });
-    expect(slow.jobs).toHaveLength(0);
-  });
-
-  it("answers 504 when a run outlives the deadline, and logs the outcome", async () => {
-    const hung = fakeEngine(() => new Promise<ResultV2>(() => undefined));
-    const entries: ShoParseLogEntry[] = [];
-    const hungApp = createShoApp({
-      serviceToken: TOKEN,
-      engine: () => hung.engine,
-      cache: createShoContextCache(),
-      log: (entry) => entries.push(entry),
-    });
-    await hungApp.fetch(
-      uploadRequest({ fingerprint: "fp-1", context: CONTEXT }),
-    );
-    const response = await hungApp.fetch(
-      new Request("http://sho.test/v1/parse", {
-        method: "POST",
-        headers: authorized,
-        body: JSON.stringify(parseBody({ deadlineMs: 5 })),
-      }),
-    );
-    expect(response.status).toBe(504);
-    expect(hung.jobs).toHaveLength(1);
-    expect(entries).toEqual([
-      { requestId: "req-1", outcome: "deadline", ms: null },
-    ]);
-  });
-
-  it("answers 503 busy once the queue is full, and frees the slot", async () => {
-    const pending: ((result: ResultV2) => void)[] = [];
-    const releaseAll = () => {
-      while (pending.length > 0) pending.shift()?.(RESULT);
-    };
-    const held = fakeEngine(
-      () => new Promise<ResultV2>((resolve) => pending.push(resolve)),
-    );
-    const busyApp = createShoApp({
-      serviceToken: TOKEN,
-      engine: () => held.engine,
-      cache: createShoContextCache(),
-      queueLimit: 1,
-    });
-    await busyApp.fetch(
-      uploadRequest({ fingerprint: "fp-1", context: CONTEXT }),
-    );
-
-    const parse = () =>
-      busyApp.fetch(
+  it("maps every refused run outcome to its status and log outcome", async () => {
+    for (const kind of ["busy", "deadline", "input"] as const) {
+      const refusing = fakeEngine(() => Promise.resolve({ kind }));
+      const entries: ShoParseLogEntry[] = [];
+      const refusingApp = createShoApp({
+        serviceToken: TOKEN,
+        engine: () => refusing.engine,
+        log: (entry) => entries.push(entry),
+      });
+      await refusingApp.fetch(
+        uploadRequest({ fingerprint: "fp-1", context: CONTEXT }),
+      );
+      const response = await refusingApp.fetch(
         new Request("http://sho.test/v1/parse", {
           method: "POST",
           headers: authorized,
-          body: JSON.stringify(parseBody({ deadlineMs: 30_000 })),
+          body: JSON.stringify(parseBody()),
         }),
       );
-    const untilRunning = async (count: number) => {
-      for (let tick = 0; tick < 1000 && held.jobs.length < count; tick += 1) {
-        await Promise.resolve();
-      }
-    };
+      expect(response.status).toBe(
+        { busy: 503, deadline: 504, input: 400 }[kind],
+      );
+      await expect(response.json()).resolves.toEqual({ error: kind });
+      expect(entries).toEqual([
+        { requestId: "req-1", outcome: kind, ms: null, code: null },
+      ]);
+    }
+  });
 
-    const first = parse();
-    await untilRunning(1);
+  it("logs a failed run apart from an input refusal before it rethrows", async () => {
+    const broken = fakeEngine(() =>
+      Promise.resolve({ kind: "failed", code: "ShoRunFailure" }),
+    );
+    const entries: ShoParseLogEntry[] = [];
+    const brokenApp = createShoApp({
+      serviceToken: TOKEN,
+      engine: () => broken.engine,
+      log: (entry) => entries.push(entry),
+    });
+    await brokenApp.fetch(
+      uploadRequest({ fingerprint: "fp-1", context: CONTEXT }),
+    );
+    const response = await brokenApp.fetch(
+      new Request("http://sho.test/v1/parse", {
+        method: "POST",
+        headers: authorized,
+        body: JSON.stringify(parseBody()),
+      }),
+    );
+    expect(response.status).toBe(500);
+    expect(entries).toEqual([
+      {
+        requestId: "req-1",
+        outcome: "failed",
+        ms: null,
+        code: "ShoRunFailure",
+      },
+    ]);
+  });
 
-    const second = await parse();
-    expect(second.status).toBe(503);
-    await expect(second.json()).resolves.toEqual({ error: "busy" });
+  it("maps every phrases outcome to its status", async () => {
+    const answers: [ShoPhrasesReply, number][] = [
+      [{ kind: "busy" }, 503],
+      [{ kind: "deadline" }, 504],
+      [{ kind: "phrases", phrases: null }, 409],
+      [{ kind: "failed", code: "ShoRunFailure" }, 500],
+    ];
+    for (const [reply, status] of answers) {
+      const refusing = fakeEngine();
+      const refusingApp = createShoApp({
+        serviceToken: TOKEN,
+        engine: () => ({
+          ...refusing.engine,
+          phrases: () => Promise.resolve(reply),
+        }),
+      });
+      const response = await refusingApp.fetch(phrasesRequest());
+      expect(response.status).toBe(status);
+    }
+  });
 
-    releaseAll();
-    expect((await first).status).toBe(200);
+  it("reports ready only while the engine says every worker is warm", async () => {
+    const cold = fakeEngine();
+    const coldApp = createShoApp({
+      serviceToken: TOKEN,
+      engine: () => ({ ...cold.engine, ready: false }),
+    });
+    const response = await coldApp.fetch(
+      new Request("http://sho.test/v1/ready", { headers: authorized }),
+    );
+    await expect(response.json()).resolves.toEqual({ ready: false });
 
-    const third = parse();
-    await untilRunning(2);
-    releaseAll();
-    expect((await third).status).toBe(200);
+    const warm = await app.fetch(
+      new Request("http://sho.test/v1/ready", { headers: authorized }),
+    );
+    await expect(warm.json()).resolves.toEqual({ ready: true });
   });
 
   it("logs a request id and outcome, never the command text", async () => {

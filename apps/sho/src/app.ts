@@ -1,14 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { gunzipSync } from "node:zlib";
-import {
-  InputError,
-  parseContext,
-  parsePrevious,
-  type Context,
-  type Previous,
-} from "@showzy/sho";
+import { InputError, parseContext } from "@showzy/sho";
 import {
   SHO_MAX_CONTEXT_BYTES,
+  SHO_MAX_PARSE_BYTES,
   SHO_PHRASES_LIMIT,
   shoContextKeySchema,
   shoContextSchema,
@@ -23,32 +18,24 @@ import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 
-import {
-  createShoContextCache,
-  shoContextPhrases,
-  type ShoContextCache,
-} from "./contexts.ts";
-import type { ShoEngine } from "./engine.ts";
+import { shoContextPhrases } from "./contexts.ts";
+import { ShoRunFailure, type ShoEngine, type ShoReply } from "./engine.ts";
 
 export const SHO_HEALTH_PATH = "/v1/health";
-export const SHO_MAX_PARSE_BYTES = 256 * 1024;
-export const SHO_QUEUE_LIMIT = 8;
 
 export type ShoParseOutcome =
-  "ok" | "input" | "context_required" | "busy" | "deadline";
+  "ok" | "input" | "context_required" | "busy" | "deadline" | "failed";
 
 export interface ShoParseLogEntry {
   readonly requestId: string | null;
   readonly outcome: ShoParseOutcome;
   readonly ms: number | null;
+  readonly code: string | null;
 }
 
 export interface ShoAppOptions {
   readonly serviceToken: string;
   readonly engine: () => ShoEngine | null;
-  readonly cache?: ShoContextCache;
-  readonly clock?: () => number;
-  readonly queueLimit?: number;
   readonly log?: (entry: ShoParseLogEntry) => void;
 }
 
@@ -90,49 +77,32 @@ function inflate(raw: Buffer, encoding: string | undefined): Inflated {
   }
 }
 
+const REFUSAL_STATUS: Record<
+  "context_required" | "busy" | "deadline" | "input",
+  ContentfulStatusCode
+> = { context_required: 409, busy: 503, deadline: 504, input: 400 };
+
+function refused(c: HonoContext, reply: ShoReply): Response {
+  if (reply.kind === "failed") throw new ShoRunFailure(reply.code);
+  if (reply.kind in REFUSAL_STATUS) {
+    const code = reply.kind as keyof typeof REFUSAL_STATUS;
+    return problem(c, REFUSAL_STATUS[code], code);
+  }
+  throw new ShoRunFailure("unexpected_reply");
+}
+
+const parseOutcomeOf = (reply: ShoReply): ShoParseOutcome =>
+  reply.kind in REFUSAL_STATUS
+    ? (reply.kind as Exclude<ShoParseOutcome, "ok" | "failed">)
+    : "failed";
+
 const uploadEnvelopeSchema = z.object({
   fingerprint: shoContextUploadSchema.shape.fingerprint,
   context: z.unknown(),
 });
 
-interface Gate {
-  readonly depth: number;
-  run<Value>(task: () => Promise<Value>): Promise<Value>;
-}
-
-function createGate(): Gate {
-  let depth = 0;
-  let last: Promise<unknown> = Promise.resolve();
-  return {
-    get depth() {
-      return depth;
-    },
-    run(task) {
-      depth += 1;
-      const next = last.then(task, task);
-      last = next.catch(() => undefined);
-      return next.finally(() => {
-        depth -= 1;
-      });
-    },
-  };
-}
-
-const EXPIRED = Symbol("deadline");
-
-const expiresIn = (ms: number): Promise<typeof EXPIRED> =>
-  new Promise((resolve) => {
-    AbortSignal.timeout(Math.max(ms, 0)).addEventListener("abort", () => {
-      resolve(EXPIRED);
-    });
-  });
-
 export function createShoApp(options: ShoAppOptions): Hono {
-  const cache = options.cache ?? createShoContextCache();
-  const clock = options.clock ?? (() => performance.now());
-  const queueLimit = options.queueLimit ?? SHO_QUEUE_LIMIT;
-  const log = options.log ?? (() => undefined);
-  const gate = createGate();
+  const log = options.log ?? ((): void => undefined);
   const app = new Hono();
 
   app.use("/v1/*", async (c, next) => {
@@ -146,7 +116,9 @@ export function createShoApp(options: ShoAppOptions): Hono {
 
   app.get(SHO_HEALTH_PATH, (c) => c.json({ status: "ok" }));
 
-  app.get("/v1/ready", (c) => c.json({ ready: options.engine() !== null }));
+  app.get("/v1/ready", (c) =>
+    c.json({ ready: options.engine()?.ready === true }),
+  );
 
   app.get("/v1/model", (c) => {
     const engine = options.engine();
@@ -187,27 +159,28 @@ export function createShoApp(options: ShoAppOptions): Hono {
       );
       if (!envelope.success) return problem(c, 400, "input");
 
-      let parsed: Context;
       try {
-        parsed = parseContext(envelope.data.context);
+        parseContext(envelope.data.context);
       } catch (cause) {
         return refusal(c, cause);
       }
       const shaped = shoContextSchema.safeParse(envelope.data.context);
       if (!shaped.success) return problem(c, 400, "input");
 
-      cache.put(key, {
+      const stored = await engine.store({
+        key,
         fingerprint: envelope.data.fingerprint,
         revision: shaped.data.revision ?? null,
-        compiled: engine.compile(parsed),
+        context: envelope.data.context,
         phrases: shoContextPhrases(shaped.data),
         uploadBytes: inflated.body.byteLength,
       });
-      return c.body(null, 204);
+      if (stored.kind === "stored") return c.body(null, 204);
+      return refused(c, stored);
     },
   );
 
-  app.get("/v1/contexts/:key/phrases", (c) => {
+  app.get("/v1/contexts/:key/phrases", async (c) => {
     const key = c.req.param("key");
     const query = shoPhrasesQuerySchema.safeParse({
       companyId: c.req.query("companyId"),
@@ -219,9 +192,12 @@ export function createShoApp(options: ShoAppOptions): Hono {
     if (!key.startsWith(`${query.data.companyId}:`)) {
       return problem(c, 400, "input");
     }
-    const entry = cache.read(key);
-    if (entry === null) return problem(c, 409, "context_required");
-    return c.json({ phrases: entry.phrases.slice(0, query.data.limit) });
+    const engine = options.engine();
+    if (engine === null) return problem(c, 503, "busy");
+    const found = await engine.phrases(key);
+    if (found.kind !== "phrases") return refused(c, found);
+    if (found.phrases === null) return problem(c, 409, "context_required");
+    return c.json({ phrases: found.phrases.slice(0, query.data.limit) });
   });
 
   app.post(
@@ -233,65 +209,47 @@ export function createShoApp(options: ShoAppOptions): Hono {
     async (c) => {
       const engine = options.engine();
       if (engine === null) {
-        log({ requestId: null, outcome: "busy", ms: null });
+        log({ requestId: null, outcome: "busy", ms: null, code: null });
         return problem(c, 503, "busy");
       }
       const request = shoParseRequestSchema.safeParse(
         parseJson(await c.req.text()),
       );
       if (!request.success) {
-        log({ requestId: null, outcome: "input", ms: null });
+        log({ requestId: null, outcome: "input", ms: null, code: null });
         return problem(c, 400, "input");
       }
       const asked = request.data;
       const requestId = asked.requestId;
       if (!asked.contextKey.startsWith(`${asked.companyId}:`)) {
-        log({ requestId, outcome: "input", ms: null });
+        log({ requestId, outcome: "input", ms: null, code: null });
         return problem(c, 400, "input");
       }
-      const entry = cache.fresh(asked.contextKey, asked.fingerprint);
-      if (entry === null) {
-        log({ requestId, outcome: "context_required", ms: null });
-        return problem(c, 409, "context_required");
-      }
-      if (gate.depth >= queueLimit) {
-        log({ requestId, outcome: "busy", ms: null });
-        return problem(c, 503, "busy");
-      }
-
-      const previous: Previous | null =
-        asked.previous === undefined ? null : parsePrevious(asked.previous);
-      const deadlineAt = clock() + asked.deadlineMs;
-      const running = gate.run(async () => {
-        if (clock() >= deadlineAt) return EXPIRED;
-        const started = clock();
-        const result = await engine.run({
-          text: asked.text,
-          context: entry.compiled,
-          now: asked.now,
-          previous,
-          debug: asked.debug,
-        });
-        return { result, ms: clock() - started };
+      const ran = await engine.run({
+        key: asked.contextKey,
+        fingerprint: asked.fingerprint,
+        text: asked.text,
+        now: asked.now,
+        previous: asked.previous ?? null,
+        debug: asked.debug,
+        deadlineMs: asked.deadlineMs,
       });
-      running.catch(() => undefined);
-      try {
-        const ran = await Promise.race([running, expiresIn(asked.deadlineMs)]);
-        if (ran === EXPIRED) {
-          log({ requestId, outcome: "deadline", ms: null });
-          return problem(c, 504, "deadline");
-        }
-        log({ requestId, outcome: "ok", ms: ran.ms });
+      if (ran.kind === "parsed") {
+        log({ requestId, outcome: "ok", ms: ran.ms, code: null });
         return c.json({
           model: { id: engine.stamp.id, md5: engine.stamp.md5 },
-          contextRevision: entry.revision,
+          contextRevision: ran.contextRevision,
           result: ran.result,
           ms: ran.ms,
         });
-      } catch (cause) {
-        log({ requestId, outcome: "input", ms: null });
-        return refusal(c, cause);
       }
+      log({
+        requestId,
+        outcome: parseOutcomeOf(ran),
+        ms: null,
+        code: ran.kind === "failed" ? ran.code : null,
+      });
+      return refused(c, ran);
     },
   );
 

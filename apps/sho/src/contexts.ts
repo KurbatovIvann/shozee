@@ -3,6 +3,18 @@ import type { ShoContext } from "@showzy/sho-protocol";
 
 export const SHO_CONTEXT_CACHE_UPLOAD_BYTES = 256 * 1024 * 1024;
 
+export function shoCacheBudgetOf(given: unknown): number {
+  if (
+    typeof given === "object" &&
+    given !== null &&
+    "maxUploadBytes" in given
+  ) {
+    const value = given.maxUploadBytes;
+    if (typeof value === "number" && value > 0) return value;
+  }
+  return SHO_CONTEXT_CACHE_UPLOAD_BYTES;
+}
+
 export interface ShoContextEntry {
   readonly fingerprint: string;
   readonly revision: string | null;
