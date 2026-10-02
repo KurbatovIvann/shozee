@@ -498,6 +498,19 @@ function modelThatMustNotRun() {
 
 const USER_ASKS: ModelMessage[] = [{ role: "user", content: ASKED }];
 
+describe("the record field a closed card's trace reads", () => {
+  it("is the one the runtime's own registry holds for that action", () => {
+    const runtime = seedingRuntime();
+
+    expect(runtime.writtenRecordIdField("orders.create")).toBe("orderId");
+    expect(runtime.writtenRecordIdField("catalog.createProduct")).toBe(
+      "productId",
+    );
+    expect(runtime.writtenRecordIdField("orders.get")).toBeNull();
+    expect(runtime.writtenRecordIdField("orders.noSuchVerb")).toBeNull();
+  });
+});
+
 describe("a turn the worker runs", () => {
   it("stores its card and reply, finishes done, keeps the hold as the charge, and publishes each event after its write", async () => {
     const turn = await accepted({ history: USER_ASKS });

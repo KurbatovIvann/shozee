@@ -43,4 +43,5 @@ export const updateCustomerContract = defineActionContract({
   errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 10_000,
+  writtenRecordIdField: "id",
 });

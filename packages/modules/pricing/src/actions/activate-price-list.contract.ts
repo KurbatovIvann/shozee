@@ -44,4 +44,5 @@ export const activatePriceListContract = defineActionContract({
   errors: ["NOT_FOUND"],
   audit: true,
   timeout: 5_000,
+  writtenRecordIdField: "id",
 });

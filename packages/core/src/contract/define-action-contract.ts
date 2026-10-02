@@ -135,6 +135,7 @@ function collectDefinitionProblems(
 
   validateEmits(definition, problems);
   validateEnqueues(definition, problems);
+  validateWrittenRecordIdField(definition, problems);
   validateErrors(definition, problems);
   validateAtomicEdges(definition, problems);
 
@@ -367,6 +368,56 @@ function validateEnqueues(
       'enqueues requires a writable action — risk: "read" never enqueues (ADR-0041 J4)',
     );
   }
+}
+
+function validateWrittenRecordIdField(
+  definition: ActionContractDefinition,
+  problems: string[],
+): void {
+  const field = definition.writtenRecordIdField;
+  if (field === undefined) {
+    return;
+  }
+  if (definition.risk === "read") {
+    problems.push(
+      'writtenRecordIdField requires a writable action — risk: "read" writes no record',
+    );
+  }
+  const output = objectOutput(definition.output);
+  if (output === null) {
+    problems.push(
+      "writtenRecordIdField requires an object output whose fields can be named",
+    );
+    return;
+  }
+  if (!Object.hasOwn(output.shape, field)) {
+    problems.push(
+      `writtenRecordIdField "${field}" is not a field of this action's output`,
+    );
+    return;
+  }
+  if (!isStringField(output.shape[field])) {
+    problems.push(
+      `writtenRecordIdField "${field}" must name a string field — a record id the trace can store`,
+    );
+  }
+}
+
+function objectOutput(output: unknown): z.ZodObject | null {
+  if (output instanceof z.ZodObject) {
+    return output;
+  }
+  if (output instanceof z.ZodNullable || output instanceof z.ZodOptional) {
+    return objectOutput(output.unwrap());
+  }
+  return null;
+}
+
+function isStringField(field: unknown): boolean {
+  if (field instanceof z.ZodNullable || field instanceof z.ZodOptional) {
+    return isStringField(field.unwrap());
+  }
+  return field instanceof z.ZodType && field.def.type === "string";
 }
 
 /**

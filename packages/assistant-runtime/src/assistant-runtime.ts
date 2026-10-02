@@ -292,6 +292,8 @@ export function createAssistantRuntime(
 
     model: options.model,
     resolveAnswer: createResolveAnswer({ runConfirmed }),
+    writtenRecordIdField: (action) =>
+      options.registry.getContract(action)?.writtenRecordIdField ?? null,
 
     /**
      * Read through the staff context as the caller, so the answer is the

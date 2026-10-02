@@ -55,4 +55,5 @@ export const createPriceListContract = defineActionContract({
   errors: ["VALIDATION"],
   audit: true,
   timeout: 5_000,
+  writtenRecordIdField: "id",
 });

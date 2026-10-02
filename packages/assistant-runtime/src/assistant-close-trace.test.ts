@@ -14,6 +14,7 @@ import type {
 const INTERACTION = "11111111-1111-4111-8111-111111111111";
 const CUSTOMER = "22222222-2222-4222-8222-222222222222";
 const ORDER = "33333333-3333-4333-8333-333333333333";
+const PRODUCT = "44444444-4444-4444-8444-444444444444";
 
 const TRACE_KEYS = [
   "attempts",
@@ -23,6 +24,18 @@ const TRACE_KEYS = [
   "optionId",
   "outcome",
 ];
+
+const DECLARED_RECORD_ID_FIELDS = new Map<string, string>([
+  ["orders.create", "orderId"],
+  ["orders.confirm", "orderId"],
+  ["catalog.createProduct", "productId"],
+  ["customers.updateCustomer", "id"],
+  ["pricing.createPriceList", "id"],
+]);
+
+function writtenRecordIdField(action: string): string | null {
+  return DECLARED_RECORD_ID_FIELDS.get(action) ?? null;
+}
 
 function alsoAttempt(actionName: string): ConfirmationAlsoSecret {
   return {
@@ -37,10 +50,11 @@ function alsoAttempt(actionName: string): ConfirmationAlsoSecret {
 
 function approved(
   also: readonly ConfirmationAlsoSecret[] = [],
+  actionName = "customers.updateCustomer",
 ): ConfirmationResolution {
   return {
     approved: true,
-    actionName: "customers.updateCustomer",
+    actionName,
     canonicalInput: { customerId: CUSTOMER },
     idempotencyKey: "key-1",
     challengeId: "challenge-1",
@@ -65,6 +79,7 @@ describe("the trace an approved preview leaves", () => {
         kind: "ok",
         result: { id: CUSTOMER, name: "Оксана", archived: false },
       },
+      writtenRecordIdField,
     });
 
     expect(trace).toEqual({
@@ -82,6 +97,66 @@ describe("the trace an approved preview leaves", () => {
       ],
     });
     expect(Object.keys(trace ?? {}).sort()).toEqual(TRACE_KEYS);
+  });
+
+  it("names the order an order write wrote, which is never in an `id`", () => {
+    const [trace] = assistantCloseTrace({
+      interactionId: INTERACTION,
+      kind: "confirmation",
+      value: approved([], "orders.create"),
+      outcome: {
+        kind: "ok",
+        result: {
+          orderId: ORDER,
+          orderNumber: "CO-1",
+          customer: { id: CUSTOMER, name: "Оксана" },
+          status: "draft",
+        },
+      },
+      writtenRecordIdField,
+    });
+
+    expect(trace?.attempts).toEqual([
+      { action: "orders.create", outcome: "done", recordId: ORDER },
+    ]);
+  });
+
+  it("names the product a catalog write wrote", () => {
+    const [trace] = assistantCloseTrace({
+      interactionId: INTERACTION,
+      kind: "confirmation",
+      value: approved([], "catalog.createProduct"),
+      outcome: {
+        kind: "ok",
+        result: { productId: PRODUCT, name: "Кава", variants: [] },
+      },
+      writtenRecordIdField,
+    });
+
+    expect(trace?.attempts).toEqual([
+      { action: "catalog.createProduct", outcome: "done", recordId: PRODUCT },
+    ]);
+  });
+
+  it("names no record for an action whose contract declares no field", () => {
+    const [trace] = assistantCloseTrace({
+      interactionId: INTERACTION,
+      kind: "confirmation",
+      value: approved([], "catalog.setProductImages"),
+      outcome: {
+        kind: "ok",
+        result: { productId: PRODUCT, imageFileIds: [] },
+      },
+      writtenRecordIdField,
+    });
+
+    expect(trace?.attempts).toEqual([
+      {
+        action: "catalog.setProductImages",
+        outcome: "done",
+        recordId: null,
+      },
+    ]);
   });
 
   it("reports one outcome per attempt when an `also` bundle halted part-way", () => {
@@ -105,6 +180,7 @@ describe("the trace an approved preview leaves", () => {
           },
         },
       },
+      writtenRecordIdField,
     });
 
     expect(trace?.outcome).toBe("failed");
@@ -118,7 +194,7 @@ describe("the trace an approved preview leaves", () => {
     ]);
   });
 
-  it("names every record of a bundle that ran through", () => {
+  it("names every record of a bundle that ran through, each from its own action", () => {
     const [trace] = assistantCloseTrace({
       interactionId: INTERACTION,
       kind: "confirmation",
@@ -131,10 +207,14 @@ describe("the trace an approved preview leaves", () => {
               action: "customers.updateCustomer",
               result: { id: CUSTOMER },
             },
-            { action: "orders.confirm", result: { id: ORDER } },
+            {
+              action: "orders.confirm",
+              result: { orderId: ORDER, customerId: CUSTOMER },
+            },
           ],
         },
       },
+      writtenRecordIdField,
     });
 
     expect(trace?.outcome).toBe("done");
@@ -155,6 +235,7 @@ describe("the trace an approved preview leaves", () => {
         prompt: { title: "Нова ціна" },
         secret: {},
       },
+      writtenRecordIdField,
     });
 
     expect(trace).toEqual({
@@ -175,6 +256,7 @@ describe("the trace an approved preview leaves", () => {
         kind: "confirmation",
         value: approved(),
         outcome: { kind: "error", code: "CONFLICT", message: "ні" },
+        writtenRecordIdField,
       }),
     ).toEqual([]);
   });
@@ -187,6 +269,7 @@ describe("the trace a settled choice leaves", () => {
       kind: "choice",
       value: chosen,
       outcome: { kind: "ok", result: { orderId: ORDER } },
+      writtenRecordIdField,
     });
 
     expect(trace).toEqual({
@@ -210,6 +293,7 @@ describe("the trace a settled choice leaves", () => {
         prompt: {},
         secret: {},
       },
+      writtenRecordIdField,
     });
 
     expect(trace?.outcome).toBe("chosen");
@@ -222,6 +306,7 @@ describe("the trace a settled choice leaves", () => {
         kind: "retired",
         value: chosen,
         outcome: { kind: "ok", result: {} },
+        writtenRecordIdField,
       }),
     ).toEqual([]);
   });
@@ -247,26 +332,27 @@ describe("the trace a dropped question leaves", () => {
 });
 
 describe("the record id an action result names", () => {
-  it("prefers an explicit id", () => {
-    expect(assistantTraceRecordId({ id: ORDER, customerId: CUSTOMER })).toBe(
-      ORDER,
-    );
+  it("reads the declared field and no other", () => {
+    expect(
+      assistantTraceRecordId(
+        { orderId: ORDER, customerId: CUSTOMER },
+        "orderId",
+      ),
+    ).toBe(ORDER);
+    expect(
+      assistantTraceRecordId({ orderId: ORDER, customerId: CUSTOMER }, "id"),
+    ).toBeNull();
   });
 
-  it("guesses nothing from a field that merely ends in Id", () => {
-    expect(assistantTraceRecordId({ customerId: CUSTOMER })).toBeNull();
-    expect(
-      assistantTraceRecordId({ orderId: ORDER, number: "CO-1" }),
-    ).toBeNull();
-    expect(
-      assistantTraceRecordId({ orderId: ORDER, customerId: CUSTOMER }),
-    ).toBeNull();
+  it("guesses nothing when no field is declared", () => {
+    expect(assistantTraceRecordId({ id: ORDER }, null)).toBeNull();
+    expect(assistantTraceRecordId({ orderId: ORDER }, null)).toBeNull();
   });
 
   it("reads nothing out of a result that is not a record", () => {
-    expect(assistantTraceRecordId(null)).toBeNull();
-    expect(assistantTraceRecordId("ok")).toBeNull();
-    expect(assistantTraceRecordId([{ id: ORDER }])).toBeNull();
-    expect(assistantTraceRecordId({ deleted: true })).toBeNull();
+    expect(assistantTraceRecordId(null, "id")).toBeNull();
+    expect(assistantTraceRecordId("ok", "id")).toBeNull();
+    expect(assistantTraceRecordId([{ id: ORDER }], "id")).toBeNull();
+    expect(assistantTraceRecordId({ deleted: true }, "id")).toBeNull();
   });
 });

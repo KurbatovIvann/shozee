@@ -169,6 +169,20 @@ describe("@showzy/api/registry", () => {
     ).toEqual(["createActionRegistry", "registeredJobs"]);
   });
 
+  it("holds the result field each write declares the record it wrote by", () => {
+    const registry = createActionRegistry();
+
+    expect(registry.getContract("orders.create")?.writtenRecordIdField).toBe(
+      "orderId",
+    );
+    expect(
+      registry.getContract("catalog.createProduct")?.writtenRecordIdField,
+    ).toBe("productId");
+    expect(
+      registry.getContract("orders.get")?.writtenRecordIdField,
+    ).toBeUndefined();
+  });
+
   it("is the registry the contract check walks and the API boots", () => {
     const names = (registry: ReturnType<typeof createActionRegistry>) =>
       registry

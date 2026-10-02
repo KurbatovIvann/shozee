@@ -18,6 +18,7 @@ import type {
 import type { AssistantTurnKind } from "@showzy/assistant";
 import type { Logger } from "pino";
 
+import type { AssistantWrittenRecordIdField } from "./assistant-close-trace.js";
 import type { AssistantInteractionTypes } from "./assistant-interactions.js";
 import type { AssistantTurnStore } from "./stores/assistant-turn-store.js";
 
@@ -163,6 +164,7 @@ export interface AssistantRuntime {
    */
   readonly tools: (context: AssistantToolContext) => Promise<ToolSet>;
   readonly resolveAnswer: ResolveAnswer;
+  readonly writtenRecordIdField: AssistantWrittenRecordIdField;
   /** Built per turn: the turn context carries the current time. */
   readonly prompt: () => AssistantTurnPrompt;
 }

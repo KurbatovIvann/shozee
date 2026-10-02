@@ -368,6 +368,69 @@ describe("defineActionContract — enqueues", () => {
   });
 });
 
+describe("defineActionContract — writtenRecordIdField", () => {
+  it("keeps the output field an action declares as the record it wrote", () => {
+    const contract = defineActionContract({
+      ...staffWriteDefinition(),
+      writtenRecordIdField: "orderId",
+    });
+
+    expect(contract.writtenRecordIdField).toBe("orderId");
+  });
+
+  it("accepts a nullable record output, which a cleared default returns", () => {
+    const contract = defineActionContract({
+      ...staffWriteDefinition(),
+      output: z.object({ id: z.uuid() }).nullable(),
+      writtenRecordIdField: "id",
+    });
+
+    expect(contract.writtenRecordIdField).toBe("id");
+  });
+
+  it("rejects a field the output never names", () => {
+    expectProblem(
+      { ...staffWriteDefinition(), writtenRecordIdField: "id" },
+      'writtenRecordIdField "id" is not a field of this action\'s output',
+    );
+  });
+
+  it("rejects a field that is not a string the trace could store", () => {
+    expectProblem(
+      {
+        ...staffWriteDefinition(),
+        output: z.object({ orderId: z.number().int() }),
+        writtenRecordIdField: "orderId",
+      },
+      'writtenRecordIdField "orderId" must name a string field',
+    );
+  });
+
+  it("rejects an output whose fields cannot be named", () => {
+    expectProblem(
+      {
+        ...staffWriteDefinition(),
+        output: z.array(z.object({ orderId: z.uuid() })),
+        writtenRecordIdField: "orderId",
+      },
+      "writtenRecordIdField requires an object output",
+    );
+  });
+
+  it("rejects it on a read, which writes no record", () => {
+    expectProblem(
+      {
+        ...staffWriteDefinition(),
+        risk: "read",
+        audit: false,
+        emits: [],
+        writtenRecordIdField: "orderId",
+      },
+      "writtenRecordIdField requires a writable action",
+    );
+  });
+});
+
 describe("defineActionContract — define-time rejections", () => {
   it("rejects a name that is not <module>.<verb>", () => {
     expectProblem(

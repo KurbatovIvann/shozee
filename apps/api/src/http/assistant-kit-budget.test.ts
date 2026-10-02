@@ -198,6 +198,7 @@ function harness(options?: {
       model: stubTextModel("Готово."),
       tools: () => Promise.resolve(options?.tools ?? {}),
       resolveAnswer: OK_RESOLVE,
+      writtenRecordIdField: () => null,
       prompt: () => ({ system: "you are a test" }),
     },
     {
@@ -401,6 +402,7 @@ describe("the spend ceiling on the kit routes", () => {
           model: stubTextModel("Готово."),
           tools: () => Promise.resolve({}),
           resolveAnswer: OK_RESOLVE,
+          writtenRecordIdField: () => null,
           prompt: () => ({ system: "you are a test" }),
         },
         {
