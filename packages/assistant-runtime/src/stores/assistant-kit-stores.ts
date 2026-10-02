@@ -57,7 +57,7 @@ export function assistantKitPauseKey(key: string): string {
   return `${ASSISTANT_KIT_KEY_PREFIX}${key}`;
 }
 
-type RedisLike = Pick<Redis, "eval" | "get" | "set" | "del">;
+type RedisLike = Pick<Redis, "eval" | "get" | "set" | "del" | "exists">;
 
 export function createRedisAssistantKitPauseStore(
   redis: RedisLike,
@@ -132,6 +132,7 @@ export interface AssistantKitCommands {
   take(command: AssistantKitCommandRef): Promise<boolean>;
   /** Give it back, for a request that took it and then did nothing at all. */
   release(command: AssistantKitCommandRef): Promise<void>;
+  spent(command: AssistantKitCommandRef): Promise<boolean>;
 }
 
 export interface AssistantKitCommandRef {
@@ -175,6 +176,9 @@ export function createRedisAssistantKitCommands(
     async release(command) {
       await redis.del(assistantKitCommandKey(command));
     },
+    async spent(command) {
+      return (await redis.exists(assistantKitCommandKey(command))) > 0;
+    },
   };
 }
 
@@ -202,6 +206,9 @@ export function memoryAssistantKitCommands(): AssistantKitCommands & {
     release(command) {
       taken.delete(assistantKitCommandKey(command));
       return Promise.resolve();
+    },
+    spent(command) {
+      return Promise.resolve(taken.has(assistantKitCommandKey(command)));
     },
   };
 }

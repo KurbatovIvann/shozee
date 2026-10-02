@@ -57,14 +57,40 @@ import {
   type Caller,
 } from "./assistant-kit-http.js";
 
-export type PauseDropOutcome = "dropped" | "wrong_owner" | "failed";
+export type PauseWriteOutcome = "ok" | "wrong_owner" | "failed";
+
+function writeOutcome(stored: { readonly kind: string }): PauseWriteOutcome {
+  if (stored.kind === "wrong_owner") {
+    return "wrong_owner";
+  }
+  return stored.kind === "written" ? "ok" : "failed";
+}
+
+export async function appendChatText(
+  kit: AssistantKitFor,
+  scope: PauseScope,
+  said: {
+    readonly role: "user" | "assistant";
+    readonly messageId: string;
+    readonly text: string;
+  },
+): Promise<PauseWriteOutcome> {
+  return writeOutcome(
+    await kit.messages.write(scope, {
+      kind: "append",
+      messageId: said.messageId,
+      role: said.role,
+      parts: [{ kind: "text", text: said.text, status: "complete" }],
+    }),
+  );
+}
 
 export async function dropOpenPause(
   kit: AssistantKitFor,
   scope: PauseScope,
   interactionId: string,
   trace: (pause: PublicPause) => AssistantTracePart,
-): Promise<PauseDropOutcome> {
+): Promise<PauseWriteOutcome> {
   const traced: {
     outcome: Awaited<ReturnType<typeof kit.messages.write>> | null;
   } = { outcome: null };
@@ -81,18 +107,12 @@ export async function dropOpenPause(
     },
   });
   const written = traced.outcome;
-  if (written === null) {
-    return "dropped";
-  }
-  if (written.kind === "wrong_owner") {
-    return "wrong_owner";
-  }
-  return written.kind === "written" ? "dropped" : "failed";
+  return written === null ? "ok" : writeOutcome(written);
 }
 
 export interface PauseAnswerInput {
   readonly body: InteractionResponse;
-  readonly route: "chat" | "answer";
+  readonly askedText?: string;
   readonly caller?: Extract<Caller, { readonly ok: true }>;
 }
 
@@ -104,7 +124,7 @@ async function readPauseAnswerInput(
     return null;
   }
   const parsed = interactionResponseSchema.safeParse(raw.body);
-  return parsed.success ? { body: parsed.data, route: "answer" } : null;
+  return parsed.success ? { body: parsed.data } : null;
 }
 
 export const ASSISTANT_KIT_ANSWER_PATH = "/assistant/kit/answer";
@@ -162,11 +182,10 @@ export async function handleAssistantKitAbandon(
     parsed.data.interactionId,
     assistantRejectedTrace,
   );
-  if (dropped === "wrong_owner") {
-    return goneResponse(requestId);
-  }
-  if (dropped === "failed") {
-    return json(500, { error: { code: "INTERNAL" } }, requestId);
+  if (dropped !== "ok") {
+    return dropped === "wrong_owner"
+      ? goneResponse(requestId)
+      : json(500, { error: { code: "INTERNAL" } }, requestId);
   }
 
   // With the window, like every other answer. Without it the card kept
@@ -213,7 +232,7 @@ export async function handleAssistantKitAnswer(
   // retry that reached it would be told `gone` — the answer *did* take, and the
   // person would be looking at a card that can never be answered (SHO-547).
   const command = {
-    route: given.route,
+    route: "answer" as const,
     bind: caller.bind,
     conversationId: body.conversationId,
     commandId: body.commandId,
@@ -395,6 +414,7 @@ export async function handleAssistantKitAnswer(
       kind: "answer",
       conversationId: body.conversationId,
       commandId: body.commandId,
+      ...(given.askedText === undefined ? {} : { text: given.askedText }),
       earned: [...assistantTurnEarnedCard(resolvedOutcome.card), ...trace],
       history: kit.resume(claimed, resolvedOutcome.result).messages,
       bind: caller.bind,

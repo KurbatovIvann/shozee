@@ -415,6 +415,7 @@ async function openConfirmation(
   kit: Kit,
   bind: string,
   also: readonly ConfirmationAlsoSecret[] = [],
+  level: "card" | "strong" = "card",
 ) {
   const opened = await kit.open({
     conversationId: CONVERSATION,
@@ -424,7 +425,7 @@ async function openConfirmation(
       summary: "Оновити клієнта?",
       preview: preview("Оновити клієнта"),
       also: also.map((one) => one.preview),
-      level: "card",
+      level,
     },
     secret: {
       actionName: UPDATE_ACTION,
@@ -2228,15 +2229,114 @@ describe("a send while a card is open answers it", () => {
       chatBody("Савчук"),
     );
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as KitBody;
-    expect(body.status).toBe("unresolvable");
-    expect(body.reason).toContain("Савчук Олена");
+    expect(body.status).toBe("ok");
     expect(body.window?.openPause?.interactionId).toBe(pause.interactionId);
+    const said = (body.window?.messages ?? []).flatMap((message) =>
+      message.parts.flatMap((part) =>
+        part.kind === "text" && part.text !== undefined ? [part.text] : [],
+      ),
+    );
+    expect(said).toContain("Савчук");
+    expect(said.at(-1)).toContain("Савчук Олена");
     expect(
       (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
     ).toBe("open");
     expect(queue.added).toEqual([]);
+  });
+
+  it("keeps the card and says the range for a number outside it", async () => {
+    const { app, kit, bind } = harness();
+    await openNamedPause(kit, bind);
+
+    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("5"));
+
+    expect(response.status).toBe(200);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+    const body = (await response.json()) as KitBody;
+    expect(JSON.stringify(body.window)).toContain("до 3");
+  });
+
+  it("never approves a strong preview, and still declines one", async () => {
+    const { app, kit, queue, bind } = harness();
+    await openConfirmation(kit, bind, [], "strong");
+
+    const typed = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
+    expect(typed.status).toBe(200);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+    expect(queue.added).toEqual([]);
+    expect(JSON.stringify((await typed.json()) as KitBody)).toContain(
+      "кнопкою",
+    );
+
+    const declined = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      chatBody("ні", OTHER_COMMAND),
+    );
+    expect(((await declined.json()) as KitBody).status).toBe("abandoned");
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+  });
+
+  it("stores the person's words before the trace, for a reload", async () => {
+    const { app, kit, bind } = harness();
+    await openConfirmation(kit, bind);
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
+
+    const reload = await get(app, messagesPath());
+    const body = (await reload.json()) as KitBody;
+    const roles = (body.window?.messages ?? []).map((one) => one.role);
+    expect(roles).toEqual(["user", "assistant"]);
+    expect(body.window?.messages[0]?.parts[0]).toMatchObject({
+      kind: "text",
+      text: "так",
+    });
+  });
+
+  it("stores the person's words for a name that answered a choice", async () => {
+    const { app, kit, bind } = harness();
+    await openNamedPause(kit, bind);
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("Савчук"));
+
+    const reload = await get(app, messagesPath());
+    const body = (await reload.json()) as KitBody;
+    expect(body.window?.messages[0]).toMatchObject({ role: "user" });
+    expect(body.window?.messages[0]?.parts[0]).toMatchObject({
+      text: "Савчук",
+    });
+  });
+
+  it("does not drop a newly opened card when the send is a replay", async () => {
+    const { app, kit, bind } = harness();
+
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
+    expect(first.status).toBe(202);
+    const reopened = await openPause(kit, bind);
+
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
+
+    expect(retry.status).toBe(202);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.interactionId,
+    ).toBe(reopened.interactionId);
+  });
+
+  it("keeps the card when the accept the send would supersede it for fails", async () => {
+    const { app, kit, bind } = harness({ acceptThrows: "conflict" });
+    const pause = await openPause(kit, bind);
+
+    await expect(
+      post(app, ASSISTANT_KIT_CHAT_PATH, chatBody()),
+    ).resolves.toMatchObject({ status: 500 });
+
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.interactionId,
+    ).toBe(pause.interactionId);
   });
 
   it("answers the question the server holds, never ids the send carried", async () => {
@@ -2280,8 +2380,8 @@ describe("a send while a card is open answers it", () => {
     const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
     const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
 
-    expect([first.status, retry.status]).toEqual([202, 202]);
-    expect(((await retry.json()) as KitBody).status).toBe("accepted");
+    expect([first.status, retry.status]).toEqual([202, 200]);
+    expect(((await retry.json()) as KitBody).status).toBe("ok");
     expect(queue.added).toHaveLength(1);
   });
 

@@ -24,16 +24,20 @@ import { chatCursorSchema } from "@showzy/assistant-kit";
 import {
   assistantRejectedTrace,
   assistantSupersededTrace,
+  assistantTurnMessageId,
   matchAssistantPauseAnswer,
   readAssistantChatWindow,
   type AssistantChatWindowWithTurn,
 } from "@showzy/assistant-runtime";
 import type { Context } from "hono";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import {
+  appendChatText,
   dropOpenPause,
   handleAssistantKitAnswer,
+  type PauseWriteOutcome,
 } from "./assistant-kit-answer.js";
 import {
   canonicalCommandIds,
@@ -45,7 +49,34 @@ import {
   takeCommand,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
+  type Caller,
 } from "./assistant-kit-http.js";
+
+export async function chatAnswersOpenQuestion(
+  c: Context<AssistantKitAppEnv>,
+  runtime: AssistantKitRuntime,
+  caller: Extract<Caller, { readonly ok: true }>,
+): Promise<boolean> {
+  const raw = await readJson(c);
+  const parsed = assistantKitChatBodySchema.safeParse(raw.ok ? raw.body : null);
+  if (!parsed.success) {
+    return false;
+  }
+  const { kit } = runtime.forCaller({
+    userId: caller.userId,
+    companySelector: caller.companySelector,
+    requestId: c.get("requestId"),
+    clientIp: c.get("clientIp"),
+  });
+  const open = await kit.peek({
+    conversationId: parsed.data.conversationId.toLowerCase(),
+    bind: caller.bind,
+  });
+  return (
+    open !== null &&
+    matchAssistantPauseAnswer(open, parsed.data.text).kind !== "supersede"
+  );
+}
 
 export const ASSISTANT_KIT_CHAT_PATH = "/assistant/kit/chat";
 export const ASSISTANT_KIT_MESSAGES_PATH = "/assistant/kit/messages";
@@ -130,24 +161,29 @@ export async function handleAssistantKitChat(
     commandId: body.commandId,
   };
 
+  const finishing = { ...command, route: "answer" as const };
+  const settled = async (): Promise<Response> =>
+    json(
+      200,
+      {
+        status: "ok",
+        window: await readAssistantChatWindow(kit, turns, scope),
+      },
+      requestId,
+    );
+  const writeFailed = (outcome: PauseWriteOutcome): Response =>
+    outcome === "wrong_owner"
+      ? goneResponse(requestId)
+      : json(500, { error: { code: "INTERNAL" } }, requestId);
+
   const open = await kit.peek(scope);
-  if (open !== null) {
-    const matched = matchAssistantPauseAnswer(open, body.text);
-    if (matched.kind === "ambiguous") {
-      return json(
-        409,
-        {
-          status: "unresolvable",
-          reason: matched.hint,
-          window: await readAssistantChatWindow(kit, turns, scope),
-        },
-        requestId,
-      );
-    }
+  const matched =
+    open === null ? null : matchAssistantPauseAnswer(open, body.text);
+  if (open !== null && matched !== null && matched.kind !== "supersede") {
     if (matched.kind === "answer") {
       return await handleAssistantKitAnswer(c, runtime, {
         caller,
-        route: "chat",
+        askedText: body.text,
         body: {
           commandId: body.commandId,
           conversationId: body.conversationId,
@@ -157,28 +193,29 @@ export async function handleAssistantKitChat(
         },
       });
     }
+    if (!(await takeCommand(runtime, finishing))) {
+      return await settled();
+    }
+    const asked = await appendChatText(kit, scope, {
+      role: "user",
+      messageId: assistantTurnMessageId(
+        { kind: "answer", commandId: body.commandId },
+        "user",
+      ),
+      text: body.text,
+    });
+    if (asked !== "ok") {
+      return writeFailed(asked);
+    }
     if (matched.kind === "decline") {
-      if (!(await takeCommand(runtime, command))) {
-        return json(
-          200,
-          {
-            status: "ok",
-            window: await readAssistantChatWindow(kit, turns, scope),
-          },
-          requestId,
-        );
-      }
       const declined = await dropOpenPause(
         kit,
         scope,
         open.interactionId,
         assistantRejectedTrace,
       );
-      if (declined !== "dropped") {
-        await runtime.commands.release(command);
-        return declined === "wrong_owner"
-          ? goneResponse(requestId)
-          : json(500, { error: { code: "INTERNAL" } }, requestId);
+      if (declined !== "ok") {
+        return writeFailed(declined);
       }
       return json(
         200,
@@ -189,24 +226,19 @@ export async function handleAssistantKitChat(
         requestId,
       );
     }
-    const superseded = await dropOpenPause(
-      kit,
-      scope,
-      open.interactionId,
-      assistantSupersededTrace,
-    );
-    if (superseded !== "dropped") {
-      return superseded === "wrong_owner"
-        ? goneResponse(requestId)
-        : json(500, { error: { code: "INTERNAL" } }, requestId);
-    }
+    const hinted = await appendChatText(kit, scope, {
+      role: "assistant",
+      messageId: randomUUID(),
+      text: matched.hint,
+    });
+    return hinted === "ok" ? await settled() : writeFailed(hinted);
   }
 
+  if (await runtime.commands.spent(finishing)) {
+    return await settled();
+  }
   if (!(await takeCommand(runtime, command))) {
-    const replayed = await readAssistantChatWindow(kit, turns, scope);
-    return replayed.turn === null
-      ? json(200, { status: "ok", window: replayed }, requestId)
-      : json(202, { status: "accepted", window: replayed }, requestId);
+    return await accepted();
   }
 
   const budget = requireBudgetTicket(c);
@@ -218,6 +250,7 @@ export async function handleAssistantKitChat(
       conversationId: body.conversationId,
       commandId: body.commandId,
       text: body.text,
+      ...(open === null ? {} : { earned: [assistantSupersededTrace(open)] }),
       bind: caller.bind,
       sessionId: caller.sessionId,
       budgetHold: budget.handOverToAccept(),
@@ -286,6 +319,10 @@ export async function handleAssistantKitChat(
 
   if (result.outcome === "accepted") {
     budget.keep();
+  }
+
+  if (open !== null) {
+    await kit.abandon({ ...scope, interactionId: open.interactionId });
   }
 
   return await accepted();

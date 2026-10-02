@@ -18,6 +18,7 @@ import {
   ASSISTANT_KIT_CHAT_PATH,
   ASSISTANT_KIT_MESSAGES_PATH,
   assistantKitChatBodySchema,
+  chatAnswersOpenQuestion,
   handleAssistantKitChat,
   handleAssistantKitMessages,
 } from "./assistant-kit-chat.js";
@@ -118,7 +119,7 @@ export function createAssistantKitApp(
       runtime,
       spend,
       {
-        skipTurnLimit: false,
+        skipTurnLimit: (caller) => chatAnswersOpenQuestion(c, runtime, caller),
         turnKind: "chat",
         namesTurn: assistantKitChatBodySchema,
       },

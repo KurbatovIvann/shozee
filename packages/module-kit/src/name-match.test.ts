@@ -108,17 +108,20 @@ describe("matchNameTiers", () => {
     expect(matchNameTiers("Петренко", people)).toEqual([2]);
   });
 
-  it("prefers a word start over a substring of another name", () => {
-    expect(matchNameTiers("чук", ["Ковальчук", "Чук"])).toEqual([1]);
-  });
-
-  it("falls to substrings only when no name starts with the token", () => {
+  it("takes word starts and substrings in one tier, as the SQL ladder does", () => {
+    expect(matchNameTiers("чук", ["Ковальчук", "Чук"])).toEqual([0, 1]);
     expect(matchNameTiers("валь", ["Ковальчук", "Чук"])).toEqual([0]);
   });
 
   it("falls to a typo tier last, and only for a long enough token", () => {
     expect(matchNameTiers("коволенко", ["Коваленко"])).toEqual([0]);
     expect(matchNameTiers("лнко", ["Коваленко"])).toEqual([]);
+  });
+
+  it("never lets the typo tier widen a tier that already matched", () => {
+    expect(matchNameTiers("капуч", ["Капучино", "Капучіно лате"])).toEqual([
+      0, 1,
+    ]);
   });
 
   it("matches nothing for a query with no letters or digits", () => {

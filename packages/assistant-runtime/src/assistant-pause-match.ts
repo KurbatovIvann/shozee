@@ -12,8 +12,8 @@ import {
 export type AssistantPauseMatch =
   | { readonly kind: "answer"; readonly answer: unknown }
   | { readonly kind: "decline" }
-  | { readonly kind: "ambiguous"; readonly hint: string }
-  | { readonly kind: "none" };
+  | { readonly kind: "hint"; readonly hint: string }
+  | { readonly kind: "supersede" };
 
 const AFFIRMATIVE = new Set([
   "так",
@@ -74,16 +74,20 @@ const DIGITS_ONLY = /^\d+$/u;
 const HINT_OPTIONS_MAX = 5;
 const HINT_LABEL_MAX = 80;
 
-function matchConfirmation(spoken: readonly string[]): AssistantPauseMatch {
+const STRONG_HINT = "Це дія з наслідками — підтвердьте її кнопкою на картці.";
+const CHOICE_CONTROL_HINT =
+  "Оберіть один із варіантів: вкажіть його номер або назву.";
+
+type ControlWord = "affirmative" | "negative" | null;
+
+function controlWord(spoken: readonly string[]): ControlWord {
   if (spoken.length === 0) {
-    return { kind: "none" };
+    return null;
   }
   if (spoken.every((word) => AFFIRMATIVE.has(word))) {
-    return { kind: "answer", answer: { approved: true } };
+    return "affirmative";
   }
-  return spoken.every((word) => NEGATIVE.has(word))
-    ? { kind: "decline" }
-    : { kind: "none" };
+  return spoken.every((word) => NEGATIVE.has(word)) ? "negative" : null;
 }
 
 function spokenPosition(spoken: readonly string[]): number | null {
@@ -115,6 +119,10 @@ function ambiguousHint(labels: readonly string[]): string {
   return `Підходить кілька варіантів: ${shown}. Вкажіть номер або оберіть на картці.`;
 }
 
+function outOfRangeHint(count: number): string {
+  return `На картці варіанти з 1 до ${String(count)}. Вкажіть номер із цього переліку або назву.`;
+}
+
 function pickedOption(option: AssistantChoiceOption): AssistantPauseMatch {
   return { kind: "answer", answer: { optionId: option.optionId } };
 }
@@ -127,7 +135,9 @@ function matchChoice(
   const position = spokenPosition(spoken);
   if (position !== null) {
     const numbered = options[position - 1];
-    return numbered === undefined ? { kind: "none" } : pickedOption(numbered);
+    return numbered === undefined
+      ? { kind: "hint", hint: outOfRangeHint(options.length) }
+      : pickedOption(numbered);
   }
   const labels = options.map((option) => option.label);
   const exact = labels.flatMap((label, index) =>
@@ -137,11 +147,11 @@ function matchChoice(
   const first = hits[0];
   if (hits.length === 1 && first !== undefined) {
     const only = options[first];
-    return only === undefined ? { kind: "none" } : pickedOption(only);
+    return only === undefined ? { kind: "supersede" } : pickedOption(only);
   }
   return hits.length > 1
     ? {
-        kind: "ambiguous",
+        kind: "hint",
         hint: ambiguousHint(
           hits.flatMap((index) => {
             const label = labels[index];
@@ -149,7 +159,7 @@ function matchChoice(
           }),
         ),
       }
-    : { kind: "none" };
+    : { kind: "supersede" };
 }
 
 export function matchAssistantPauseAnswer(
@@ -158,10 +168,21 @@ export function matchAssistantPauseAnswer(
 ): AssistantPauseMatch {
   const interaction = assistantInteractionFromPause(pause);
   if (interaction === null) {
-    return { kind: "none" };
+    return { kind: "supersede" };
   }
-  const spoken = foldNameWords(text);
-  return interaction.kind === "confirmation"
-    ? matchConfirmation(spoken)
-    : matchChoice(interaction.options, text, spoken);
+  const control = controlWord(foldNameWords(text));
+  if (control === "negative") {
+    return { kind: "decline" };
+  }
+  if (interaction.kind === "confirmation") {
+    if (control === null) {
+      return { kind: "supersede" };
+    }
+    return interaction.level === "strong"
+      ? { kind: "hint", hint: STRONG_HINT }
+      : { kind: "answer", answer: { approved: true } };
+  }
+  return control === "affirmative"
+    ? { kind: "hint", hint: CHOICE_CONTROL_HINT }
+    : matchChoice(interaction.options, text, foldNameWords(text));
 }

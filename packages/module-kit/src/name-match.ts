@@ -239,7 +239,7 @@ function trigramSimilarity(left: string, right: string): number {
 }
 
 interface NameText {
-  readonly folded: string;
+  readonly lowered: string;
   readonly words: readonly string[];
 }
 
@@ -251,7 +251,7 @@ function wordStartHit(candidate: NameText, token: string): boolean {
 }
 
 function substringHit(candidate: NameText, token: string): boolean {
-  return isSubstringToken(token) && candidate.folded.includes(token);
+  return isSubstringToken(token) && candidate.lowered.includes(token);
 }
 
 function typoHit(candidate: NameText, token: string): boolean {
@@ -267,7 +267,6 @@ function typoHit(candidate: NameText, token: string): boolean {
 type NameTextTier = (candidate: NameText, token: string) => boolean;
 
 const NAME_TEXT_TIERS: readonly NameTextTier[] = [
-  wordStartHit,
   (candidate, token) =>
     wordStartHit(candidate, token) || substringHit(candidate, token),
   (candidate, token) =>
@@ -285,7 +284,7 @@ export function matchNameTiers(
     return [];
   }
   const candidates = names.map((name): NameText => ({
-    folded: foldSearchNameToken(collapseSearchWhitespace(name)),
+    lowered: name.toLocaleLowerCase("uk"),
     words: foldNameWords(name),
   }));
   for (const tier of NAME_TEXT_TIERS) {

@@ -1,7 +1,10 @@
 import type { AssistantPause } from "@showzy/validation/assistant-chat";
 import { describe, expect, it } from "vitest";
 
-import { matchAssistantPauseAnswer } from "./assistant-pause-match.js";
+import {
+  matchAssistantPauseAnswer,
+  type AssistantPauseMatch,
+} from "./assistant-pause-match.js";
 
 const INTERACTION = "11111111-1111-4111-8111-111111111111";
 
@@ -16,13 +19,20 @@ function pauseOf(kind: string, prompt: unknown): AssistantPause {
   };
 }
 
-function confirmation(): AssistantPause {
+function confirmation(level: "card" | "strong" = "card"): AssistantPause {
   return pauseOf("confirmation", {
     summary: "Оновити клієнта?",
     preview: { title: "Оновити клієнта", lines: [], notes: [] },
     also: [],
-    level: "card",
+    level,
   });
+}
+
+function hintOf(matched: AssistantPauseMatch): string {
+  if (matched.kind !== "hint") {
+    throw new Error(`expected a hint, got ${matched.kind}`);
+  }
+  return matched.hint;
 }
 
 function choice(labels: readonly string[]): AssistantPause {
@@ -58,8 +68,24 @@ describe("a typed answer to an open preview", () => {
 
   it("leaves anything else unmatched, including a yes with a condition", () => {
     for (const text of ["так, але зміни ціну", "другий", "створи замовлення"]) {
-      expect(matchAssistantPauseAnswer(confirmation(), text).kind).toBe("none");
+      expect(matchAssistantPauseAnswer(confirmation(), text).kind).toBe(
+        "supersede",
+      );
     }
+  });
+
+  it("never approves a strong preview from typed text", () => {
+    for (const text of ["так", "ок", "підтверджую"]) {
+      expect(
+        hintOf(matchAssistantPauseAnswer(confirmation("strong"), text)),
+      ).toContain("кнопкою");
+    }
+  });
+
+  it("still declines a strong preview from typed text", () => {
+    expect(matchAssistantPauseAnswer(confirmation("strong"), "ні")).toEqual({
+      kind: "decline",
+    });
   });
 });
 
@@ -85,8 +111,17 @@ describe("a typed answer to an open choice", () => {
     });
   });
 
-  it("leaves a number outside the card unmatched", () => {
-    expect(matchAssistantPauseAnswer(choice(PEOPLE), "9").kind).toBe("none");
+  it("keeps the card for a number outside it, with the range in the hint", () => {
+    expect(hintOf(matchAssistantPauseAnswer(choice(PEOPLE), "9"))).toContain(
+      "до 3",
+    );
+  });
+
+  it("never lets a control word pick a name that starts like one", () => {
+    const named = choice(["Ніна Сергіївна", "Оксана Петрівна"]);
+    expect(matchAssistantPauseAnswer(named, "ні")).toEqual({ kind: "decline" });
+    expect(matchAssistantPauseAnswer(named, "не")).toEqual({ kind: "decline" });
+    expect(hintOf(matchAssistantPauseAnswer(named, "ок"))).toContain("номер");
   });
 
   it("picks the unique name match", () => {
@@ -103,33 +138,31 @@ describe("a typed answer to an open choice", () => {
   });
 
   it("keeps the card open with a hint when several names match", () => {
-    const matched = matchAssistantPauseAnswer(
-      choice(["Савчук Іван", "Савчук Олена"]),
-      "Савчук",
+    const hint = hintOf(
+      matchAssistantPauseAnswer(
+        choice(["Савчук Іван", "Савчук Олена"]),
+        "Савчук",
+      ),
     );
-    expect(matched.kind).toBe("ambiguous");
-    if (matched.kind !== "ambiguous") {
-      throw new Error("expected an ambiguous match");
-    }
-    expect(matched.hint).toContain("Савчук Іван");
-    expect(matched.hint).toContain("Савчук Олена");
+    expect(hint).toContain("Савчук Іван");
+    expect(hint).toContain("Савчук Олена");
   });
 
   it("leaves unrelated text unmatched", () => {
     expect(
       matchAssistantPauseAnswer(choice(PEOPLE), "покажи замовлення за тиждень")
         .kind,
-    ).toBe("none");
+    ).toBe("supersede");
   });
 });
 
 describe("a pause this build cannot read", () => {
   it("matches nothing for an unknown kind or an unparsable prompt", () => {
     expect(matchAssistantPauseAnswer(pauseOf("mystery", {}), "так").kind).toBe(
-      "none",
+      "supersede",
     );
     expect(
       matchAssistantPauseAnswer(pauseOf("confirmation", {}), "так").kind,
-    ).toBe("none");
+    ).toBe("supersede");
   });
 });

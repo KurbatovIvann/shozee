@@ -54,6 +54,7 @@ import {
   type AssistantKitAppEnv,
   type AssistantKitBudgetTicket,
   type AssistantKitRuntime,
+  type Caller,
 } from "./assistant-kit-http.js";
 
 export interface AssistantKitBudget {
@@ -167,7 +168,9 @@ export async function withAssistantKitBudget(
   runtime: AssistantKitRuntime,
   budget: AssistantKitBudget,
   options: {
-    readonly skipTurnLimit: boolean;
+    readonly skipTurnLimit:
+      | boolean
+      | ((caller: Extract<Caller, { readonly ok: true }>) => Promise<boolean>);
     /** Which turn this route accepts. Part of the reservation's identity. */
     readonly turnKind: "chat" | "answer";
     /**
@@ -198,6 +201,10 @@ export async function withAssistantKitBudget(
     }),
   );
   const turn = await budgetTurnIdentity(c, options.turnKind, options.namesTurn);
+  const skipTurnLimit =
+    typeof options.skipTurnLimit === "boolean"
+      ? options.skipTurnLimit
+      : await options.skipTurnLimit(caller);
 
   let reservation;
   try {
@@ -207,7 +214,7 @@ export async function withAssistantKitBudget(
       userId: caller.userId,
       companyId,
       turn,
-      skipTurnLimit: options.skipTurnLimit,
+      skipTurnLimit,
       ...(budget.rateLimitStore === undefined
         ? {}
         : { rateLimitStore: budget.rateLimitStore }),
