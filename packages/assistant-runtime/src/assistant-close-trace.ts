@@ -227,3 +227,9 @@ export function assistantRejectedTrace(
     attempts: [],
   };
 }
+
+export function assistantSupersededTrace(
+  pause: Pick<PublicPause, "interactionId" | "kind">,
+): AssistantTracePart {
+  return { ...assistantRejectedTrace(pause), outcome: "superseded" };
+}

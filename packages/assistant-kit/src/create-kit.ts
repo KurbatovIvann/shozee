@@ -13,6 +13,7 @@ import type { z } from "zod";
 
 import type {
   ChatMessage,
+  ChatPart,
   ChatWindowMessage,
   MessageWrite,
 } from "./messages.js";
@@ -59,6 +60,17 @@ function pauseKey(conversationId: string): string {
  * many times in a row is not in a race, it is in a loop.
  */
 const MESSAGE_WRITE_ATTEMPTS = 4;
+
+function partsAlreadyHeld(
+  current: readonly ChatPart[],
+  incoming: readonly ChatPart[],
+): boolean {
+  if (incoming.length === 0 || incoming.some((part) => part.kind === "card")) {
+    return false;
+  }
+  const held = new Set(current.map((part) => JSON.stringify(part)));
+  return incoming.every((part) => held.has(JSON.stringify(part)));
+}
 
 /** One running turn per conversation, by the same means. */
 function turnKey(conversationId: string): string {
@@ -512,6 +524,12 @@ export function createAssistantKit<T extends AnyTypes>(
               throw new Error(
                 `message ${String(latest.seq)} of ${scope.conversationId} cannot be read, so it is not overwritten`,
               );
+            }
+            if (
+              write.kind === "append" &&
+              partsAlreadyHeld(current.data.parts, write.parts)
+            ) {
+              return { kind: "unchanged" };
             }
             const parts =
               write.kind === "append"

@@ -215,9 +215,14 @@ interface AcceptCommon {
 }
 
 export type AssistantTurnAcceptInput =
-  | (AcceptCommon & { readonly kind: "chat"; readonly text: string })
+  | (AcceptCommon & {
+      readonly kind: "chat";
+      readonly text: string;
+      readonly earned?: readonly ChatPart[];
+    })
   | (AcceptCommon & {
       readonly kind: "answer";
+      readonly text?: string;
       /** The parts the resolved action already earned, stored first. */
       readonly earned: readonly ChatPart[];
       readonly history: readonly ModelMessage[];
@@ -386,9 +391,12 @@ export function createPostgresAssistantTurnStore(
               { kind: dbKind, commandId: input.commandId },
               "assistant",
             );
+            const askedText =
+              input.kind === "continue" ? undefined : input.text;
             const userMessage =
-              input.kind === "chat"
-                ? (() => {
+              askedText === undefined
+                ? undefined
+                : (() => {
                     const messageId = assistantTurnMessageId(
                       { kind: dbKind, commandId: input.commandId },
                       "user",
@@ -398,7 +406,7 @@ export function createPostgresAssistantTurnStore(
                       role: "user",
                       createdAt,
                       parts: [
-                        { kind: "text", text: input.text, status: "complete" },
+                        { kind: "text", text: askedText, status: "complete" },
                       ],
                     };
                     return {
@@ -406,8 +414,7 @@ export function createPostgresAssistantTurnStore(
                       bind: input.bind,
                       message: asJsonObject(message),
                     };
-                  })()
-                : undefined;
+                  })();
 
             const accepted = await executeAction(deps.pipeline, {
               action: acceptTurn,
@@ -424,11 +431,11 @@ export function createPostgresAssistantTurnStore(
                     assistantTurnPlaceholder({
                       messageId: placeholderId,
                       createdAt,
-                      ...(input.kind === "answer"
-                        ? { earned: input.earned }
-                        : input.kind === "continue"
-                          ? { earned: [] }
-                          : {}),
+                      ...(input.kind === "continue"
+                        ? { earned: [] }
+                        : input.earned === undefined
+                          ? {}
+                          : { earned: input.earned }),
                     }),
                   ),
                 },
@@ -680,7 +687,8 @@ export function memoryAssistantTurnStore(
         "assistant",
       );
       let userMessageId: string | null = null;
-      if (input.kind === "chat") {
+      const askedText = input.kind === "continue" ? undefined : input.text;
+      if (askedText !== undefined) {
         userMessageId = assistantTurnMessageId(
           { kind: dbKind, commandId: input.commandId },
           "user",
@@ -689,7 +697,7 @@ export function memoryAssistantTurnStore(
           kind: "append",
           messageId: userMessageId,
           role: "user",
-          parts: [{ kind: "text", text: input.text, status: "complete" }],
+          parts: [{ kind: "text", text: askedText, status: "complete" }],
         });
         if (stored.kind === "wrong_owner") {
           await undoHistory();
@@ -712,11 +720,11 @@ export function memoryAssistantTurnStore(
         parts: assistantTurnPlaceholder({
           messageId: placeholderMessageId,
           createdAt,
-          ...(input.kind === "answer"
-            ? { earned: input.earned }
-            : input.kind === "continue"
-              ? { earned: [] }
-              : {}),
+          ...(input.kind === "continue"
+            ? { earned: [] }
+            : input.earned === undefined
+              ? {}
+              : { earned: input.earned }),
         }).parts,
       });
       if (placeholder.kind === "wrong_owner") {

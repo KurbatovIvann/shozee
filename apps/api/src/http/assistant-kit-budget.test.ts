@@ -244,6 +244,36 @@ async function post(
  * measuring. A budget test that accidentally sent a retry would read as a
  * ceiling holding when nothing had been charged.
  */
+async function openOneOptionCard(
+  kit: ReturnType<typeof harness>["kit"],
+  bind: string,
+) {
+  const opened = await kit.open({
+    conversationId: CONVERSATION,
+    bind,
+    kind: "choice",
+    prompt: {
+      subject: "two matches",
+      options: [{ optionId: "opt-a", label: "Олена" }],
+      optionsTruncated: false,
+    },
+    secret: {
+      byOption: { "opt-a": { kind: "record", entityId: "entity-a" } },
+      toolName: "orders_create",
+      input: {},
+      target: { kind: "customer", query: "олена" },
+    },
+    continuation: {
+      messages: [{ role: "user", content: "create one" }],
+      pausedToolCall: { id: "toolu_1" as never, name: "orders_create" },
+    },
+  });
+  if (opened.kind !== "opened") {
+    throw new Error("expected opened");
+  }
+  return opened.pause;
+}
+
 function chatBody(text = "покажи замовлення", commandId = randomUUID()) {
   return { commandId, conversationId: CONVERSATION, text };
 }
@@ -483,6 +513,81 @@ describe("the spend ceiling on the kit routes", () => {
     });
 
     expect(answered.status).not.toBe(429);
+  });
+
+  it("does not hold a send that answers an open card against the bucket", async () => {
+    const { app, kit, bind } = harness({
+      limits: { chatTurnsPerMinutePerUser: 1 },
+    });
+    const card = await openOneOptionCard(kit, bind);
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      commandId: randomUUID(),
+      conversationId: "55555555-5555-4555-8555-555555555555",
+      text: "щось інше",
+    });
+
+    const answering = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      commandId: randomUUID(),
+      conversationId: CONVERSATION,
+      text: "Олена",
+      answering: {
+        interactionId: card.interactionId,
+        revision: card.revision,
+      },
+    });
+
+    expect(answering.status).not.toBe(429);
+  });
+
+  it("holds a send that supersedes an open card against the bucket", async () => {
+    const { app, kit, bind } = harness({
+      limits: { chatTurnsPerMinutePerUser: 1 },
+    });
+    const card = await openOneOptionCard(kit, bind);
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      commandId: randomUUID(),
+      conversationId: "55555555-5555-4555-8555-555555555555",
+      text: "щось інше",
+    });
+
+    const superseding = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      commandId: randomUUID(),
+      conversationId: CONVERSATION,
+      text: "покажи замовлення за тиждень",
+      answering: {
+        interactionId: card.interactionId,
+        revision: card.revision,
+      },
+    });
+
+    expect(superseding.status).toBe(429);
+  });
+
+  it("holds a send the card can only answer with a hint against the bucket", async () => {
+    const { app, kit, bind } = harness({
+      limits: { chatTurnsPerMinutePerUser: 1 },
+    });
+    const card = await openOneOptionCard(kit, bind);
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      commandId: randomUUID(),
+      conversationId: "55555555-5555-4555-8555-555555555555",
+      text: "щось інше",
+    });
+
+    const hinted = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      commandId: randomUUID(),
+      conversationId: CONVERSATION,
+      text: "7",
+      answering: {
+        interactionId: card.interactionId,
+        revision: card.revision,
+      },
+    });
+
+    expect(hinted.status).toBe(429);
   });
 
   it("leaves the routes that cost nothing unguarded", async () => {

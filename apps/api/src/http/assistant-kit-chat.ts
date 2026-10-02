@@ -20,14 +20,25 @@
  * read back as stored, not recomposed from prompt state, so there is no second
  * derivation that can disagree with the live one.
  */
-import { chatCursorSchema } from "@showzy/assistant-kit";
+import { chatCursorSchema, type PublicPause } from "@showzy/assistant-kit";
 import {
+  assistantRejectedTrace,
+  assistantSupersededTrace,
+  assistantTurnMessageId,
+  matchAssistantPauseAnswer,
   readAssistantChatWindow,
   type AssistantChatWindowWithTurn,
 } from "@showzy/assistant-runtime";
 import type { Context } from "hono";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
+import {
+  appendChatText,
+  dropOpenPause,
+  handleAssistantKitAnswer,
+  type PauseWriteOutcome,
+} from "./assistant-kit-answer.js";
 import {
   canonicalCommandIds,
   goneResponse,
@@ -35,10 +46,61 @@ import {
   readJson,
   requireBudgetTicket,
   requireCaller,
+  requireOpenCardRead,
   takeCommand,
   type AssistantKitAppEnv,
+  type AssistantKitCardVerdict,
   type AssistantKitRuntime,
+  type Caller,
 } from "./assistant-kit-http.js";
+
+export async function readChatOpenCard(
+  c: Context<AssistantKitAppEnv>,
+  runtime: AssistantKitRuntime,
+  caller: Extract<Caller, { readonly ok: true }>,
+): Promise<boolean> {
+  const raw = await readJson(c);
+  const parsed = assistantKitChatBodySchema.safeParse(raw.ok ? raw.body : null);
+  if (!parsed.success) {
+    c.set("assistantOpenCard", null);
+    return false;
+  }
+  const body = canonicalCommandIds(parsed.data);
+  const { kit } = runtime.forCaller({
+    userId: caller.userId,
+    companySelector: caller.companySelector,
+    requestId: c.get("requestId"),
+    clientIp: c.get("clientIp"),
+  });
+  const pause = await kit.peek({
+    conversationId: body.conversationId,
+    bind: caller.bind,
+  });
+  const card =
+    pause === null
+      ? null
+      : { pause, verdict: verdictFor(pause, body.answering, body.text) };
+  c.set("assistantOpenCard", card);
+  return (
+    card !== null &&
+    (card.verdict.kind === "answer" || card.verdict.kind === "decline")
+  );
+}
+
+function verdictFor(
+  pause: PublicPause,
+  answering:
+    { readonly interactionId: string; readonly revision: number } | undefined,
+  text: string,
+): AssistantKitCardVerdict {
+  if (answering === undefined) {
+    return { kind: "supersede" };
+  }
+  return answering.interactionId.toLowerCase() !== pause.interactionId ||
+    answering.revision !== pause.revision
+    ? { kind: "stale" }
+    : matchAssistantPauseAnswer(pause, text);
+}
 
 export const ASSISTANT_KIT_CHAT_PATH = "/assistant/kit/chat";
 export const ASSISTANT_KIT_MESSAGES_PATH = "/assistant/kit/messages";
@@ -48,6 +110,12 @@ export const assistantKitChatBodySchema = z.strictObject({
   commandId: z.uuid(),
   conversationId: z.uuid(),
   text: z.string().min(1).max(4000),
+  answering: z
+    .strictObject({
+      interactionId: z.uuid(),
+      revision: z.number().int().positive(),
+    })
+    .optional(),
 });
 
 /**
@@ -116,30 +184,105 @@ export async function handleAssistantKitChat(
       requestId,
     );
 
-  // An unanswered question blocks a new job rather than being superseded by it.
-  // A visible limitation is better than a draft that silently disappears.
-  const open = await kit.peek(scope);
-  if (open !== null) {
-    return json(
-      409,
-      {
-        status: "interaction_open",
-        window: await readAssistantChatWindow(kit, turns, scope),
-      },
-      requestId,
-    );
-  }
-
-  // Past every refusal, so a command is only spent by a request that is about
-  // to do something. A retry of a send whose reply was lost lands here and is
-  // answered with the conversation as it now stands — including the order the
-  // first attempt's turn created (SHO-547).
   const command = {
     route: "chat" as const,
     bind: caller.bind,
     conversationId: body.conversationId,
     commandId: body.commandId,
   };
+
+  const finishing = { ...command, route: "answer" as const };
+  const settled = async (): Promise<Response> =>
+    json(
+      200,
+      {
+        status: "ok",
+        window: await readAssistantChatWindow(kit, turns, scope),
+      },
+      requestId,
+    );
+  const writeFailed = async (outcome: PauseWriteOutcome): Promise<Response> => {
+    await runtime.commands.release(finishing);
+    return outcome === "wrong_owner"
+      ? goneResponse(requestId)
+      : json(500, { error: { code: "INTERNAL" } }, requestId);
+  };
+
+  if (await runtime.commands.spent(command)) {
+    return await accepted();
+  }
+
+  const card = requireOpenCardRead(c);
+  const open = card === null ? null : card.pause;
+  const matched = card === null ? null : card.verdict;
+  if (matched !== null && matched.kind === "stale") {
+    return json(
+      409,
+      {
+        status: "stale",
+        window: await readAssistantChatWindow(kit, turns, scope),
+      },
+      requestId,
+    );
+  }
+  if (open !== null && matched !== null && matched.kind !== "supersede") {
+    if (matched.kind === "answer") {
+      return await handleAssistantKitAnswer(c, runtime, {
+        caller,
+        askedText: body.text,
+        body: {
+          commandId: body.commandId,
+          conversationId: body.conversationId,
+          interactionId: open.interactionId,
+          revision: open.revision,
+          answer: matched.answer,
+        },
+      });
+    }
+    if (!(await takeCommand(runtime, finishing))) {
+      return await settled();
+    }
+    const asked = await appendChatText(kit, scope, {
+      role: "user",
+      messageId: assistantTurnMessageId(
+        { kind: "answer", commandId: body.commandId },
+        "user",
+      ),
+      text: body.text,
+    });
+    if (asked !== "ok") {
+      return await writeFailed(asked);
+    }
+    if (matched.kind === "decline") {
+      const declined = await dropOpenPause(
+        kit,
+        scope,
+        open.interactionId,
+        assistantRejectedTrace,
+      );
+      if (declined !== "ok") {
+        return await writeFailed(declined);
+      }
+      return json(
+        200,
+        {
+          status: "abandoned",
+          window: await readAssistantChatWindow(kit, turns, scope),
+        },
+        requestId,
+      );
+    }
+    const hinted = await appendChatText(kit, scope, {
+      role: "assistant",
+      messageId: randomUUID(),
+      text: matched.hint,
+    });
+    return hinted === "ok" ? await settled() : await writeFailed(hinted);
+  }
+
+  if (await runtime.commands.spent(finishing)) {
+    return await settled();
+  }
   if (!(await takeCommand(runtime, command))) {
     return await accepted();
   }
@@ -153,6 +296,7 @@ export async function handleAssistantKitChat(
       conversationId: body.conversationId,
       commandId: body.commandId,
       text: body.text,
+      ...(open === null ? {} : { earned: [assistantSupersededTrace(open)] }),
       bind: caller.bind,
       sessionId: caller.sessionId,
       budgetHold: budget.handOverToAccept(),
@@ -221,6 +365,10 @@ export async function handleAssistantKitChat(
 
   if (result.outcome === "accepted") {
     budget.keep();
+  }
+
+  if (open !== null) {
+    await kit.abandon({ ...scope, interactionId: open.interactionId });
   }
 
   return await accepted();

@@ -241,6 +241,7 @@ function harness(options?: {
    * still go through the real kit.
    */
   readonly writeRefusal?: "conflict" | "unchanged";
+  readonly writeRefusalAt?: number;
 }): Harness {
   // The window the routes really run with, so a page here is a page on a phone.
   const deps = testDeps(assistantInteractions, {
@@ -248,16 +249,34 @@ function harness(options?: {
   });
   const kit = createAssistantKit(deps);
   const refusal = options?.writeRefusal;
+  const refusalAt = options?.writeRefusalAt;
+  let writesSeen = 0;
   const served: Kit =
-    refusal === undefined
-      ? kit
-      : {
+    refusal !== undefined
+      ? {
           ...kit,
           messages: {
             ...kit.messages,
             write: () => Promise.resolve({ kind: refusal }),
           },
-        };
+        }
+      : refusalAt === undefined
+        ? kit
+        : {
+            ...kit,
+            messages: {
+              ...kit.messages,
+              write: (
+                scope: Parameters<Kit["messages"]["write"]>[0],
+                write: Parameters<Kit["messages"]["write"]>[1],
+              ) => {
+                writesSeen += 1;
+                return writesSeen === refusalAt + 1
+                  ? Promise.resolve({ kind: "conflict" as const })
+                  : kit.messages.write(scope, write);
+              },
+            },
+          };
   const realHistory = memoryHistory();
   let historySavesToFail =
     options?.brokenHistorySave === "always"
@@ -421,6 +440,7 @@ async function openConfirmation(
   kit: Kit,
   bind: string,
   also: readonly ConfirmationAlsoSecret[] = [],
+  level: "card" | "strong" = "card",
 ) {
   const opened = await kit.open({
     conversationId: CONVERSATION,
@@ -430,7 +450,7 @@ async function openConfirmation(
       summary: "Оновити клієнта?",
       preview: preview("Оновити клієнта"),
       also: also.map((one) => one.preview),
-      level: "card",
+      level,
     },
     secret: {
       actionName: UPDATE_ACTION,
@@ -503,6 +523,20 @@ async function get(
 
 function chatBody(text = "покажи замовлення", commandId = COMMAND) {
   return { commandId, conversationId: CONVERSATION, text };
+}
+
+function answeringBody(
+  card: { readonly interactionId: string; readonly revision: number },
+  text: string,
+  commandId = COMMAND,
+) {
+  return {
+    ...chatBody(text, commandId),
+    answering: {
+      interactionId: card.interactionId,
+      revision: card.revision,
+    },
+  };
 }
 
 function answerBody(
@@ -648,17 +682,30 @@ describe("POST /assistant/kit/chat", () => {
     ).toBe(400);
   });
 
-  it("refuses a new turn while a question is unanswered", async () => {
+  it("supersedes an unanswered question the send does not answer", async () => {
     const { app, kit, bind } = harness();
     const pause = await openPause(kit, bind);
 
     const response = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as KitBody;
-    // Visible, not a silent supersede: the draft is still there.
-    expect(body.status).toBe("interaction_open");
-    expect(body.window?.openPause?.interactionId).toBe(pause.interactionId);
+    expect(body.status).toBe("accepted");
+    expect(body.window?.openPause).toBeNull();
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+    const traces = (body.window?.messages ?? []).flatMap((message) =>
+      message.parts.filter((part) => part.kind === "trace"),
+    );
+    expect(traces).toEqual([
+      {
+        kind: "trace",
+        interactionId: pause.interactionId,
+        interactionKind: "choice",
+        outcome: "superseded",
+        optionId: null,
+        attempts: [],
+      },
+    ]);
   });
 
   /**
@@ -2076,5 +2123,467 @@ describe("the trace a closed card leaves in the stored log", () => {
     expect(traces).toHaveLength(1);
     expect(traces[0]?.interactionId).toBe(pause.interactionId);
     expect(traces[0]?.outcome).toBe("done");
+  });
+});
+
+const PEOPLE = ["Савчук Іван", "Петренко Марія", "Коваленко Олег"];
+
+async function openNamedPause(
+  kit: Kit,
+  bind: string,
+  labels: readonly string[] = PEOPLE,
+) {
+  const opened = await kit.open({
+    conversationId: CONVERSATION,
+    bind,
+    kind: "choice",
+    prompt: {
+      subject: "кілька збігів",
+      options: labels.map((label, index) => ({
+        optionId: `opt-${String(index + 1)}`,
+        label,
+      })),
+      optionsTruncated: false,
+    },
+    secret: {
+      byOption: Object.fromEntries(
+        labels.map((_, index) => [
+          `opt-${String(index + 1)}`,
+          { kind: "record", entityId: `entity-${String(index + 1)}` },
+        ]),
+      ),
+      toolName: "orders_create",
+      input: { customerQuery: "савчук", items: [] },
+      target: { kind: "customer", query: "савчук" },
+    },
+    continuation: CONTINUATION,
+  });
+  if (opened.kind !== "opened") {
+    throw new Error(`expected opened: ${opened.kind}`);
+  }
+  return opened.pause;
+}
+
+function chosenEntity(): {
+  readonly resolveAnswer: ResolveAnswer;
+  readonly seen: { value: unknown };
+} {
+  const seen: { value: unknown } = { value: null };
+  return {
+    seen,
+    resolveAnswer: (args) => {
+      seen.value = args.value;
+      return OK_RESOLVE(args);
+    },
+  };
+}
+
+function entityIdOf(value: unknown): unknown {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)["entityId"]
+    : null;
+}
+
+describe("a send while a card is open answers it", () => {
+  it("«так» approves the open preview through the one confirm path", async () => {
+    const { app, kit, queue, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
+
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as KitBody;
+    expect(body.window?.openPause).toBeNull();
+    expect(traceOf(body.window?.messages.at(-1)?.parts ?? [])).toMatchObject({
+      interactionId: pause.interactionId,
+      interactionKind: "confirmation",
+      outcome: "done",
+    });
+    expect(queue.added).toEqual([
+      { kind: "answer", conversationId: CONVERSATION, commandId: COMMAND },
+    ]);
+  });
+
+  it("«ні» declines it exactly as the card's own cancel does", async () => {
+    const { app, kit, queue, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "ні"),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as KitBody;
+    expect(body.status).toBe("abandoned");
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+    expect(traceOf(body.window?.messages.at(-1)?.parts ?? [])).toMatchObject({
+      interactionId: pause.interactionId,
+      outcome: "rejected",
+    });
+    expect(queue.added).toEqual([]);
+  });
+
+  it("«другий» picks the option the card numbered second", async () => {
+    const chosen = chosenEntity();
+    const { app, kit, bind } = harness({
+      resolveAnswer: chosen.resolveAnswer,
+    });
+    const pause = await openNamedPause(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "другий"),
+    );
+
+    expect(response.status).toBe(202);
+    expect(entityIdOf(chosen.seen.value)).toBe("entity-2");
+  });
+
+  it("«Савчук» picks the unique name match", async () => {
+    const chosen = chosenEntity();
+    const { app, kit, bind } = harness({
+      resolveAnswer: chosen.resolveAnswer,
+    });
+    const pause = await openNamedPause(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "Савчук"),
+    );
+
+    expect(response.status).toBe(202);
+    expect(entityIdOf(chosen.seen.value)).toBe("entity-1");
+  });
+
+  it("keeps the card open with a hint when the name matches several", async () => {
+    const { app, kit, queue, bind } = harness();
+    const pause = await openNamedPause(kit, bind, [
+      "Савчук Іван",
+      "Савчук Олена",
+    ]);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "Савчук"),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as KitBody;
+    expect(body.status).toBe("ok");
+    expect(body.window?.openPause?.interactionId).toBe(pause.interactionId);
+    const said = (body.window?.messages ?? []).flatMap((message) =>
+      message.parts.flatMap((part) =>
+        part.kind === "text" && part.text !== undefined ? [part.text] : [],
+      ),
+    );
+    expect(said).toContain("Савчук");
+    expect(said.at(-1)).toContain("Савчук Олена");
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+    expect(queue.added).toEqual([]);
+  });
+
+  it("keeps the card and says the range for a number outside it", async () => {
+    const { app, kit, bind } = harness();
+    const pause = await openNamedPause(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "5"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+    const body = (await response.json()) as KitBody;
+    expect(JSON.stringify(body.window)).toContain("до 3");
+  });
+
+  it("never approves a strong preview, and still declines one", async () => {
+    const { app, kit, queue, bind } = harness();
+    const pause = await openConfirmation(kit, bind, [], "strong");
+
+    const typed = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
+    expect(typed.status).toBe(200);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+    expect(queue.added).toEqual([]);
+    expect(JSON.stringify((await typed.json()) as KitBody)).toContain(
+      "кнопкою",
+    );
+
+    const declined = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "ні", OTHER_COMMAND),
+    );
+    expect(((await declined.json()) as KitBody).status).toBe("abandoned");
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+  });
+
+  it("stores the person's words before the trace, for a reload", async () => {
+    const { app, kit, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+    await post(app, ASSISTANT_KIT_CHAT_PATH, answeringBody(pause, "так"));
+
+    const reload = await get(app, messagesPath());
+    const body = (await reload.json()) as KitBody;
+    const roles = (body.window?.messages ?? []).map((one) => one.role);
+    expect(roles).toEqual(["user", "assistant"]);
+    expect(body.window?.messages[0]?.parts[0]).toMatchObject({
+      kind: "text",
+      text: "так",
+    });
+  });
+
+  it("stores the person's words for a name that answered a choice", async () => {
+    const { app, kit, bind } = harness();
+    const pause = await openNamedPause(kit, bind);
+    await post(app, ASSISTANT_KIT_CHAT_PATH, answeringBody(pause, "Савчук"));
+
+    const reload = await get(app, messagesPath());
+    const body = (await reload.json()) as KitBody;
+    expect(body.window?.messages[0]).toMatchObject({ role: "user" });
+    expect(body.window?.messages[0]?.parts[0]).toMatchObject({
+      text: "Савчук",
+    });
+  });
+
+  it("does not drop a newly opened card when the send is a replay", async () => {
+    const { app, kit, bind } = harness();
+
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
+    expect(first.status).toBe(202);
+    const reopened = await openPause(kit, bind);
+
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody());
+
+    expect(retry.status).toBe(202);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.interactionId,
+    ).toBe(reopened.interactionId);
+  });
+
+  it("never answers a card its own turn opened after the send", async () => {
+    const { app, kit, queue, bind } = harness();
+
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ок"));
+    expect(first.status).toBe(202);
+    const asked = await openConfirmation(kit, bind);
+
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ок"));
+
+    expect(retry.status).toBe(202);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.interactionId,
+    ).toBe(asked.interactionId);
+    expect(queue.added).toHaveLength(1);
+  });
+
+  it("never picks an option on a card its own turn opened after the send", async () => {
+    const { app, kit, queue, bind } = harness();
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("3"));
+    const asked = await openNamedPause(kit, bind);
+
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("3"));
+
+    expect(retry.status).toBe(202);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.interactionId,
+    ).toBe(asked.interactionId);
+    expect(queue.added).toHaveLength(1);
+  });
+
+  it("gives the command back when the hint cannot be stored, and stores the words once", async () => {
+    const { app, kit, bind } = harness({ writeRefusalAt: 1 });
+    const pause = await openNamedPause(kit, bind, [
+      "Савчук Іван",
+      "Савчук Олена",
+    ]);
+
+    const failed = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "Савчук"),
+    );
+    expect(failed.status).toBe(500);
+
+    const retry = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "Савчук"),
+    );
+    expect(retry.status).toBe(200);
+    const stored = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    const said = stored.messages.flatMap((message) =>
+      message.parts.filter(
+        (part) => part.kind === "text" && part.text === "Савчук",
+      ),
+    );
+    expect(said).toHaveLength(1);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+  });
+
+  it("never answers a card the send did not name", async () => {
+    let resolved = 0;
+    const counted: ResolveAnswer = (args) => {
+      resolved += 1;
+      return OK_RESOLVE(args);
+    };
+    const { app, kit, queue, bind } = harness({
+      acceptThrows: "internal-after-commit",
+      resolveAnswer: counted,
+    });
+
+    await expect(
+      post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так")),
+    ).resolves.toMatchObject({ status: 500 });
+    await openConfirmation(kit, bind);
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("так"));
+
+    expect(resolved).toBe(0);
+    expect(JSON.stringify(queue.added)).not.toContain("answer");
+  });
+
+  it("never answers a card the send named at an older revision", async () => {
+    const { app, kit, queue, bind } = harness();
+    const first = await openNamedPause(kit, bind);
+    const revised = await kit.revise({
+      conversationId: CONVERSATION,
+      bind,
+      interactionId: first.interactionId,
+      next: {
+        kind: "choice",
+        prompt: {
+          subject: "уточнено",
+          options: [{ optionId: "opt-only", label: "Шевченко Тарас" }],
+          optionsTruncated: false,
+        },
+        secret: {
+          byOption: { "opt-only": { kind: "record", entityId: "entity-only" } },
+          toolName: "orders_create",
+          input: { customerQuery: "шевченко", items: [] },
+          target: { kind: "customer", query: "шевченко" },
+        },
+        continuation: CONTINUATION,
+      },
+    });
+    expect(revised.kind).toBe("opened");
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(first, "1"),
+    );
+
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as KitBody).status).toBe("stale");
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+    expect(queue.added).toEqual([]);
+  });
+
+  it("keeps the card when the accept the send would supersede it for fails", async () => {
+    const { app, kit, bind } = harness({ acceptThrows: "conflict" });
+    const pause = await openPause(kit, bind);
+
+    await expect(
+      post(app, ASSISTANT_KIT_CHAT_PATH, chatBody()),
+    ).resolves.toMatchObject({ status: 500 });
+
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.interactionId,
+    ).toBe(pause.interactionId);
+  });
+
+  it("resolves the option from the stored prompt, never from the send", async () => {
+    const chosen = chosenEntity();
+    const { app, kit, bind } = harness({
+      resolveAnswer: chosen.resolveAnswer,
+    });
+    const pause = await openNamedPause(kit, bind);
+    const revised = await kit.revise({
+      conversationId: CONVERSATION,
+      bind,
+      interactionId: pause.interactionId,
+      next: {
+        kind: "choice",
+        prompt: {
+          subject: "уточнено",
+          options: [{ optionId: "opt-only", label: "Шевченко Тарас" }],
+          optionsTruncated: false,
+        },
+        secret: {
+          byOption: { "opt-only": { kind: "record", entityId: "entity-only" } },
+          toolName: "orders_create",
+          input: { customerQuery: "шевченко", items: [] },
+          target: { kind: "customer", query: "шевченко" },
+        },
+        continuation: CONTINUATION,
+      },
+    });
+    if (revised.kind !== "opened") {
+      throw new Error(`expected opened: ${revised.kind}`);
+    }
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(revised.pause, "1"),
+    );
+
+    expect(response.status).toBe(202);
+    expect(entityIdOf(chosen.seen.value)).toBe("entity-only");
+  });
+
+  it("answers a repeated answering send with the window, and once", async () => {
+    const { app, kit, queue, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+    const send = answeringBody(pause, "так");
+
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, send);
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, send);
+
+    expect([first.status, retry.status]).toEqual([202, 200]);
+    expect(((await retry.json()) as KitBody).status).toBe("ok");
+    expect(queue.added).toHaveLength(1);
+  });
+
+  it("answers a repeated decline with the window, and accepts no turn", async () => {
+    const { app, kit, queue, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+    const send = answeringBody(pause, "ні");
+
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, send);
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, send);
+
+    expect([first.status, retry.status]).toEqual([200, 200]);
+    expect(((await retry.json()) as KitBody).status).toBe("ok");
+    expect(queue.added).toEqual([]);
   });
 });

@@ -15,9 +15,11 @@
  * request would now be released while the turn was still running, which is
  * worse than none.
  */
+import type { PublicPause } from "@showzy/assistant-kit";
 import type {
   AssistantKitCommandRef,
   AssistantKitCommands,
+  AssistantPauseMatch,
   AssistantRuntime,
   AssistantToolContext,
   StaffAssistantBudgetHold,
@@ -39,8 +41,29 @@ export type AssistantKitAppEnv = {
      * is accepted keeps it; anything else gives it back.
      */
     assistantBudget?: AssistantKitBudgetTicket;
+    assistantOpenCard?: AssistantKitOpenCard | null;
   };
 };
+
+export type AssistantKitCardVerdict =
+  AssistantPauseMatch | { readonly kind: "stale" };
+
+export interface AssistantKitOpenCard {
+  readonly pause: PublicPause;
+  readonly verdict: AssistantKitCardVerdict;
+}
+
+export function requireOpenCardRead(
+  c: Context<AssistantKitAppEnv>,
+): AssistantKitOpenCard | null {
+  const read = c.get("assistantOpenCard");
+  if (read === undefined) {
+    throw new CoreInvariantError(
+      "assistant send ran without an open-card read — mount wiring bug",
+    );
+  }
+  return read;
+}
 
 /**
  * One request's budget reservation, and the two things a handler may do with

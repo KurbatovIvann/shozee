@@ -83,7 +83,7 @@ import {
 import { createRedisAssistantKitPauseStore } from "./stores/assistant-kit-stores.js";
 import { createPostgresAssistantTurnStore } from "./stores/assistant-turn-store.js";
 
-type RedisLike = Pick<Redis, "eval" | "get" | "set" | "del">;
+type RedisLike = Pick<Redis, "eval" | "get" | "set" | "del" | "exists">;
 
 export interface CreateAssistantRuntimeOptions {
   readonly registry: ActionRegistry;
