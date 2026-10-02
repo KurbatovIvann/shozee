@@ -46,13 +46,14 @@ import {
   readJson,
   requireBudgetTicket,
   requireCaller,
+  requireOpenCardRead,
   takeCommand,
   type AssistantKitAppEnv,
   type AssistantKitRuntime,
   type Caller,
 } from "./assistant-kit-http.js";
 
-export async function chatAnswersOpenQuestion(
+export async function readChatOpenCard(
   c: Context<AssistantKitAppEnv>,
   runtime: AssistantKitRuntime,
   caller: Extract<Caller, { readonly ok: true }>,
@@ -60,21 +61,28 @@ export async function chatAnswersOpenQuestion(
   const raw = await readJson(c);
   const parsed = assistantKitChatBodySchema.safeParse(raw.ok ? raw.body : null);
   if (!parsed.success) {
+    c.set("assistantOpenCard", null);
     return false;
   }
+  const body = canonicalCommandIds(parsed.data);
   const { kit } = runtime.forCaller({
     userId: caller.userId,
     companySelector: caller.companySelector,
     requestId: c.get("requestId"),
     clientIp: c.get("clientIp"),
   });
-  const open = await kit.peek({
-    conversationId: parsed.data.conversationId.toLowerCase(),
+  const pause = await kit.peek({
+    conversationId: body.conversationId,
     bind: caller.bind,
   });
+  const card =
+    pause === null
+      ? null
+      : { pause, match: matchAssistantPauseAnswer(pause, body.text) };
+  c.set("assistantOpenCard", card);
   return (
-    open !== null &&
-    matchAssistantPauseAnswer(open, parsed.data.text).kind !== "supersede"
+    card !== null &&
+    (card.match.kind === "answer" || card.match.kind === "decline")
   );
 }
 
@@ -171,14 +179,20 @@ export async function handleAssistantKitChat(
       },
       requestId,
     );
-  const writeFailed = (outcome: PauseWriteOutcome): Response =>
-    outcome === "wrong_owner"
+  const writeFailed = async (outcome: PauseWriteOutcome): Promise<Response> => {
+    await runtime.commands.release(finishing);
+    return outcome === "wrong_owner"
       ? goneResponse(requestId)
       : json(500, { error: { code: "INTERNAL" } }, requestId);
+  };
 
-  const open = await kit.peek(scope);
-  const matched =
-    open === null ? null : matchAssistantPauseAnswer(open, body.text);
+  if (await runtime.commands.spent(command)) {
+    return await accepted();
+  }
+
+  const card = requireOpenCardRead(c);
+  const open = card === null ? null : card.pause;
+  const matched = card === null ? null : card.match;
   if (open !== null && matched !== null && matched.kind !== "supersede") {
     if (matched.kind === "answer") {
       return await handleAssistantKitAnswer(c, runtime, {
@@ -205,7 +219,7 @@ export async function handleAssistantKitChat(
       text: body.text,
     });
     if (asked !== "ok") {
-      return writeFailed(asked);
+      return await writeFailed(asked);
     }
     if (matched.kind === "decline") {
       const declined = await dropOpenPause(
@@ -215,7 +229,7 @@ export async function handleAssistantKitChat(
         assistantRejectedTrace,
       );
       if (declined !== "ok") {
-        return writeFailed(declined);
+        return await writeFailed(declined);
       }
       return json(
         200,
@@ -231,7 +245,7 @@ export async function handleAssistantKitChat(
       messageId: randomUUID(),
       text: matched.hint,
     });
-    return hinted === "ok" ? await settled() : writeFailed(hinted);
+    return hinted === "ok" ? await settled() : await writeFailed(hinted);
   }
 
   if (await runtime.commands.spent(finishing)) {

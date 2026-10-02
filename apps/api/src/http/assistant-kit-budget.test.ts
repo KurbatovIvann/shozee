@@ -555,6 +555,27 @@ describe("the spend ceiling on the kit routes", () => {
     expect(superseding.status).toBe(429);
   });
 
+  it("holds a send the card can only answer with a hint against the bucket", async () => {
+    const { app, kit, bind } = harness({
+      limits: { chatTurnsPerMinutePerUser: 1 },
+    });
+    await openOneOptionCard(kit, bind);
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      commandId: randomUUID(),
+      conversationId: "55555555-5555-4555-8555-555555555555",
+      text: "щось інше",
+    });
+
+    const hinted = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      commandId: randomUUID(),
+      conversationId: CONVERSATION,
+      text: "7",
+    });
+
+    expect(hinted.status).toBe(429);
+  });
+
   it("leaves the routes that cost nothing unguarded", async () => {
     const { app } = harness({ limits: { chatTurnsPerMinutePerUser: 0 } });
 

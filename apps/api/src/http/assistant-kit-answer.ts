@@ -63,7 +63,9 @@ function writeOutcome(stored: { readonly kind: string }): PauseWriteOutcome {
   if (stored.kind === "wrong_owner") {
     return "wrong_owner";
   }
-  return stored.kind === "written" ? "ok" : "failed";
+  return stored.kind === "written" || stored.kind === "unchanged"
+    ? "ok"
+    : "failed";
 }
 
 export async function appendChatText(

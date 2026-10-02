@@ -241,6 +241,7 @@ function harness(options?: {
    * still go through the real kit.
    */
   readonly writeRefusal?: "conflict" | "unchanged";
+  readonly firstWriteRefusal?: "conflict";
 }): Harness {
   // The window the routes really run with, so a page here is a page on a phone.
   const deps = testDeps(assistantInteractions, {
@@ -248,16 +249,35 @@ function harness(options?: {
   });
   const kit = createAssistantKit(deps);
   const refusal = options?.writeRefusal;
+  const firstRefusal = options?.firstWriteRefusal;
+  let refusalsLeft = firstRefusal === undefined ? 0 : 1;
   const served: Kit =
-    refusal === undefined
-      ? kit
-      : {
+    refusal !== undefined
+      ? {
           ...kit,
           messages: {
             ...kit.messages,
             write: () => Promise.resolve({ kind: refusal }),
           },
-        };
+        }
+      : firstRefusal === undefined
+        ? kit
+        : {
+            ...kit,
+            messages: {
+              ...kit.messages,
+              write: (
+                scope: Parameters<Kit["messages"]["write"]>[0],
+                write: Parameters<Kit["messages"]["write"]>[1],
+              ) => {
+                if (refusalsLeft > 0) {
+                  refusalsLeft -= 1;
+                  return Promise.resolve({ kind: firstRefusal });
+                }
+                return kit.messages.write(scope, write);
+              },
+            },
+          };
   const realHistory = memoryHistory();
   let historySavesToFail =
     options?.brokenHistorySave === "always"
@@ -2324,6 +2344,54 @@ describe("a send while a card is open answers it", () => {
     expect(
       (await kit.peek({ conversationId: CONVERSATION, bind }))?.interactionId,
     ).toBe(reopened.interactionId);
+  });
+
+  it("never answers a card its own turn opened after the send", async () => {
+    const { app, kit, queue, bind } = harness();
+
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ок"));
+    expect(first.status).toBe(202);
+    const asked = await openConfirmation(kit, bind);
+
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ок"));
+
+    expect(retry.status).toBe(202);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.interactionId,
+    ).toBe(asked.interactionId);
+    expect(queue.added).toHaveLength(1);
+  });
+
+  it("never picks an option on a card its own turn opened after the send", async () => {
+    const { app, kit, queue, bind } = harness();
+
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("3"));
+    const asked = await openNamedPause(kit, bind);
+
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("3"));
+
+    expect(retry.status).toBe(202);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.interactionId,
+    ).toBe(asked.interactionId);
+    expect(queue.added).toHaveLength(1);
+  });
+
+  it("gives the command back when the answering send cannot store the words", async () => {
+    const { app, kit, bind } = harness({ firstWriteRefusal: "conflict" });
+    await openConfirmation(kit, bind);
+
+    const failed = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ні"));
+    expect(failed.status).toBe(500);
+
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("ні"));
+    expect(((await retry.json()) as KitBody).status).toBe("abandoned");
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+    const stored = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    expect(JSON.stringify(stored.messages)).toContain("ні");
   });
 
   it("keeps the card when the accept the send would supersede it for fails", async () => {
