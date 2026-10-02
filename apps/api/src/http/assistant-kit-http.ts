@@ -41,6 +41,7 @@ export type AssistantKitAppEnv = {
      * is accepted keeps it; anything else gives it back.
      */
     assistantBudget?: AssistantKitBudgetTicket;
+    assistantVerifiedCompany?: string;
     assistantOpenCard?: AssistantKitOpenCard | null;
   };
 };
@@ -179,6 +180,18 @@ export async function takeCommand(
   command: AssistantKitCommandRef,
 ): Promise<boolean> {
   return await runtime.commands.take(command);
+}
+
+export function requireVerifiedCompany(
+  c: Context<AssistantKitAppEnv>,
+): string {
+  const companyId = c.get("assistantVerifiedCompany");
+  if (companyId === undefined) {
+    throw new CoreInvariantError(
+      "assistant route ran without a verified company — mount wiring bug",
+    );
+  }
+  return companyId;
 }
 
 /**

@@ -40,7 +40,10 @@ const acceptTurnMessageSchema = z.strictObject({
 });
 
 const acceptTurnHistorySchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("append"), message: z.unknown() }),
+  z.strictObject({
+    kind: z.literal("append"),
+    messages: z.array(z.unknown()).min(1),
+  }),
   z.strictObject({ kind: z.literal("replace"), history: z.unknown() }),
 ]);
 
@@ -80,12 +83,11 @@ export const acceptTurnInputSchema = z
   .refine(
     (input) =>
       input.kind === "chat"
-        ? input.history?.kind ===
-          (input.settled === true ? "replace" : "append")
+        ? input.history?.kind === "append"
         : input.history?.kind !== "append",
     {
       message:
-        "A chat accept appends the person's message to the history; a settled chat accept replaces it with the whole turn; an answer accept replaces the history, or omits it to continue from what is stored.",
+        "A chat accept appends to the history; an answer accept replaces it, or omits it to continue from what is stored.",
       path: ["history"],
     },
   )
@@ -107,14 +109,13 @@ export const acceptTurnInputSchema = z
       path: ["continuesCommandId"],
     },
   )
-  .refine((input) => input.settled !== true || input.kind === "chat", {
-    message: "Only a chat accept settles in the request.",
-    path: ["settled"],
-  })
   .refine(
-    (input) => input.settled !== true || input.continuesCommandId === undefined,
+    (input) =>
+      input.settled !== true ||
+      (input.kind === "chat" && input.continuesCommandId === undefined),
     {
-      message: "A settled turn runs nothing, so it continues nothing.",
+      message:
+        "Only a chat accept settles in the request, and a settled turn runs nothing, so it continues nothing.",
       path: ["settled"],
     },
   );
@@ -138,7 +139,7 @@ export const acceptTurnOutputSchema = z.discriminatedUnion("outcome", [
 
 export const acceptTurnContract = defineActionContract({
   name: "assistant.acceptTurn",
-  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Accept one turn of a conversation in a single transaction: the turn row, the person's message for a chat accept, the assistant's placeholder message, and the provider history the turn will run from commit together. A chat accept appends the person's message to the stored history; an answer accept replaces it whole; a continuation gives no instruction and runs from what is stored. The outcome is accepted when the command is new and no other turn holds the conversation; replayed, with nothing written, when this command was accepted before; busy, with nothing written, when another turn is queued or running. An accepted turn's run job is enqueued in the same transaction; replayed and busy enqueue nothing. A settled accept carries the finished assistant message in the placeholder: the turn is stored done with no session, and no run job is enqueued. A continuation names an interrupted turn's command, and a command that is not an interrupted turn of this conversation is a conflict. Message payloads are opaque and owned by the assistant runtime. A conversation belonging to another author or another company is not-found. Company id is never input.`,
+  description: `${STAFF_CONVERSATION_AUTHOR_INVARIANT} Accept one turn of a conversation in a single transaction: the turn row, the person's message for a chat accept, the assistant's placeholder message, and the provider history the turn will run from commit together. A chat accept appends the person's message to the stored history; an answer accept replaces it whole; a continuation gives no instruction and runs from what is stored. The outcome is accepted when the command is new and no other turn holds the conversation; replayed, with nothing written, when this command was accepted before; busy, with nothing written, when another turn is queued or running. An accepted turn's run job is enqueued in the same transaction; replayed and busy enqueue nothing. A settled accept carries the finished assistant message in the placeholder and the whole exchange in its append: the turn is stored done with no session, and no run job is enqueued. A continuation names an interrupted turn's command, and a command that is not an interrupted turn of this conversation is a conflict. Message payloads are opaque and owned by the assistant runtime. A conversation belonging to another author or another company is not-found. Company id is never input.`,
   principal: "staff",
   transport: "internal",
   input: acceptTurnInputSchema,

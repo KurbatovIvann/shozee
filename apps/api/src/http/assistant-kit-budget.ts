@@ -193,14 +193,14 @@ export async function withAssistantKitBudget(
   if (!caller.ok) {
     return caller.response;
   }
-  const companyId = canonicalizeAiBudgetCompanyId(
-    await runtime.staffCompany({
-      userId: caller.userId,
-      companySelector: caller.companySelector,
-      requestId,
-      clientIp: c.get("clientIp"),
-    }),
-  );
+  const verifiedCompany = await runtime.staffCompany({
+    userId: caller.userId,
+    companySelector: caller.companySelector,
+    requestId,
+    clientIp: c.get("clientIp"),
+  });
+  c.set("assistantVerifiedCompany", verifiedCompany);
+  const companyId = canonicalizeAiBudgetCompanyId(verifiedCompany);
   const turn = await budgetTurnIdentity(c, options.turnKind, options.namesTurn);
   const skipTurnLimit =
     typeof options.skipTurnLimit === "boolean"

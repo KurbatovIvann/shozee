@@ -13,20 +13,19 @@ import {
   emptyStaffAssistantBudgetHold,
   type StaffAssistantBudgetHold,
 } from "./assistant-budget-guard.js";
-import { assistantTurnEarnedCard } from "./stores/assistant-turn-store.js";
+import {
+  assistantAskedMessage,
+  assistantTurnEarnedCard,
+} from "./stores/assistant-turn-store.js";
 
 export const SHO_TOOL_CALL_PREFIX = "sho-";
 
-export const SHO_TURN_FALLBACK_REASONS = [
-  "engine_failed",
-  "not_planned",
-  "tool_unavailable",
-  "tool_failed",
-  "unsendable_tool_call_id",
-] as const;
-
 export type ShoTurnFallbackReason =
-  (typeof SHO_TURN_FALLBACK_REASONS)[number] | ShoFallbackReason;
+  | "engine_failed"
+  | "tool_unavailable"
+  | "tool_failed"
+  | "unsendable_tool_call_id"
+  | ShoFallbackReason;
 
 export interface ShoToolCall {
   readonly toolName: string;
@@ -50,7 +49,7 @@ export interface ShoEngine {
 export interface ShoTurnSettled {
   readonly kind: "settled";
   readonly parts: readonly ChatPart[];
-  readonly history: readonly ModelMessage[];
+  readonly appended: readonly ModelMessage[];
 }
 
 export interface ShoTurnAsk {
@@ -59,7 +58,7 @@ export interface ShoTurnAsk {
   readonly prompt: unknown;
   readonly secret: unknown;
   readonly continuation: Continuation;
-  readonly history: readonly ModelMessage[];
+  readonly appended: readonly ModelMessage[];
 }
 
 export interface ShoTurnFallback {
@@ -93,15 +92,11 @@ export function shoToolCallId(
   return `${SHO_TOOL_CALL_PREFIX}${String(seq)}-${sendable(toolName)}-${sendable(commandId)}`;
 }
 
-export function isShoToolCall(toolCallId: string): boolean {
-  return toolCallId.startsWith(SHO_TOOL_CALL_PREFIX);
-}
-
 function failed(reason: ShoTurnFallbackReason): ShoTurnFallback {
   return { kind: "fallback", reason };
 }
 
-function syntheticMessages(
+function conversationThrough(
   input: ShoTurnInput,
   toolCallId: string,
   call: ShoToolCall,
@@ -109,7 +104,7 @@ function syntheticMessages(
 ): ModelMessage[] {
   return [
     ...input.history,
-    { role: "user", content: input.text },
+    assistantAskedMessage(input.text),
     {
       role: "assistant",
       content: [
@@ -152,7 +147,12 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
     return failed("unsendable_tool_call_id");
   }
 
-  const execute = (await input.tools())[plan.toolName]?.execute;
+  let execute: ToolSet[string]["execute"];
+  try {
+    execute = (await input.tools())[plan.toolName]?.execute;
+  } catch {
+    return failed("tool_unavailable");
+  }
   if (execute === undefined) {
     return failed("tool_unavailable");
   }
@@ -172,7 +172,7 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
   }
 
   if (outcome.kind === "pause") {
-    const messages = syntheticMessages(input, toolCallId, plan, {
+    const messages = conversationThrough(input, toolCallId, plan, {
       status: "paused",
       reason: outcome.interaction,
     });
@@ -185,18 +185,19 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
         messages,
         pausedToolCall: { id: sendableId.id, name: plan.toolName },
       },
-      history: messages,
+      appended: messages.slice(input.history.length),
     };
   }
 
+  const whole = conversationThrough(input, toolCallId, plan, outcome.result);
   return {
     kind: "settled",
     parts: [
       ...assistantTurnEarnedCard(outcome.card),
       { kind: "text", text: plan.reply, status: "complete" },
     ],
-    history: [
-      ...syntheticMessages(input, toolCallId, plan, outcome.result),
+    appended: [
+      ...whole.slice(input.history.length),
       { role: "assistant", content: plan.reply },
     ],
   };

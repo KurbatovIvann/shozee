@@ -217,7 +217,7 @@ interface AcceptCommon {
 
 export interface AssistantSettledTurn {
   readonly parts: readonly ChatPart[];
-  readonly history: readonly ModelMessage[];
+  readonly appended: readonly ModelMessage[];
 }
 
 export type AssistantTurnAcceptInput =
@@ -240,19 +240,19 @@ export function assistantAskedMessage(text: string): ModelMessage {
 }
 
 type AcceptedHistoryInstruction =
-  | { readonly kind: "append"; readonly message: unknown }
+  | { readonly kind: "append"; readonly messages: unknown[] }
   | { readonly kind: "replace"; readonly history: unknown };
 
 function acceptedHistoryInstruction(
   input: AssistantTurnAcceptInput,
 ): AcceptedHistoryInstruction | undefined {
-  if (input.settled !== undefined) {
-    return { kind: "replace", history: asJson(input.settled.history) };
-  }
   if (input.kind === "chat") {
     return {
       kind: "append",
-      message: asJson(assistantAskedMessage(input.text)),
+      messages: (input.settled === undefined
+        ? [assistantAskedMessage(input.text)]
+        : input.settled.appended
+      ).map((message) => asJson(message)),
     };
   }
   if (input.kind === "answer") {

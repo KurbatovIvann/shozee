@@ -2,7 +2,6 @@ import type { ModelMessage, ToolSet } from "@showzy/assistant-kit";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  isShoToolCall,
   runShoTurn,
   shoFreeBudgetHold,
   shoToolCallId,
@@ -55,7 +54,7 @@ describe("shoToolCallId", () => {
     const id = shoToolCallId(COMMAND, 1, "customers.listCustomers");
     expect(id).toBe(`sho-1-customers_listCustomers-${COMMAND}`);
     expect(id).toMatch(/^[a-zA-Z0-9_-]+$/);
-    expect(isShoToolCall(id)).toBe(true);
+    expect(id.startsWith("sho-")).toBe(true);
   });
 });
 
@@ -98,8 +97,7 @@ describe("runShoTurn", () => {
     ]);
 
     const toolCallId = shoToolCallId(COMMAND, 1, TOOL);
-    expect(outcome.history).toEqual([
-      { role: "user", content: "привіт" },
+    expect(outcome.appended).toEqual([
       { role: "user", content: "покажи клієнтів" },
       {
         role: "assistant",
@@ -146,8 +144,8 @@ describe("runShoTurn", () => {
       id: shoToolCallId(COMMAND, 1, TOOL),
       name: TOOL,
     });
-    expect(outcome.continuation.messages).toEqual(outcome.history);
-    expect(outcome.history.at(-1)).toEqual({
+    expect(outcome.continuation.messages).toEqual(outcome.appended);
+    expect(outcome.appended.at(-1)).toEqual({
       role: "tool",
       content: [
         {

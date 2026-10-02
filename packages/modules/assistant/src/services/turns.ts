@@ -272,25 +272,19 @@ async function storeAcceptedHistory(
     });
     return;
   }
-  const row = (
-    await db
-      .select({ history: assistantChatState.history })
-      .from(assistantChatState)
-      .where(
-        and(
-          eq(assistantChatState.companyId, identity.companyId),
-          eq(assistantChatState.conversationId, identity.conversationId),
-        ),
-      )
-      .limit(1)
-  )[0];
-  const current = row?.history;
-  const stored: readonly unknown[] = Array.isArray(current) ? current : [];
-  await upsertChatState(db, {
-    companyId: identity.companyId,
-    conversationId: identity.conversationId,
-    history: [...stored, instruction.message],
-  });
+  await db
+    .insert(assistantChatState)
+    .values({
+      companyId: identity.companyId,
+      conversationId: identity.conversationId,
+      history: [...instruction.messages],
+    })
+    .onConflictDoUpdate({
+      target: [assistantChatState.companyId, assistantChatState.conversationId],
+      set: {
+        history: sql`case when jsonb_typeof(${assistantChatState.history}) = 'array' then ${assistantChatState.history} else '[]'::jsonb end || excluded.history`,
+      },
+    });
 }
 
 export async function acceptStaffTurn(env: {

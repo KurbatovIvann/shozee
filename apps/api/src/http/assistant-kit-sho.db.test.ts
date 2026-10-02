@@ -1,15 +1,27 @@
 import { randomUUID } from "node:crypto";
 
 import { testStaffProvider } from "@showzy/ai/test";
+import { createAssistantKit, type ModelMessage } from "@showzy/assistant-kit";
+import { memoryPauseStore } from "@showzy/assistant-kit/testing";
 import {
-  createPostgresAssistantTurnStore,
+  assistantInteractions,
+  ASSISTANT_CHAT_WINDOW_MESSAGES,
+  AssistantKitConversationGoneError,
+  createPostgresAssistantKitMessageLog,
   SHO_INVOCATION_CHANNEL,
+  type AssistantHistoryPort,
+  type AssistantKitCommandRef,
+  type AssistantKitFor,
   type ShoEngineFor,
   type ShoPlan,
   type ShoVerifiedMember,
 } from "@showzy/assistant-runtime";
-import type { ActionPipelineDeps, ActionTelemetry } from "@showzy/core";
-import { AssistantKitConversationGoneError } from "@showzy/assistant-runtime";
+import {
+  createConfirmationHook,
+  createInMemoryConfirmationStore,
+  type ActionPipelineDeps,
+  type ActionTelemetry,
+} from "@showzy/core";
 import {
   createTestKit,
   kitIdentities,
@@ -17,9 +29,11 @@ import {
 } from "@showzy/core/testing";
 import {
   assistantChatMessages,
+  assistantChatState,
   assistantConversations,
   assistantTurns,
 } from "@showzy/db/schema/assistant";
+import { companyCustomers } from "@showzy/db/schema/customers";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -30,6 +44,7 @@ import { shoChatTurn } from "./assistant-kit-sho.js";
 
 const LIST_TOOL = "customers_list_customers";
 const LIST_ACTION = "customers.listCustomers";
+const UPDATE_TOOL = "customers_updateCustomer";
 
 const READS_CUSTOMERS: ShoPlan = {
   kind: "call",
@@ -49,6 +64,18 @@ function memoryRedis() {
   } as never;
 }
 
+function withChallenges(): ActionPipelineDeps {
+  return {
+    ...kit.pipeline,
+    hooks: {
+      ...kit.pipeline.hooks,
+      confirmation: createConfirmationHook({
+        store: createInMemoryConfirmationStore(),
+      }),
+    },
+  };
+}
+
 function channelRecorder(): {
   readonly telemetry: ActionTelemetry;
   readonly spans: { action: string; channel: string }[];
@@ -65,11 +92,30 @@ function channelRecorder(): {
   };
 }
 
+function recordingCommands(): {
+  readonly commands: AssistantKitRuntime["commands"];
+  readonly released: AssistantKitCommandRef[];
+} {
+  const released: AssistantKitCommandRef[] = [];
+  return {
+    released,
+    commands: {
+      take: () => Promise.resolve(true),
+      spent: () => Promise.resolve(false),
+      release: (command) => {
+        released.push(command);
+        return Promise.resolve();
+      },
+    },
+  };
+}
+
 function runtimeWith(
   pipeline: ActionPipelineDeps,
   sho: ShoEngineFor | undefined,
+  commands?: AssistantKitRuntime["commands"],
 ): AssistantKitRuntime {
-  return createAssistantKitRuntime({
+  const runtime = createAssistantKitRuntime({
     auth: { api: { getSession: () => Promise.resolve(null) } },
     registry: createActionRegistry(),
     pipeline,
@@ -77,6 +123,25 @@ function runtimeWith(
     provider: testStaffProvider,
     redis: memoryRedis(),
     ...(sho === undefined ? {} : { sho }),
+  });
+  return commands === undefined ? runtime : { ...runtime, commands };
+}
+
+function kitWithMemoryPauses(
+  pipeline: ActionPipelineDeps,
+  caller: { userId: string; companySelector: string; requestId: string },
+): AssistantKitFor {
+  return createAssistantKit({
+    pauses: memoryPauseStore(),
+    messages: createPostgresAssistantKitMessageLog(
+      { pipeline },
+      caller,
+      undefined,
+    ),
+    clock: { now: () => new Date() },
+    ids: { uuid: () => randomUUID() },
+    interactions: assistantInteractions,
+    window: { messages: ASSISTANT_CHAT_WINDOW_MESSAGES },
   });
 }
 
@@ -101,67 +166,108 @@ async function newConversation(owner: {
   return id;
 }
 
+async function seedCustomer(name = "Катя Самбука"): Promise<string> {
+  const id = randomUUID();
+  await kit.db.runtime.db.insert(companyCustomers).values({
+    id,
+    companyId: kitIdentities.companies.a,
+    name,
+    email: `katya-${randomUUID()}@example.com`,
+    status: "active",
+  });
+  return id;
+}
+
+async function storedHistory(
+  conversationId: string,
+): Promise<readonly ModelMessage[]> {
+  const row = (
+    await kit.db.runtime.db
+      .select({ history: assistantChatState.history })
+      .from(assistantChatState)
+      .where(eq(assistantChatState.conversationId, conversationId))
+  )[0];
+  return Array.isArray(row?.history) ? (row.history as ModelMessage[]) : [];
+}
+
 function who(
   userId: string,
   companySelector: string,
+  bind = `${userId}:${companySelector}`,
 ): {
   readonly userId: string;
   readonly companySelector: string;
   readonly bind: string;
   readonly sessionId: string;
 } {
-  return {
-    userId,
-    companySelector,
-    bind: `${userId}:${companySelector}`,
-    sessionId: randomUUID(),
-  };
+  return { userId, companySelector, bind, sessionId: randomUUID() };
 }
 
 const anna = who(kitIdentities.users.anna, kitIdentities.companies.a);
 const boris = who(kitIdentities.users.boris, kitIdentities.companies.b);
 
-async function runTurn(
-  caller: ReturnType<typeof who>,
-  conversationId: string,
-  sho: ShoEngineFor | undefined,
-  pipeline: ActionPipelineDeps = kit.pipeline,
-): Promise<{
+interface TurnRun {
   readonly response: Response | null;
-  readonly requestId: string;
   readonly commandId: string;
-  readonly runtime: AssistantKitRuntime;
-}> {
-  const runtime = runtimeWith(pipeline, sho);
+  readonly kit: AssistantKitFor;
+  readonly scope: { conversationId: string; bind: string };
+}
+
+async function runTurn(options: {
+  readonly caller: ReturnType<typeof who>;
+  readonly conversationId: string;
+  readonly sho: ShoEngineFor | undefined;
+  readonly pipeline?: ActionPipelineDeps;
+  readonly runtime?: AssistantKitRuntime;
+  readonly history?: AssistantHistoryPort;
+}): Promise<TurnRun> {
+  const pipeline = options.pipeline ?? kit.pipeline;
+  const runtime = options.runtime ?? runtimeWith(pipeline, options.sho);
   const requestId = randomUUID();
   const commandId = randomUUID();
-  const scoped = runtime.forCaller({
-    userId: caller.userId,
-    companySelector: caller.companySelector,
+  const caller = {
+    userId: options.caller.userId,
+    companySelector: options.caller.companySelector,
     requestId,
     clientIp: "127.0.0.1",
-  });
+  };
+  const scoped = runtime.forCaller(caller);
+  const scope = {
+    conversationId: options.conversationId,
+    bind: options.caller.bind,
+  };
+  const paused = kitWithMemoryPauses(pipeline, caller);
   const response = await shoChatTurn({
     runtime,
-    caller,
-    kit: scoped.kit,
-    turns: createPostgresAssistantTurnStore(
-      { pipeline },
-      {
-        userId: caller.userId,
-        companySelector: caller.companySelector,
-        requestId,
-        clientIp: "127.0.0.1",
-      },
-    ),
-    history: scoped.history,
-    scope: { conversationId, bind: caller.bind },
+    caller: options.caller,
+    verifiedCompanyId:
+      options.caller === boris
+        ? kitIdentities.companies.b
+        : kitIdentities.companies.a,
+    kit: paused,
+    turns: scoped.turns,
+    history: options.history ?? scoped.history,
+    scope,
+    command: {
+      route: "chat",
+      bind: options.caller.bind,
+      conversationId: options.conversationId,
+      commandId,
+    },
     requestId,
     clientIp: "127.0.0.1",
     text: "покажи клієнтів",
-    commandId,
   });
-  return { response, requestId, commandId, runtime };
+  return { response, commandId, kit: paused, scope };
+}
+
+async function turnRow(commandId: string) {
+  return (
+    await kit.db.runtime.db
+      .select()
+      .from(assistantTurns)
+      .where(eq(assistantTurns.commandId, commandId))
+  )[0];
 }
 
 beforeAll(async () => {
@@ -181,12 +287,12 @@ describe("Шо-first chat accept", () => {
     const recorder = channelRecorder();
     const seen = vi.fn<(member: ShoVerifiedMember) => void>();
     kit.jobs.clear();
-    const { response, commandId } = await runTurn(
-      anna,
+    const { response, commandId } = await runTurn({
+      caller: anna,
       conversationId,
-      enginePlanning(() => Promise.resolve(READS_CUSTOMERS), seen),
-      { ...kit.pipeline, telemetry: recorder.telemetry },
-    );
+      sho: enginePlanning(() => Promise.resolve(READS_CUSTOMERS), seen),
+      pipeline: { ...kit.pipeline, telemetry: recorder.telemetry },
+    });
 
     expect(response?.status).toBe(200);
     expect(seen.mock.calls[0]?.[0]?.verifiedCompanyId).toBe(
@@ -198,11 +304,7 @@ describe("Шо-first chat accept", () => {
     });
     expect(kit.jobs.sent).toEqual([]);
 
-    const rows = await kit.db.runtime.db
-      .select()
-      .from(assistantTurns)
-      .where(eq(assistantTurns.commandId, commandId));
-    const turn = rows[0];
+    const turn = await turnRow(commandId);
     expect(turn?.status).toBe("done");
     expect(turn?.sessionId).toBeNull();
     expect(turn?.finishedAt).not.toBeNull();
@@ -240,15 +342,15 @@ describe("Шо-first chat accept", () => {
       ),
       enginePlanning(() => Promise.reject(new Error("sho is unreachable"))),
     ]) {
-      const { response, commandId } = await runTurn(anna, conversationId, sho);
+      const { response, commandId } = await runTurn({
+        caller: anna,
+        conversationId,
+        sho,
+      });
       expect(response).toBeNull();
-      await expect(
-        kit.db.runtime.db
-          .select()
-          .from(assistantTurns)
-          .where(eq(assistantTurns.commandId, commandId)),
-      ).resolves.toEqual([]);
+      expect(await turnRow(commandId)).toBeUndefined();
     }
+    expect(await storedHistory(conversationId)).toEqual([]);
   });
 
   it("cannot settle into another company's conversation", async () => {
@@ -258,11 +360,11 @@ describe("Шо-first chat accept", () => {
     });
 
     await expect(
-      runTurn(
-        boris,
-        annaConversation,
-        enginePlanning(() => Promise.resolve(READS_CUSTOMERS)),
-      ),
+      runTurn({
+        caller: boris,
+        conversationId: annaConversation,
+        sho: enginePlanning(() => Promise.resolve(READS_CUSTOMERS)),
+      }),
     ).rejects.toBeInstanceOf(AssistantKitConversationGoneError);
 
     await expect(
@@ -284,21 +386,13 @@ describe("Шо-first chat accept", () => {
       companyId: kitIdentities.companies.a,
       userId: kitIdentities.users.anna,
     });
-    const { runtime } = await runTurn(
-      anna,
+    await runTurn({
+      caller: anna,
       conversationId,
-      enginePlanning(() => Promise.resolve(READS_CUSTOMERS)),
-    );
+      sho: enginePlanning(() => Promise.resolve(READS_CUSTOMERS)),
+    });
 
-    const history = await runtime
-      .forCaller({
-        userId: anna.userId,
-        companySelector: anna.companySelector,
-        requestId: randomUUID(),
-        clientIp: "127.0.0.1",
-      })
-      .history.load({ conversationId, bind: anna.bind });
-
+    const history = await storedHistory(conversationId);
     expect(history.map((message) => message.role)).toEqual([
       "user",
       "assistant",
@@ -306,18 +400,201 @@ describe("Шо-first chat accept", () => {
       "assistant",
     ]);
     const call = history[1]?.content;
-    expect(Array.isArray(call) && call[0]).toMatchObject({
-      type: "tool-call",
-      toolName: LIST_TOOL,
-    });
     const toolCallId = Array.isArray(call)
-      ? (call[0] as { readonly toolCallId: string }).toolCallId
-      : "";
-    expect(toolCallId.startsWith("sho-")).toBe(true);
-    expect(toolCallId).toMatch(/^[a-zA-Z0-9_-]+$/);
+      ? (call[0] as { readonly toolCallId: string; readonly toolName: string })
+      : { toolCallId: "", toolName: "" };
+    expect(toolCallId.toolName).toBe(LIST_TOOL);
+    expect(toolCallId.toolCallId.startsWith("sho-")).toBe(true);
+    expect(toolCallId.toolCallId).toMatch(/^[a-zA-Z0-9_-]+$/);
     expect(history.at(-1)).toEqual({
       role: "assistant",
       content: "Ось клієнти.",
     });
+  });
+
+  it("appends its exchange, so a turn planned from a stale snapshot loses nothing", async () => {
+    const conversationId = await newConversation({
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+    });
+    const sho = enginePlanning(() => Promise.resolve(READS_CUSTOMERS));
+
+    await runTurn({ caller: anna, conversationId, sho });
+    const afterFirst = await storedHistory(conversationId);
+    expect(afterFirst).toHaveLength(4);
+
+    const stale: AssistantHistoryPort = {
+      load: () => Promise.resolve([]),
+      save: () => Promise.resolve(),
+    };
+    const { response } = await runTurn({
+      caller: anna,
+      conversationId,
+      sho,
+      history: stale,
+    });
+
+    expect(response?.status).toBe(200);
+    const afterSecond = await storedHistory(conversationId);
+    expect(afterSecond).toHaveLength(8);
+    expect(afterSecond.slice(0, 4)).toEqual(afterFirst);
+  });
+});
+
+describe("a Шо turn that has to ask", () => {
+  it("stops a planned write at the preview pause and executes nothing", async () => {
+    const conversationId = await newConversation({
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+    });
+    const customerId = await seedCustomer();
+    const pipeline = withChallenges();
+    const { response, commandId, kit: paused, scope } = await runTurn({
+      caller: anna,
+      conversationId,
+      pipeline,
+      sho: enginePlanning(() =>
+        Promise.resolve({
+          kind: "call",
+          toolName: UPDATE_TOOL,
+          input: { id: customerId, name: "Катерина Самбука" },
+          reply: "Перейменувати?",
+        }),
+      ),
+    });
+
+    expect(response?.status).toBe(200);
+    const turn = await turnRow(commandId);
+    expect(turn?.status).toBe("done");
+
+    const messages = await kit.db.runtime.db
+      .select()
+      .from(assistantChatMessages)
+      .where(eq(assistantChatMessages.conversationId, conversationId));
+    const placeholder = messages.find(
+      (row) => row.messageId === turn?.placeholderMessageId,
+    )?.message as { readonly parts: readonly { kind: string }[] } | undefined;
+    expect(placeholder?.parts.map((part) => part.kind)).toEqual([
+      "interaction",
+    ]);
+    expect(await paused.peek(scope)).not.toBeNull();
+
+    const stored = (
+      await kit.db.runtime.db
+        .select({ name: companyCustomers.name })
+        .from(companyCustomers)
+        .where(eq(companyCustomers.id, customerId))
+    )[0];
+    expect(stored?.name).toBe("Катя Самбука");
+  });
+
+  it("withdraws the question when another turn already holds the conversation", async () => {
+    const conversationId = await newConversation({
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+    });
+    const customerId = await seedCustomer();
+    const pipeline = withChallenges();
+    const runtime = runtimeWith(pipeline, undefined);
+    await runtime.forCaller({
+      userId: anna.userId,
+      companySelector: anna.companySelector,
+      requestId: randomUUID(),
+      clientIp: "127.0.0.1",
+    }).turns.accept({
+      kind: "chat",
+      conversationId,
+      commandId: randomUUID(),
+      text: "перше питання",
+      bind: anna.bind,
+      sessionId: randomUUID(),
+      budgetHold: {
+        companyReservedUsd: 0,
+        globalReservedUsd: 0,
+        kyivDate: "2026-09-11",
+      },
+      releaseUnusedHold: () => Promise.resolve(),
+    });
+
+    const {
+      response,
+      commandId,
+      kit: paused,
+      scope,
+    } = await runTurn({
+      caller: anna,
+      conversationId,
+      pipeline,
+      sho: enginePlanning(() =>
+        Promise.resolve({
+          kind: "call",
+          toolName: UPDATE_TOOL,
+          input: { id: customerId, name: "Катерина Самбука" },
+          reply: "Перейменувати?",
+        }),
+      ),
+    });
+
+    expect(response).toBeNull();
+    expect(await turnRow(commandId)).toBeUndefined();
+    expect(await paused.peek(scope)).toBeNull();
+  });
+
+  it("withdraws the question and gives the command back when the log has another owner", async () => {
+    const conversationId = await newConversation({
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+    });
+    const customerId = await seedCustomer();
+    await runTurn({
+      caller: anna,
+      conversationId,
+      sho: enginePlanning(() => Promise.resolve(READS_CUSTOMERS)),
+    });
+
+    const pipeline = withChallenges();
+    const recording = recordingCommands();
+    const intruder = who(
+      kitIdentities.users.anna,
+      kitIdentities.companies.a,
+      "another-owner-token",
+    );
+    const {
+      response,
+      commandId,
+      kit: paused,
+      scope,
+    } = await runTurn({
+      caller: intruder,
+      conversationId,
+      pipeline,
+      sho: enginePlanning(() =>
+        Promise.resolve({
+          kind: "call",
+          toolName: UPDATE_TOOL,
+          input: { id: customerId, name: "Катерина Самбука" },
+          reply: "Перейменувати?",
+        }),
+      ),
+      runtime: runtimeWith(
+        pipeline,
+        enginePlanning(() =>
+          Promise.resolve({
+            kind: "call",
+            toolName: UPDATE_TOOL,
+            input: { id: customerId, name: "Катерина Самбука" },
+            reply: "Перейменувати?",
+          }),
+        ),
+        recording.commands,
+      ),
+    });
+
+    expect(response?.status).toBe(410);
+    expect(await turnRow(commandId)).toBeUndefined();
+    expect(await paused.peek(scope)).toBeNull();
+    expect(recording.released.map((command) => command.commandId)).toEqual([
+      commandId,
+    ]);
   });
 });

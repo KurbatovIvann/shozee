@@ -47,6 +47,7 @@ import {
   readJson,
   requireBudgetTicket,
   requireCaller,
+  requireVerifiedCompany,
   requireOpenCardRead,
   takeCommand,
   type AssistantKitAppEnv,
@@ -304,14 +305,15 @@ export async function handleAssistantKitChat(
       ? await shoChatTurn({
           runtime,
           caller,
+          verifiedCompanyId: requireVerifiedCompany(c),
           kit,
           turns,
           history,
           scope,
+          command,
           requestId,
           clientIp: c.get("clientIp"),
           text: body.text,
-          commandId: body.commandId,
         })
       : null;
   if (answeredBySho !== null) {

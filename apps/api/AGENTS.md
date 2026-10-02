@@ -103,7 +103,9 @@ pnpm --filter @showzy/api auth:check      # CI: regenerate + fail on diff
   share dispatch ignores them. Share tokens are action input, not a
   header. Staff membership is verified by core.
 - Invocation `channel` is `"ui"` for `/rpc` and `/api/v1` REST aliases.
-  The assistant routes use `channel: "ai"` (security-operations §4).
+  The assistant routes use `channel: "ai"`, and `"sho-ai"` for the tool call
+  of a turn Шо closes inside the chat accept (security-operations §4,
+  SHO-760).
   There is no client-spoofable `x-channel` header.
 - Residual accepted risk: phone OTP codes are plaintext inside the TTL'd
   secondary store for their 5-minute lifetime (the phone plugin has no

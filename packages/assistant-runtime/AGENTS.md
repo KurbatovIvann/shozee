@@ -40,17 +40,22 @@ registry is injected into `createAssistantRuntime`; this package never imports
   means `ai`.
 - `sho-turn.ts`, `sho-engine.ts` — the Шо-first turn (ADR-0049, SHO-768).
   `runShoTurn` asks the engine for one `ShoPlan`, runs that plan through the
-  same staff tool façade, and comes back `settled` (card, reply and a synthetic
-  `sho-<seq>-<tool>-<command>` tool call in the history the next LLM turn
-  loads), `ask` (a pause with that call as its continuation), or `fallback`.
-  Every error, timeout and refusal is a fallback: the caller then runs today's
-  LLM accept unchanged. `createShoEngine` is the production engine over the
-  `@showzy/sho-protocol` client and the context source; it takes a
-  `ShoVerifiedMember`, built only from the company the staff context verified,
-  which is why a `PERMISSION_DENIED` from the three name-index reads is the
-  `unreadable` fallback here (a member holding none of those permissions) and
-  not a refusal. The `ShoPlanner` that turns a `ShoResult` into a plan is
-  injected (SHO-769).
+  same staff tool façade, and comes back `settled` (the card, the reply and a
+  synthetic `sho-<seq>-<tool>-<command>` tool call), `ask` (a pause with that
+  call as its continuation) or `fallback`. Every error, timeout and refusal is
+  a fallback: the caller then runs today's LLM accept unchanged.
+  - It returns the exchange as `appended`, never a whole history. A settled
+    accept appends, as every chat accept does, because a settled turn takes no
+    active-turn slot: two of them read the same snapshot, and a replace would
+    drop one exchange (`assistant.acceptTurn` concatenates the append in one
+    statement).
+  - `createShoEngine` is the production engine over the `@showzy/sho-protocol`
+    client and the context source. It takes a `ShoVerifiedMember`, built only
+    from the company the staff context verified — which is why a
+    `PERMISSION_DENIED` from the three name-index reads is the `unreadable`
+    fallback here (a member holding none of those permissions) and not a
+    refusal. The `ShoPlanner` that turns a `ShoResult` into a plan is injected
+    (SHO-769).
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never
