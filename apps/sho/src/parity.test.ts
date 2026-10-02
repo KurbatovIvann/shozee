@@ -183,11 +183,19 @@ describe("@showzy/sho-protocol and the Шо runtime agree on the context", () =>
     expect([...SHO_SALE_UNITS]).toEqual([...SALE_UNITS]);
   });
 
-  it("holds the same limits", () => {
+  it("holds the same limits under the same keys", () => {
     const runtimeLimits: Readonly<Record<string, number>> = CONTEXT_LIMITS;
     for (const [key, value] of Object.entries(SHO_CONTEXT_LIMITS)) {
       expect([key, value]).toEqual([key, runtimeLimits[key]]);
     }
+    expect(Object.keys(CONTEXT_LIMITS).toSorted()).toEqual(
+      [
+        ...Object.keys(SHO_CONTEXT_LIMITS),
+        "bytes",
+        "contact",
+        "contacts",
+      ].toSorted(),
+    );
     expect(SHO_MAX_CONTEXT_BYTES).toBe(CONTEXT_LIMITS.bytes);
   });
 

@@ -31,14 +31,23 @@ token's length.
 
 `GET /ready` answers `{"ready": false}` until the model has loaded; the other
 routes answer `503 busy` in that window. `PUT /contexts/{companyId}:{scopeHash}`
-stores a gzipped `{fingerprint, context}` and compiles it; `POST /parse`
-answers `409 context_required` on a cache miss or a fingerprint that does not
-match the stored one, and never parses against a stale context.
-`GET /contexts/{key}/phrases` returns product, variant and customer names for
-speech hints.
+stores a gzipped `{fingerprint, context}` and compiles it; a body over 8 MB is
+refused `413 context_limit` before it is read, a context over a list, count or
+length limit is `413 context_limit`, and a malformed one is `400 input`.
+`POST /parse` answers `409 context_required` on a cache miss or a fingerprint
+that does not match the stored one, and never parses against a stale context.
+`GET /contexts/{key}/phrases?companyId=…` returns product, variant and customer
+names for speech hints; the key must belong to the asking company.
 
-T6 runs one in-process runtime and serializes parses; SHO-766 replaces that
-with a `worker_threads` pool.
+T6 runs one in-process runtime and serializes parses behind a bounded queue
+(`SHO_QUEUE_LIMIT`, 8): a full queue is `503 busy`, and a run that outlives the
+request's `deadlineMs` answers `504 deadline` — the runtime itself is not
+interruptible until SHO-766 replaces this with a `worker_threads` pool, so a
+hung run still holds the single slot until it settles.
+
+Each `POST /parse` logs one line: `requestId`, `outcome`
+(`ok` | `input` | `context_required` | `busy` | `deadline`) and `ms`. Never the
+command text.
 
 ## Diagnosing a turn that fell through to the LLM
 
@@ -55,8 +64,11 @@ with a `worker_threads` pool.
   the context travel in plaintext on an untrusted network. Production requires
   TLS between `apps/api` and `apps/sho`, or a network where plaintext is
   acceptable, plus token rotation.
-- Replica count, capacity, and the compiled-context cache budget
-  (`SHO_CONTEXT_CACHE_BYTES`, 256 MB per process) are unsized.
+- The context cache budget (`SHO_CONTEXT_CACHE_UPLOAD_BYTES`, 256 MB per
+  process) counts **uploaded JSON bytes**, not the compiled index's heap
+  footprint — the runtime exposes no size for a `CompiledContext`, and the two
+  are not proportional. Sizing the cache against real memory needs that number
+  first. Replica count and capacity are unsized.
 - Deploy ordering between `apps/api` and `apps/sho`, model rollout and
   rollback, and warm-up on deploy.
 - The retraining store (ADR-0049/0051: dev and test companies only) lives in

@@ -14,6 +14,9 @@ const server = serve(
     fetch: createShoApp({
       serviceToken: config.serviceToken,
       engine: () => engine,
+      log: (entry) => {
+        logger.info(entry, "sho parse");
+      },
     }).fetch,
     port: config.port,
   },

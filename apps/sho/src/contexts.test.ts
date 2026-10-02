@@ -9,15 +9,12 @@ import {
 
 const compiled = compileContext({ version: 2 });
 
-const entry = (
-  fingerprint: string,
-  bytes: number,
-): Omit<ShoContextEntry, "compiled"> & { compiled: typeof compiled } => ({
+const entry = (fingerprint: string, uploadBytes: number): ShoContextEntry => ({
   fingerprint,
   revision: null,
   compiled,
   phrases: [],
-  bytes,
+  uploadBytes,
 });
 
 describe("compiled-context cache", () => {
@@ -27,26 +24,44 @@ describe("compiled-context cache", () => {
     expect(cache.fresh("a:1", "fp-1")?.fingerprint).toBe("fp-1");
     expect(cache.fresh("a:1", "fp-2")).toBeNull();
     expect(cache.fresh("b:1", "fp-1")).toBeNull();
-    expect(cache.held("a:1")?.fingerprint).toBe("fp-1");
+    expect(cache.read("a:1")?.fingerprint).toBe("fp-1");
   });
 
   it("replaces an entry under the same key without double counting bytes", () => {
     const cache = createShoContextCache();
     cache.put("a:1", entry("fp-1", 100));
     cache.put("a:1", entry("fp-2", 40));
-    expect(cache.bytes).toBe(40);
+    expect(cache.uploadBytes).toBe(40);
     expect(cache.keys).toEqual(["a:1"]);
     expect(cache.fresh("a:1", "fp-1")).toBeNull();
   });
 
-  it("evicts the least recently used key once over the byte budget", () => {
+  it("evicts the least recently used key once over the upload-byte budget", () => {
     const cache = createShoContextCache(100);
     cache.put("a:1", entry("fp", 40));
     cache.put("b:1", entry("fp", 40));
     expect(cache.fresh("a:1", "fp")).not.toBeNull();
     cache.put("c:1", entry("fp", 40));
     expect(cache.keys).toEqual(["a:1", "c:1"]);
-    expect(cache.bytes).toBe(80);
+    expect(cache.uploadBytes).toBe(80);
+  });
+
+  it("bumps recency on a plain read, not only on a fingerprint hit", () => {
+    const cache = createShoContextCache(100);
+    cache.put("a:1", entry("fp", 40));
+    cache.put("b:1", entry("fp", 40));
+    expect(cache.read("a:1")).not.toBeNull();
+    cache.put("c:1", entry("fp", 40));
+    expect(cache.keys).toEqual(["a:1", "c:1"]);
+  });
+
+  it("keeps a stale key hot, because its re-upload follows the 409", () => {
+    const cache = createShoContextCache(100);
+    cache.put("a:1", entry("fp-1", 40));
+    cache.put("b:1", entry("fp-1", 40));
+    expect(cache.fresh("a:1", "fp-2")).toBeNull();
+    cache.put("c:1", entry("fp-1", 40));
+    expect(cache.keys).toEqual(["a:1", "c:1"]);
   });
 
   it("keeps one entry even when it alone is over the budget", () => {

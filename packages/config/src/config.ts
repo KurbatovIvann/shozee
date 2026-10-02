@@ -396,9 +396,10 @@ export class ConfigValidationError extends Error {
  * Empty-string values are treated as unset so a templated `.env` with blank
  * optional lines behaves like a missing line.
  */
-export function loadServerConfig(
-  env: Record<string, string | undefined> = process.env,
-): ServerConfig {
+function parseEnv<Parsed>(
+  schema: z.ZodType<Parsed>,
+  env: Record<string, string | undefined>,
+): Parsed {
   const present: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     if (value !== undefined && value !== "") {
@@ -406,32 +407,31 @@ export function loadServerConfig(
     }
   }
 
-  const result = envSchema.safeParse(present);
-  if (!result.success) {
-    throw new ConfigValidationError(
-      result.error.issues.map((issue) => {
-        const key = String(issue.path[0] ?? "(root)");
-        // OTP transport rules live on the schema (`superRefine`). Keep those
-        // custom messages even when the key was omitted from `present`
-        // (`OTP_EMAIL_TRANSPORT` defaults to stub, then production rejects it).
-        if (issue.code === "custom") {
-          return { key, message: issue.message };
-        }
-        if (!(key in present)) {
-          return { key, message: "missing required value" };
-        }
-        if (SECRET_ENV_KEYS.has(key)) {
-          return {
-            key,
-            message: "invalid value (redacted — see .env.example)",
-          };
-        }
-        return { key, message: issue.message };
-      }),
-    );
+  const result = schema.safeParse(present);
+  if (result.success) {
+    return result.data;
   }
+  throw new ConfigValidationError(
+    result.error.issues.map((issue) => {
+      const key = String(issue.path[0] ?? "(root)");
+      if (issue.code === "custom") {
+        return { key, message: issue.message };
+      }
+      if (!(key in present)) {
+        return { key, message: "missing required value" };
+      }
+      if (SECRET_ENV_KEYS.has(key)) {
+        return { key, message: "invalid value (redacted — see .env.example)" };
+      }
+      return { key, message: issue.message };
+    }),
+  );
+}
 
-  const parsed = result.data;
+export function loadServerConfig(
+  env: Record<string, string | undefined> = process.env,
+): ServerConfig {
+  const parsed = parseEnv(envSchema, env);
   return {
     nodeEnv: parsed.NODE_ENV,
     database: {
@@ -482,36 +482,11 @@ const shoServiceEnvSchema = envObjectSchema
 export function loadShoServiceConfig(
   env: Record<string, string | undefined> = process.env,
 ): ShoServiceConfig {
-  const present: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (value !== undefined && value !== "") {
-      present[key] = value;
-    }
-  }
-
-  const result = shoServiceEnvSchema.safeParse(present);
-  if (!result.success) {
-    throw new ConfigValidationError(
-      result.error.issues.map((issue) => {
-        const key = String(issue.path[0] ?? "(root)");
-        if (!(key in present)) {
-          return { key, message: "missing required value" };
-        }
-        if (SECRET_ENV_KEYS.has(key)) {
-          return {
-            key,
-            message: "invalid value (redacted — see .env.example)",
-          };
-        }
-        return { key, message: issue.message };
-      }),
-    );
-  }
-
+  const parsed = parseEnv(shoServiceEnvSchema, env);
   return {
-    nodeEnv: result.data.NODE_ENV,
-    port: result.data.SHO_PORT,
-    serviceToken: result.data.SHO_SERVICE_TOKEN,
+    nodeEnv: parsed.NODE_ENV,
+    port: parsed.SHO_PORT,
+    serviceToken: parsed.SHO_SERVICE_TOKEN,
   };
 }
 

@@ -171,6 +171,11 @@ export const shoContextUploadSchema = z.object({
 export const SHO_PHRASES_LIMIT = 1000;
 export const shoPhrasesLimitSchema = z.int().min(1).max(SHO_PHRASES_LIMIT);
 
+export const shoPhrasesQuerySchema = z.object({
+  companyId: z.string().min(1),
+  limit: shoPhrasesLimitSchema,
+});
+
 export const shoPhrasesResponseSchema = z.object({
   phrases: z.array(z.string()),
 });

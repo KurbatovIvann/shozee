@@ -102,7 +102,7 @@ describe("apps/sho over the real Шо runtime", () => {
 
     const phrases = await app.fetch(
       new Request(
-        `http://sho.test/v1/contexts/${encodeURIComponent(KEY)}/phrases`,
+        `http://sho.test/v1/contexts/${encodeURIComponent(KEY)}/phrases?companyId=company1`,
         { headers: authorized },
       ),
     );

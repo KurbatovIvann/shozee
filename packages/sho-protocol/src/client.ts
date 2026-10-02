@@ -270,9 +270,13 @@ export function createShoClient(
       if (key === null || !shoPhrasesLimitSchema.safeParse(limit).success) {
         return fallback("input_rejected", null);
       }
+      const query = new URLSearchParams({
+        companyId: phrasesRequest.companyId,
+        limit: String(limit),
+      });
       const sent = await request(
         replicaFor(phrasesRequest.companyId),
-        `/v1/contexts/${encodeURIComponent(key)}/phrases?limit=${String(limit)}`,
+        `/v1/contexts/${encodeURIComponent(key)}/phrases?${query.toString()}`,
         { method: "GET" },
       );
       const outcome = decode(sent, shoPhrasesResponseSchema);

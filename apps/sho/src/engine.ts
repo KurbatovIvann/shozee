@@ -2,15 +2,15 @@ import {
   compileContext,
   loadSho,
   manifest,
-  parseContext,
   runtimeVersion,
   type CompiledContext,
+  type Context,
   type Now,
   type Previous,
   type ResultV2,
   type Sho,
 } from "@showzy/sho";
-import type { ShoContext, ShoModelStamp } from "@showzy/sho-protocol";
+import type { ShoModelStamp } from "@showzy/sho-protocol";
 
 export const SHO_LABELS_FILE = "labels.json";
 
@@ -26,7 +26,7 @@ export interface ShoEngine {
   readonly stamp: ShoModelStamp;
   readonly actions: readonly string[];
   readonly workers: number;
-  compile(context: ShoContext): CompiledContext;
+  compile(context: Context): CompiledContext;
   run(job: ShoParseJob): Promise<ResultV2>;
   dispose(): Promise<void>;
 }
@@ -42,7 +42,7 @@ export function shoEngineOf(sho: Sho): ShoEngine {
     },
     actions: sho.bundle.actions,
     workers: 1,
-    compile: (context) => compileContext(parseContext(context)),
+    compile: compileContext,
     run: ({ text, context, now, previous, debug }) =>
       sho.run({ raw: text }, { context, now, previous, debug }),
     dispose: () => sho.dispose(),
