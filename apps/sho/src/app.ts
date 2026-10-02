@@ -110,10 +110,7 @@ function createGate(): Gate {
     run(task) {
       depth += 1;
       const next = last.then(task, task);
-      last = next.then(
-        () => undefined,
-        () => undefined,
-      );
+      last = next.catch(() => undefined);
       return next.finally(() => {
         depth -= 1;
       });
@@ -123,26 +120,12 @@ function createGate(): Gate {
 
 const EXPIRED = Symbol("deadline");
 
-function expiresIn(ms: number): {
-  readonly reached: Promise<typeof EXPIRED>;
-  readonly cancel: () => void;
-} {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const reached = new Promise<typeof EXPIRED>((resolve) => {
-    timer = setTimeout(
-      () => {
-        resolve(EXPIRED);
-      },
-      Math.max(ms, 0),
-    );
+const expiresIn = (ms: number): Promise<typeof EXPIRED> =>
+  new Promise((resolve) => {
+    AbortSignal.timeout(Math.max(ms, 0)).addEventListener("abort", () => {
+      resolve(EXPIRED);
+    });
   });
-  return {
-    reached,
-    cancel: () => {
-      clearTimeout(timer);
-    },
-  };
-}
 
 export function createShoApp(options: ShoAppOptions): Hono {
   const cache = options.cache ?? createShoContextCache();
@@ -154,12 +137,8 @@ export function createShoApp(options: ShoAppOptions): Hono {
 
   app.use("/v1/*", async (c, next) => {
     if (c.req.path === SHO_HEALTH_PATH) return next();
-    if (
-      !serviceTokenMatches(
-        options.serviceToken,
-        bearerOf(c.req.header("authorization")),
-      )
-    ) {
+    const given = bearerOf(c.req.header("authorization"));
+    if (!serviceTokenMatches(options.serviceToken, given)) {
       return c.json({ error: "unauthorized" }, 401);
     }
     return next();
@@ -264,21 +243,13 @@ export function createShoApp(options: ShoAppOptions): Hono {
         log({ requestId: null, outcome: "input", ms: null });
         return problem(c, 400, "input");
       }
-      const {
-        requestId,
-        companyId,
-        contextKey,
-        fingerprint,
-        text,
-        now,
-        deadlineMs,
-        debug,
-      } = request.data;
-      if (!contextKey.startsWith(`${companyId}:`)) {
+      const asked = request.data;
+      const requestId = asked.requestId;
+      if (!asked.contextKey.startsWith(`${asked.companyId}:`)) {
         log({ requestId, outcome: "input", ms: null });
         return problem(c, 400, "input");
       }
-      const entry = cache.fresh(contextKey, fingerprint);
+      const entry = cache.fresh(asked.contextKey, asked.fingerprint);
       if (entry === null) {
         log({ requestId, outcome: "context_required", ms: null });
         return problem(c, 409, "context_required");
@@ -289,27 +260,23 @@ export function createShoApp(options: ShoAppOptions): Hono {
       }
 
       const previous: Previous | null =
-        request.data.previous === undefined
-          ? null
-          : parsePrevious(request.data.previous);
-
-      const deadlineAt = clock() + deadlineMs;
-      const expiry = expiresIn(deadlineMs);
+        asked.previous === undefined ? null : parsePrevious(asked.previous);
+      const deadlineAt = clock() + asked.deadlineMs;
       const running = gate.run(async () => {
         if (clock() >= deadlineAt) return EXPIRED;
         const started = clock();
         const result = await engine.run({
-          text,
+          text: asked.text,
           context: entry.compiled,
-          now,
+          now: asked.now,
           previous,
-          debug,
+          debug: asked.debug,
         });
         return { result, ms: clock() - started };
       });
       running.catch(() => undefined);
       try {
-        const ran = await Promise.race([running, expiry.reached]);
+        const ran = await Promise.race([running, expiresIn(asked.deadlineMs)]);
         if (ran === EXPIRED) {
           log({ requestId, outcome: "deadline", ms: null });
           return problem(c, 504, "deadline");
@@ -324,8 +291,6 @@ export function createShoApp(options: ShoAppOptions): Hono {
       } catch (cause) {
         log({ requestId, outcome: "input", ms: null });
         return refusal(c, cause);
-      } finally {
-        expiry.cancel();
       }
     },
   );
