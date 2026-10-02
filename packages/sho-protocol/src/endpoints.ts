@@ -69,6 +69,8 @@ export const shoPhrasesResponseSchema = z.object({
   phrases: z.array(z.string()),
 });
 
+export const shoHealthResponseSchema = z.object({ status: z.literal("ok") });
+
 export const shoReadyResponseSchema = z.object({ ready: z.boolean() });
 
 export const SHO_ERROR_CODES = [

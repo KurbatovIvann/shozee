@@ -7,6 +7,7 @@ import {
   shoContextKeySchema,
   shoContextUploadSchema,
   shoErrorResponseSchema,
+  shoHealthResponseSchema,
   shoModelResponseSchema,
   shoParseResponseSchema,
   shoPhrasesResponseSchema,
@@ -98,6 +99,7 @@ export interface ShoClient {
   readonly phrases: (request: ShoPhrasesRequest) => Promise<ShoPhrasesOutcome>;
   readonly model: (replicaUrl: string) => Promise<ShoModelOutcome>;
   readonly ready: (replicaUrl: string) => Promise<boolean>;
+  readonly health: (replicaUrl: string) => Promise<boolean>;
 }
 
 type TransportFailure = Extract<ShoFallbackReason, "timeout" | "unreachable">;
@@ -281,6 +283,15 @@ export function createShoClient(
         shoReadyResponseSchema,
       );
       return outcome.outcome === "ok" && outcome.value.ready;
+    },
+
+    async health(replicaUrl) {
+      if (!urls.includes(replicaUrl)) return false;
+      const outcome = decode(
+        await request(replicaUrl, "/v1/health", { method: "GET" }),
+        shoHealthResponseSchema,
+      );
+      return outcome.outcome === "ok";
     },
   };
 }

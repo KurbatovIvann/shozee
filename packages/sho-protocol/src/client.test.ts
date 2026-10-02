@@ -354,6 +354,13 @@ describe("createShoClient model, phrases and ready", () => {
     expect(await client(json({}, 503)).ready(urls[0] ?? "")).toBe(false);
   });
 
+  it("reports health only for a replica that answers ok", async () => {
+    expect(await client(json({ status: "ok" }, 200)).health(urls[0] ?? "")).toBe(
+      true,
+    );
+    expect(await client(json({}, 503)).health(urls[0] ?? "")).toBe(false);
+  });
+
   it("never sends the service token to a url outside the configuration", async () => {
     let called = false;
     const counting: ShoFetch = () => {
@@ -368,6 +375,7 @@ describe("createShoClient model, phrases and ready", () => {
       httpStatus: null,
     });
     expect(await client(counting).ready(foreign)).toBe(false);
+    expect(await client(counting).health(foreign)).toBe(false);
     expect(called).toBe(false);
   });
 });
