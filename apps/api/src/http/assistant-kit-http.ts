@@ -337,9 +337,11 @@ export type Caller =
       readonly bind: string;
     };
 
+export type AssistantKitAuth = AssistantKitRuntime["auth"];
+
 export async function requireCaller(
   c: Context<AssistantKitAppEnv>,
-  runtime: AssistantKitRuntime,
+  runtime: { readonly auth: AssistantKitAuth },
 ): Promise<Caller> {
   const requestId = c.get("requestId");
   const session = await runtime.auth.api.getSession({
