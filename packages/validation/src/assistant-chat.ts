@@ -60,6 +60,30 @@ export type AssistantChatTextStatus = z.output<
   typeof assistantChatTextStatusSchema
 >;
 
+export const ASSISTANT_TRACE_OUTCOMES = [
+  "done",
+  "rejected",
+  "failed",
+  "chosen",
+  "superseded",
+] as const;
+
+export const assistantTraceOutcomeSchema = z.enum(ASSISTANT_TRACE_OUTCOMES);
+
+export type AssistantTraceOutcome = z.output<
+  typeof assistantTraceOutcomeSchema
+>;
+
+export const assistantTraceAttemptSchema = z.strictObject({
+  action: z.string().min(1).max(128),
+  outcome: z.enum(["done", "failed"]),
+  recordId: z.string().min(1).max(128).nullable(),
+});
+
+export type AssistantTraceAttempt = z.output<
+  typeof assistantTraceAttemptSchema
+>;
+
 /**
  * `type` and `payload` are an `AssistantSurfaceData` from
  * `./assistant-surfaces`, written by the server when the card was produced.
@@ -86,9 +110,22 @@ export const assistantChatPartSchema = z.discriminatedUnion("kind", [
     revision: z.number().int().positive(),
     pause: assistantPauseSchema,
   }),
+  z.strictObject({
+    kind: z.literal("trace"),
+    interactionId: z.uuid(),
+    interactionKind: z.string().min(1).max(64),
+    outcome: assistantTraceOutcomeSchema,
+    optionId: z.string().min(1).max(128).nullable(),
+    attempts: z.array(assistantTraceAttemptSchema),
+  }),
 ]);
 
 export type AssistantChatPart = z.output<typeof assistantChatPartSchema>;
+
+export type AssistantChatTracePart = Extract<
+  AssistantChatPart,
+  { readonly kind: "trace" }
+>;
 
 /**
  * `revision` is the server's count of writes to this message: 1 when stored,

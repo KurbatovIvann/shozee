@@ -55,6 +55,8 @@ export type RevisePauseResult = OpenPauseResult | { readonly kind: "gone" };
  */
 export const TURN_LEASE_MS = 120_000;
 
+export const ABANDON_HOLD_MS = 10_000;
+
 export type BeginTurnResult =
   | {
       readonly kind: "began";
@@ -115,7 +117,10 @@ export interface AssistantKit<T extends AnyTypes> {
   ): Promise<RevisePauseResult>;
 
   abandon(
-    input: PauseScope & { readonly interactionId: string },
+    input: PauseScope & {
+      readonly interactionId: string;
+      readonly whileHeld?: (pause: PublicPause) => Promise<void>;
+    },
   ): Promise<{ readonly kind: "cancelled" | "gone" }>;
 
   /**

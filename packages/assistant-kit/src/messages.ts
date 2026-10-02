@@ -27,6 +27,20 @@ export const textPartStatusSchema = z.enum([
   "interrupted",
 ]);
 
+export const traceOutcomeSchema = z.enum([
+  "done",
+  "rejected",
+  "failed",
+  "chosen",
+  "superseded",
+]);
+
+export const traceAttemptSchema = z.strictObject({
+  action: z.string().min(1).max(128),
+  outcome: z.enum(["done", "failed"]),
+  recordId: z.string().min(1).max(128).nullable(),
+});
+
 /**
  * `complete` is set when generation finished, never to mark a write. A write
  * is proven by its surface part; a provider failure must not be able to
@@ -57,6 +71,14 @@ export const chatPartSchema = z.discriminatedUnion("kind", [
     interactionId: interactionIdSchema,
     revision: revisionSchema,
     pause: publicPauseSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("trace"),
+    interactionId: interactionIdSchema,
+    interactionKind: z.string().min(1).max(64),
+    outcome: traceOutcomeSchema,
+    optionId: z.string().min(1).max(128).nullable(),
+    attempts: z.array(traceAttemptSchema),
   }),
 ]);
 

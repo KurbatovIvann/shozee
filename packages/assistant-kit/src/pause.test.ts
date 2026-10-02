@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { fixtureInteractions, PICK_PROMPT, PICK_SECRET } from "./fixture.js";
 import { providerToolCallId } from "./ids.js";
 import { createInteractions } from "./interaction.js";
-import { createAssistantKit } from "./kit.js";
+import { ABANDON_HOLD_MS, createAssistantKit } from "./kit.js";
 import { publicPauseSchema } from "./pause.js";
 import { continuationOf, testDeps } from "./testing.js";
 
@@ -465,6 +465,130 @@ describe("an answer whose action had no effect is answerable again", () => {
       interactionId: pause.interactionId,
     });
     expect(released.kind).toBe("gone");
+  });
+});
+
+describe("a dropped question keeps its slot until the drop is finished", () => {
+  const scope = { conversationId: CONVERSATION, bind: BIND };
+
+  it("refuses a new question while the held work runs", async () => {
+    const { kit } = newKit();
+    const pause = await openPick(kit);
+    const whileHeld: string[] = [];
+
+    const dropped = await kit.abandon({
+      ...scope,
+      interactionId: pause.interactionId,
+      whileHeld: async () => {
+        whileHeld.push((await kit.open(openInput())).kind);
+      },
+    });
+
+    expect(whileHeld).toEqual(["already_open"]);
+    expect(dropped.kind).toBe("cancelled");
+    expect(await kit.peek(scope)).toBeNull();
+    expect((await kit.open(openInput())).kind).toBe("opened");
+  });
+
+  it("releases the slot when the held work throws", async () => {
+    const { kit } = newKit();
+    const pause = await openPick(kit);
+
+    await expect(
+      kit.abandon({
+        ...scope,
+        interactionId: pause.interactionId,
+        whileHeld: () => Promise.reject(new Error("trace write failed")),
+      }),
+    ).rejects.toThrow("trace write failed");
+
+    expect(await kit.peek(scope)).toBeNull();
+    expect((await kit.open(openInput())).kind).toBe("opened");
+  });
+
+  it("is gone for a question an answer already claimed", async () => {
+    const { kit } = newKit();
+    const pause = await openPick(kit);
+    const claimed = await kit.claim({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: pause.interactionId,
+      revision: pause.revision,
+      answer: CHOSE_A,
+    });
+    const whileHeld: string[] = [];
+
+    const dropped = await kit.abandon({
+      ...scope,
+      interactionId: pause.interactionId,
+      whileHeld: () => {
+        whileHeld.push("ran");
+        return Promise.resolve();
+      },
+    });
+
+    expect(claimed.kind).toBe("claimed");
+    expect(dropped.kind).toBe("gone");
+    expect(whileHeld).toEqual([]);
+  });
+
+  it("holds the slot for the drop, not for the question's whole ttl", async () => {
+    const { kit, deps } = newKit();
+    const pause = await openPick(kit);
+    const whileHeld: string[] = [];
+    let cancelledExpiry = "";
+
+    await kit.abandon({
+      ...scope,
+      interactionId: pause.interactionId,
+      whileHeld: async (cancelled) => {
+        cancelledExpiry = cancelled.expiresAt;
+        deps.clock.advance(ABANDON_HOLD_MS + 1);
+        whileHeld.push((await kit.open(openInput())).kind);
+      },
+    });
+
+    expect(Date.parse(cancelledExpiry)).toBeLessThan(
+      Date.parse(pause.expiresAt),
+    );
+    expect(whileHeld).toEqual(["opened"]);
+  });
+
+  it("answers a second drop with gone", async () => {
+    const { kit } = newKit();
+    const pause = await openPick(kit);
+
+    const first = await kit.abandon({
+      ...scope,
+      interactionId: pause.interactionId,
+    });
+    const second = await kit.abandon({
+      ...scope,
+      interactionId: pause.interactionId,
+    });
+
+    expect(first.kind).toBe("cancelled");
+    expect(second.kind).toBe("gone");
+  });
+
+  it("does not release the question that replaced the expired one", async () => {
+    const { kit, deps } = newKit();
+    const pause = await openPick(kit);
+    const whileHeld: string[] = [];
+
+    await kit.abandon({
+      ...scope,
+      interactionId: pause.interactionId,
+      whileHeld: async () => {
+        deps.clock.advance(24 * 60 * 60 * 1000);
+        whileHeld.push((await kit.open(openInput())).kind);
+      },
+    });
+
+    expect(whileHeld).toEqual(["opened"]);
+    const current = await kit.peek(scope);
+    expect(current).not.toBeNull();
+    expect(current?.interactionId).not.toBe(pause.interactionId);
   });
 });
 

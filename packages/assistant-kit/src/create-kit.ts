@@ -34,7 +34,7 @@ import type {
   OpenPauseResult,
   RevisePauseResult,
 } from "./kit.js";
-import { TURN_LEASE_MS } from "./kit.js";
+import { ABANDON_HOLD_MS, TURN_LEASE_MS } from "./kit.js";
 import type {
   ClaimResult,
   PauseRecord,
@@ -118,8 +118,14 @@ function isExpired(record: PauseRecord, now: Date): boolean {
   return now.getTime() >= Date.parse(record.expiresAt);
 }
 
-/** Claimed, cancelled or past its ttl — the record no longer holds the slot. */
 function holdsTheSlot(record: PauseRecord, now: Date): boolean {
+  return (
+    (record.status === "open" || record.status === "cancelled") &&
+    !isExpired(record, now)
+  );
+}
+
+function isAnswerable(record: PauseRecord, now: Date): boolean {
   return record.status === "open" && !isExpired(record, now);
 }
 
@@ -280,7 +286,7 @@ export function createAssistantKit<T extends AnyTypes>(
     async peek(scope) {
       const existing = await readRecord(scope);
       return existing !== null &&
-        holdsTheSlot(existing.record, deps.clock.now())
+        isAnswerable(existing.record, deps.clock.now())
         ? publicPauseOf(existing.record)
         : null;
     },
@@ -371,11 +377,32 @@ export function createAssistantKit<T extends AnyTypes>(
       const existing = await readRecord(input);
       if (
         existing === null ||
-        existing.record.interactionId !== input.interactionId
+        existing.record.interactionId !== input.interactionId ||
+        existing.record.status !== "open"
       ) {
         return { kind: "gone" };
       }
-      await deps.pauses.delete(pauseKey(input.conversationId));
+      const cancelled: PauseRecord = {
+        ...existing.record,
+        status: "cancelled",
+        expiresAt: new Date(
+          Math.min(
+            Date.parse(existing.record.expiresAt),
+            deps.clock.now().getTime() + ABANDON_HOLD_MS,
+          ),
+        ).toISOString(),
+      };
+      if (!(await put(cancelled, existing.raw))) {
+        return { kind: "gone" };
+      }
+      try {
+        await input.whileHeld?.(publicPauseOf(cancelled));
+      } finally {
+        await deps.pauses.deleteIfEquals(
+          pauseKey(input.conversationId),
+          JSON.stringify(cancelled),
+        );
+      }
       return { kind: "cancelled" };
     },
 
@@ -419,7 +446,7 @@ export function createAssistantKit<T extends AnyTypes>(
         });
         const existing = await readRecord(scope);
         const openPause =
-          existing !== null && holdsTheSlot(existing.record, deps.clock.now())
+          existing !== null && isAnswerable(existing.record, deps.clock.now())
             ? publicPauseOf(existing.record)
             : null;
 
