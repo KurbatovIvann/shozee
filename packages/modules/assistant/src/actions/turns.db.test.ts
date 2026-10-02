@@ -179,7 +179,7 @@ function chatAccept(
       message: textMessage(placeholderId, "assistant", "", "streaming"),
     },
     budgetHold: HOLD,
-    history: { kind: "append" as const, message: ASKED },
+    history: { kind: "append" as const, messages: [ASKED] },
   };
 }
 

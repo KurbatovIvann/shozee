@@ -100,7 +100,10 @@ async function endedTurn(from: "queued" | "running") {
         message: message(placeholderMessageId, "assistant"),
       },
       budgetHold: HOLD,
-      history: { kind: "append", message: { role: "user", content: "hi" } },
+      history: {
+        kind: "append",
+        messages: [{ role: "user", content: "hi" }],
+      },
     },
     {},
   );

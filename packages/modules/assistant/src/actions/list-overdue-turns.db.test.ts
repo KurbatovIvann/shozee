@@ -103,7 +103,10 @@ async function accepted(owner: Owner = anna): Promise<Turn> {
         message: message(placeholderMessageId, "assistant"),
       },
       budgetHold: HOLD,
-      history: { kind: "append", message: { role: "user", content: "hi" } },
+      history: {
+        kind: "append",
+        messages: [{ role: "user", content: "hi" }],
+      },
     },
     { userId: owner.userId, companyId: owner.companyId },
   );

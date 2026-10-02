@@ -117,7 +117,7 @@ async function accepted(
             },
             history: {
               kind: "append" as const,
-              message: { role: "user", content: "hi" },
+              messages: [{ role: "user", content: "hi" }],
             },
           }
         : { history: { kind: "replace" as const, history: [] } }),

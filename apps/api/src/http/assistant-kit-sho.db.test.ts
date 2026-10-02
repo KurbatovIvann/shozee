@@ -449,7 +449,12 @@ describe("a Шо turn that has to ask", () => {
     });
     const customerId = await seedCustomer();
     const pipeline = withChallenges();
-    const { response, commandId, kit: paused, scope } = await runTurn({
+    const {
+      response,
+      commandId,
+      kit: paused,
+      scope,
+    } = await runTurn({
       caller: anna,
       conversationId,
       pipeline,
@@ -496,25 +501,27 @@ describe("a Шо turn that has to ask", () => {
     const customerId = await seedCustomer();
     const pipeline = withChallenges();
     const runtime = runtimeWith(pipeline, undefined);
-    await runtime.forCaller({
-      userId: anna.userId,
-      companySelector: anna.companySelector,
-      requestId: randomUUID(),
-      clientIp: "127.0.0.1",
-    }).turns.accept({
-      kind: "chat",
-      conversationId,
-      commandId: randomUUID(),
-      text: "перше питання",
-      bind: anna.bind,
-      sessionId: randomUUID(),
-      budgetHold: {
-        companyReservedUsd: 0,
-        globalReservedUsd: 0,
-        kyivDate: "2026-09-11",
-      },
-      releaseUnusedHold: () => Promise.resolve(),
-    });
+    await runtime
+      .forCaller({
+        userId: anna.userId,
+        companySelector: anna.companySelector,
+        requestId: randomUUID(),
+        clientIp: "127.0.0.1",
+      })
+      .turns.accept({
+        kind: "chat",
+        conversationId,
+        commandId: randomUUID(),
+        text: "перше питання",
+        bind: anna.bind,
+        sessionId: randomUUID(),
+        budgetHold: {
+          companyReservedUsd: 0,
+          globalReservedUsd: 0,
+          kyivDate: "2026-09-11",
+        },
+        releaseUnusedHold: () => Promise.resolve(),
+      });
 
     const {
       response,

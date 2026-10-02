@@ -182,9 +182,7 @@ export async function takeCommand(
   return await runtime.commands.take(command);
 }
 
-export function requireVerifiedCompany(
-  c: Context<AssistantKitAppEnv>,
-): string {
+export function requireVerifiedCompany(c: Context<AssistantKitAppEnv>): string {
   const companyId = c.get("assistantVerifiedCompany");
   if (companyId === undefined) {
     throw new CoreInvariantError(

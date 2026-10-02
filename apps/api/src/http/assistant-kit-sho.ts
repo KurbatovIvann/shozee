@@ -70,10 +70,7 @@ export async function shoChatTurn(
   const now = new Date();
   let asked: string | null = null;
   const complain = (error: unknown, message: string): void => {
-    env.runtime.logger.warn(
-      { request_id: env.requestId, err: error },
-      message,
-    );
+    env.runtime.logger.warn({ request_id: env.requestId, err: error }, message);
   };
   const withdrawTheQuestionNoTurnTook = async (): Promise<void> => {
     const interactionId = asked;
@@ -84,7 +81,10 @@ export async function shoChatTurn(
     try {
       await env.kit.abandon({ ...env.scope, interactionId });
     } catch (error) {
-      complain(error, "a Шо question could not be withdrawn after no turn took it");
+      complain(
+        error,
+        "a Шо question could not be withdrawn after no turn took it",
+      );
     }
   };
   const giveTheCommandBack = async (): Promise<void> => {

@@ -62,7 +62,10 @@ function chatAccept(overrides: Record<string, unknown> = {}) {
       globalReservedMicroUsd: 100_000,
       kyivDate: "2026-09-11",
     },
-    history: { kind: "append", message: { role: "user", content: "привіт" } },
+    history: {
+      kind: "append",
+      messages: [{ role: "user", content: "привіт" }],
+    },
     ...overrides,
   };
 }
@@ -296,24 +299,31 @@ describe("the turn contracts", () => {
         chatAccept({
           kind: "answer",
           userMessage: undefined,
-          history: { kind: "append", message: {} },
+          history: { kind: "append", messages: [{}] },
         }),
       ).success,
     ).toBe(false);
   });
 
-  it("let a settled chat accept replace the history, and settle nothing else", () => {
+  it("let a settled chat accept append its whole exchange, and settle nothing else", () => {
     const settled = (over: Record<string, unknown> = {}) =>
       acceptTurnInputSchema.safeParse(
         chatAccept({
           settled: true,
-          history: { kind: "replace", history: [] },
+          history: {
+            kind: "append",
+            messages: [
+              { role: "user", content: "привіт" },
+              { role: "assistant", content: "ось" },
+            ],
+          },
           ...over,
         }),
       ).success;
 
     expect(settled()).toBe(true);
-    expect(settled({ history: { kind: "append", message: {} } })).toBe(false);
+    expect(settled({ history: { kind: "replace", history: [] } })).toBe(false);
+    expect(settled({ history: { kind: "append", messages: [] } })).toBe(false);
     expect(settled({ history: undefined })).toBe(false);
     expect(
       settled({ continuesCommandId: "44444444-4444-4444-8444-444444444444" }),
