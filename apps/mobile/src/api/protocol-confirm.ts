@@ -1,4 +1,4 @@
-import type { WireActionPreview } from "@showzy/contract";
+import type { WireActionPreview, WireActionRisk } from "@showzy/contract";
 
 import type { ConfirmDialogChoice } from "../components/ui/confirm-dialog";
 import { describeWireError } from "./errors";
@@ -6,6 +6,7 @@ import { describeWireError } from "./errors";
 export type ConfirmationChallengeView = {
   readonly challengeId: string;
   readonly summary: string;
+  readonly risk?: WireActionRisk;
   readonly preview?: WireActionPreview;
 };
 
@@ -31,6 +32,7 @@ export function confirmationChallenge(
   return {
     challengeId: view.challengeId,
     summary: view.summary ?? "",
+    ...(view.risk === undefined ? {} : { risk: view.risk }),
     ...(view.preview === undefined ? {} : { preview: view.preview }),
   };
 }

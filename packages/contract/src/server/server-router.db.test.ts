@@ -787,9 +787,15 @@ describe("confirmation meta", () => {
     expect(challengeError.code).toBe("CONFIRMATION_REQUIRED");
     expect(challengeError.status).toBe(409);
     const { challenge } = challengeError.data as {
-      challenge: { challengeId: string; summary: string; expiresAt: string };
+      challenge: {
+        challengeId: string;
+        summary: string;
+        expiresAt: string;
+        risk: string;
+      };
     };
     expect(challenge.summary).toBe('Irreversibly frobnicate "widget".');
+    expect(challenge.risk).toBe("high");
     expect(Date.parse(challenge.expiresAt)).toBeGreaterThan(Date.now());
 
     const second = clientFor(

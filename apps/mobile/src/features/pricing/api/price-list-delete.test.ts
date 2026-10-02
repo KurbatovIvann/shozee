@@ -56,6 +56,7 @@ describe("bindPriceListDeleteMutate", () => {
                         challengeId: "challenge-delete",
                         summary: "Delete?",
                         expiresAt: "2026-08-28T00:00:00.000Z",
+                        risk: "high",
                       },
                     },
                   }),

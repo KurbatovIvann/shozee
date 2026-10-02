@@ -6,6 +6,7 @@ import { onlineManager } from "@tanstack/react-query";
 import {
   isWireError,
   type WireActionPreview,
+  type WireActionRisk,
   type WireError,
   type WireErrorCode,
 } from "@showzy/contract";
@@ -96,6 +97,7 @@ export type WireErrorView = {
   readonly retryAfterSec?: number;
   readonly challengeId?: string;
   readonly summary?: string;
+  readonly risk?: WireActionRisk;
   readonly preview?: WireActionPreview;
 };
 
@@ -118,6 +120,7 @@ export type QueryFailure = {
   readonly retryAfterSec?: number;
   readonly challengeId?: string;
   readonly summary?: string;
+  readonly risk?: WireActionRisk;
   readonly preview?: WireActionPreview;
 };
 
@@ -144,6 +147,7 @@ export function describeQueryFailure(
         ? {}
         : { challengeId: view.challengeId }),
       ...(view.summary === undefined ? {} : { summary: view.summary }),
+      ...(view.risk === undefined ? {} : { risk: view.risk }),
       ...(view.preview === undefined ? {} : { preview: view.preview }),
     };
   }
@@ -202,6 +206,7 @@ function viewFor(error: WireError): WireErrorView {
         message: error.message,
         challengeId: error.data.challenge.challengeId,
         summary: error.data.challenge.summary,
+        risk: error.data.challenge.risk,
         ...(error.data.challenge.preview === undefined
           ? {}
           : { preview: error.data.challenge.preview }),

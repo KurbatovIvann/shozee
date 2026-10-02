@@ -63,7 +63,7 @@ function toServerProcedure(
           principal: toPrincipalInvocation(contract, context),
         });
       } catch (error) {
-        throw toWireError(error);
+        throw toWireError(error, contract.risk);
       }
     });
 }

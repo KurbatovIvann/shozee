@@ -140,6 +140,7 @@ describe("createContractMutationController", () => {
               challengeId: "challenge-9",
               summary: "Delete?",
               expiresAt: "2026-08-21T00:00:00.000Z",
+              risk: "high",
             },
           },
         }),

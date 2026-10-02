@@ -30,6 +30,7 @@ describe("describeQueryFailure", () => {
           challengeId: "challenge-1",
           summary: "Create this company",
           expiresAt: "2026-09-01T00:00:00.000Z",
+          risk: "high",
         },
       },
     };

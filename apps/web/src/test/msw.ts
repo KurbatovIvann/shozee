@@ -396,6 +396,7 @@ function allHandlers(sessionState: SessionState, rpcState: RpcState) {
               challengeId: rpcState.confirmationChallengeId,
               summary: "Create this company",
               expiresAt: new Date(Date.now() + 300_000).toISOString(),
+              risk: "high",
             },
           },
         );

@@ -45,7 +45,7 @@ export function ConfirmationCard(props: {
           <View style={styles.footerSlot}>
             <Button
               label={props.copy.confirm}
-              variant="primary"
+              variant={view.tone === "danger" ? "danger" : "primary"}
               fullWidth
               disabled={props.confirmDisabled}
               onPress={() => {
