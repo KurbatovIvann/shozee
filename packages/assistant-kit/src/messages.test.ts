@@ -329,6 +329,27 @@ describe("a write that repeats parts the message already holds", () => {
     expect(written).toEqual({ kind: "written" });
   });
 
+  it("stores a repeated trace twice, because only text repeats are the write's to collapse", async () => {
+    const kit = newKit();
+    const trace: ChatPart = {
+      kind: "trace",
+      interactionId: "22222222-2222-4222-8222-222222222222",
+      interactionKind: "confirm",
+      outcome: "rejected",
+      optionId: null,
+      attempts: [],
+    };
+
+    await held(kit, [trace]);
+    const again = await held(kit, [trace]);
+
+    expect(again).toEqual({ kind: "written" });
+    const message = (await kit.messages.read(SCOPE)).messages.find(
+      (candidate) => candidate.messageId === MESSAGE,
+    );
+    expect(message?.parts).toEqual([trace, trace]);
+  });
+
   it("writes a card again, so a card is never dropped as a repeat", async () => {
     const kit = newKit();
     await held(kit, [TEXT, card(1, 3)]);
