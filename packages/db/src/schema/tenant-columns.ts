@@ -77,6 +77,7 @@ export const RECORD_CREATED_VIA_CHANNELS = [
   "ai",
   "system",
   "webhook",
+  "sho-ai",
 ] as const;
 
 export type RecordCreatedVia = (typeof RECORD_CREATED_VIA_CHANNELS)[number];

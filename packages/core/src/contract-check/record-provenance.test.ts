@@ -183,14 +183,14 @@ function provenanceTable(name: string, owner: string): SchemaTableRef {
     checks: [
       {
         name: `${name}_created_via_check`,
-        sql: `${name}.created_via IN ('ui', 'ai', 'system', 'webhook')`,
+        sql: `${name}.created_via IN ('ui', 'ai', 'system', 'webhook', 'sho-ai')`,
       },
     ],
   };
 }
 
 const MISSING_COLUMNS_MESSAGE =
-  'action "widgets.create": AI-exposed create writes table "widgets", which must carry nullable created_via, vouched_by and vouched_at plus a created_via CHECK of ui|ai|system|webhook. Missing: created_via, vouched_by, vouched_at, widgets_created_via_check CHECK. Add them with recordProvenanceColumns() and recordProvenanceChecks("widgets", table) on the owning schema (SHO-464).';
+  'action "widgets.create": AI-exposed create writes table "widgets", which must carry nullable created_via, vouched_by and vouched_at plus a created_via CHECK of ui|ai|system|webhook|sho-ai. Missing: created_via, vouched_by, vouched_at, widgets_created_via_check CHECK. Add them with recordProvenanceColumns() and recordProvenanceChecks("widgets", table) on the owning schema (SHO-464).';
 
 describe("contract check — record provenance on AI-exposed creates (SHO-467)", () => {
   it("fails when an AI-exposed create table lacks provenance columns and names the action, table, and missing columns", () => {

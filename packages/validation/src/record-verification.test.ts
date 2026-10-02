@@ -40,6 +40,14 @@ const WEBHOOK_UNVOUCHED: RecordProvenance = {
   createdVia: "webhook",
   vouchedBy: null,
 };
+const SHO_AI_UNVOUCHED: RecordProvenance = {
+  createdVia: "sho-ai",
+  vouchedBy: null,
+};
+const SHO_AI_VOUCHED: RecordProvenance = {
+  createdVia: "sho-ai",
+  vouchedBy: "user-anna",
+};
 
 const sqlOps = {
   alwaysTrue: "TRUE",
@@ -91,6 +99,33 @@ describe("@showzy/validation/record-verification", () => {
 
   it("under strict, a vouched system row counts regardless of countedCreatedVia", () => {
     expect(recordCounts(SYSTEM_VOUCHED, "strict")).toBe(true);
+  });
+
+  it("treats sho-ai exactly like ai — counted under narrow, uncounted under strict without a vouch", () => {
+    expect(RECORD_VERIFICATION_POLICIES.strict.countedCreatedVia).not.toContain(
+      "sho-ai",
+    );
+    expect(recordCounts(SHO_AI_UNVOUCHED, "narrow")).toBe(true);
+    expect(recordCounts(SHO_AI_UNVOUCHED, "strict")).toBe(
+      recordCounts(AI_UNVOUCHED, "strict"),
+    );
+    expect(recordCounts(SHO_AI_UNVOUCHED, "strict")).toBe(false);
+    expect(recordCounts(SHO_AI_VOUCHED, "strict")).toBe(true);
+    expect(RECORD_VOUCH_ON_WRITE["sho-ai"]).toEqual(RECORD_VOUCH_ON_WRITE.ai);
+    expect(
+      vouchAfterWrite({
+        channel: "sho-ai",
+        writeKind: "content",
+        vouchedBy: "user-anna",
+      }),
+    ).toBe("clear");
+    expect(
+      vouchAfterWrite({
+        channel: "sho-ai",
+        writeKind: "state_transition",
+        vouchedBy: "user-anna",
+      }),
+    ).toBe("keep");
   });
 
   it("under strict, grandfathered created_via NULL still counts", () => {

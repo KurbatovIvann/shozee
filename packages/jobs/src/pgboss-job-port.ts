@@ -11,6 +11,7 @@ const actionChannels = {
   ai: "ai",
   system: "system",
   webhook: "webhook",
+  "sho-ai": "sho-ai",
 } as const satisfies { readonly [K in ActionChannel]: K };
 
 const jobActorTypes = {

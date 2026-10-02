@@ -32,7 +32,7 @@ export const abandonRequestInputSchema = z.object({
   actor: z.object({
     type: z.enum(["user", "system"]),
     id: z.string().min(1),
-    channel: z.enum(["ui", "ai", "system", "webhook"]),
+    channel: z.enum(["ui", "ai", "system", "webhook", "sho-ai"]),
   }),
   requestId: z.string().min(1),
   correlationId: z.string().min(1),

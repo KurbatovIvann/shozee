@@ -135,7 +135,7 @@ async function insertOrder(values: {
   currency?: "UAH" | "EUR";
   titleSnapshot?: string;
   quantityMilli?: bigint;
-  createdVia?: "ui" | "ai" | "system" | "webhook" | null;
+  createdVia?: "ui" | "ai" | "system" | "webhook" | "sho-ai" | null;
   vouchedBy?: string | null;
   vouchedAt?: Date | null;
 }): Promise<void> {

@@ -18,7 +18,7 @@ import type { EventDefinition, EventEmission } from "../events/define-event.js";
 import type { ImplementedAction } from "../implement-action.js";
 
 /** How the action was invoked; audit and logs carry it (blueprint §2.1-4). */
-export type ActionChannel = "ui" | "ai" | "system" | "webhook";
+export type ActionChannel = "ui" | "ai" | "system" | "webhook" | "sho-ai";
 
 /**
  * The accountable identity of an invocation. `anonymous` exists only for

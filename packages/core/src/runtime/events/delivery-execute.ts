@@ -587,6 +587,7 @@ function buildEnvelope(event: OutboxEventRow): EventEnvelope {
         "ai",
         "system",
         "webhook",
+        "sho-ai",
       ] as const),
     },
     requestId: event.requestId,

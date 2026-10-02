@@ -194,7 +194,7 @@ timestamptz` · `company_id uuid NULL` (null only for declared global system
 events) · `aggregate_type text` · `aggregate_id uuid` ·
 `aggregate_sequence bigint` · `actor_type text CHECK (user|system)` ·
 `actor_id text` ·
-`channel text CHECK (ui|ai|system|webhook)` · `request_id text` ·
+`channel text CHECK (ui|ai|system|webhook|sho-ai)` · `request_id text` ·
 `correlation_id text` · `causation_id text` · `payload jsonb` ·
 `claimed_at / claimed_by` (SKIP LOCKED claim columns) · `dispatched_at`.
 Indexes: `(dispatched_at) WHERE dispatched_at IS NULL`,

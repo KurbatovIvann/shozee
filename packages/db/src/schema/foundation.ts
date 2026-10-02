@@ -79,7 +79,7 @@ export const domainEvents = pgTable(
     ),
     check(
       "domain_events_channel_check",
-      sql`${table.channel} IN ('ui', 'ai', 'system', 'webhook')`,
+      sql`${table.channel} IN ('ui', 'ai', 'system', 'webhook', 'sho-ai')`,
     ),
   ],
 );
@@ -261,7 +261,7 @@ export const auditLog = pgTable(
     ),
     check(
       "audit_log_channel_check",
-      sql`${table.channel} IN ('ui', 'ai', 'system', 'webhook')`,
+      sql`${table.channel} IN ('ui', 'ai', 'system', 'webhook', 'sho-ai')`,
     ),
   ],
 );
