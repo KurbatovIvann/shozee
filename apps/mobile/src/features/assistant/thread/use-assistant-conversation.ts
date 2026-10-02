@@ -162,6 +162,7 @@ function stillUnknown(kind: AssistantKitFailureKind): boolean {
     case "stale":
     case "unresolvable":
     case "action_failed":
+    case "answer_in_flight":
     case "expired":
     case "rejected":
     case "unauthorized":
@@ -194,6 +195,7 @@ function draftReturns(kind: AssistantKitFailureKind): boolean {
     case "stale":
     case "unresolvable":
     case "action_failed":
+    case "answer_in_flight":
     case "expired":
     case "rejected":
     case "unauthorized":

@@ -48,6 +48,7 @@ export function bannerKindFor(
     // and that change is the explanation — a banner on top reads as a fault.
     case "stale":
     case "unresolvable":
+    case "answer_in_flight":
       return null;
     case "interaction_open":
       return "questionOpen";

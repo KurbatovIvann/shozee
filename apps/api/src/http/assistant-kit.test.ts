@@ -243,6 +243,10 @@ function harness(options?: {
    */
   readonly writeRefusal?: "conflict" | "unchanged";
   readonly writeRefusalAt?: number;
+  readonly messageWriteGate?: {
+    readonly entered: () => void;
+    readonly open: Promise<unknown>;
+  };
   readonly ids?: Ids;
 }): Harness {
   // The window the routes really run with, so a page here is a page on a phone.
@@ -255,7 +259,7 @@ function harness(options?: {
   const refusal = options?.writeRefusal;
   const refusalAt = options?.writeRefusalAt;
   let writesSeen = 0;
-  const served: Kit =
+  const written: Kit =
     refusal !== undefined
       ? {
           ...kit,
@@ -281,6 +285,28 @@ function harness(options?: {
               },
             },
           };
+  const writeGate = options?.messageWriteGate;
+  let writesGated = 0;
+  const served: Kit =
+    writeGate === undefined
+      ? written
+      : {
+          ...written,
+          messages: {
+            ...written.messages,
+            write: async (
+              scope: Parameters<Kit["messages"]["write"]>[0],
+              write: Parameters<Kit["messages"]["write"]>[1],
+            ) => {
+              writesGated += 1;
+              if (writesGated === 1) {
+                writeGate.entered();
+                await writeGate.open;
+              }
+              return await written.messages.write(scope, write);
+            },
+          },
+        };
   const realHistory = memoryHistory();
   let historySavesToFail =
     options?.brokenHistorySave === "always"
@@ -1819,6 +1845,53 @@ describe("POST /assistant/kit/abandon", () => {
 
     expect(response.status).toBe(400);
   });
+
+  it("refuses a drop the answer already claimed, so a failed action reopens nothing", async () => {
+    let reachAction = (): void => undefined;
+    const actionReached = new Promise<void>((resolve) => {
+      reachAction = resolve;
+    });
+    let finishAction = (): void => undefined;
+    const actionHeld = new Promise<void>((resolve) => {
+      finishAction = resolve;
+    });
+    const slowRefusal: ResolveAnswer = async () => {
+      reachAction();
+      await actionHeld;
+      return {
+        kind: "error",
+        code: "CONFLICT",
+        message: "no longer available",
+      } satisfies ToolOutcome;
+    };
+    const { kit, app, bind } = harness({ resolveAnswer: slowRefusal });
+    const pause = await openPause(kit, bind);
+
+    const answering = post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      answerBody(pause.interactionId, pause.revision),
+    );
+    await actionReached;
+    const dismissed = await post(app, ASSISTANT_KIT_ABANDON_PATH, {
+      conversationId: CONVERSATION,
+      interactionId: pause.interactionId,
+    });
+    finishAction();
+
+    expect(dismissed.status).toBe(409);
+    const body = (await dismissed.json()) as KitBody;
+    expect(body.status).toBe("answer_in_flight");
+    expect(body.window).toBeDefined();
+    expect((await answering).status).toBe(409);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+    const parts = (
+      await kit.messages.read({ conversationId: CONVERSATION, bind })
+    ).messages.flatMap((message) => message.parts);
+    expect(parts.filter((part) => part.kind === "trace")).toEqual([]);
+  });
 });
 
 describe("the full round trip through HTTP", () => {
@@ -2088,7 +2161,10 @@ describe("the trace a closed card leaves in the stored log", () => {
     finishAction();
     await approving;
 
-    expect(dismissed.status).toBe(200);
+    expect(dismissed.status).toBe(409);
+    expect(((await dismissed.json()) as KitBody).status).toBe(
+      "answer_in_flight",
+    );
     const reload = await get(app, messagesPath());
     const body = (await reload.json()) as KitBody;
     const traces = (body.window?.messages ?? []).flatMap((message) =>
@@ -2365,6 +2441,94 @@ describe("a send while a card is open answers it", () => {
     );
     expect(((await declined.json()) as KitBody).status).toBe("abandoned");
     expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+  });
+
+  it("answers ok when a decline reaches a claim in flight, and takes on the retry", async () => {
+    let writeReached = (): void => undefined;
+    const writeEntered = new Promise<void>((resolve) => {
+      writeReached = resolve;
+    });
+    let openWrite = (): void => undefined;
+    const writeOpen = new Promise<void>((resolve) => {
+      openWrite = resolve;
+    });
+    let reachAction = (): void => undefined;
+    const actionReached = new Promise<void>((resolve) => {
+      reachAction = resolve;
+    });
+    let finishAction = (): void => undefined;
+    const actionHeld = new Promise<void>((resolve) => {
+      finishAction = resolve;
+    });
+    const slowRefusal: ResolveAnswer = async () => {
+      reachAction();
+      await actionHeld;
+      return {
+        kind: "error",
+        code: "CONFLICT",
+        message: "no longer available",
+      } satisfies ToolOutcome;
+    };
+    const { app, kit, bind } = harness({
+      resolveAnswer: slowRefusal,
+      messageWriteGate: { entered: writeReached, open: writeOpen },
+    });
+    const pause = await openConfirmation(kit, bind);
+
+    const declining = post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "ні"),
+    );
+    await writeEntered;
+    const approving = post(app, ASSISTANT_KIT_ANSWER_PATH, {
+      ...approvalBody(pause.interactionId, pause.revision),
+      commandId: OTHER_COMMAND,
+    });
+    await actionReached;
+    openWrite();
+    const declined = await declining;
+    finishAction();
+
+    expect(declined.status).toBe(200);
+    expect(((await declined.json()) as KitBody).status).toBe("ok");
+    expect((await approving).status).toBe(409);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+    const reload = await get(app, messagesPath());
+    const body = (await reload.json()) as KitBody;
+    expect(body.window?.messages[0]?.parts[0]).toMatchObject({
+      kind: "text",
+      text: "ні",
+    });
+    expect(
+      (body.window?.messages ?? []).flatMap((message) =>
+        message.parts.filter((part) => part.kind === "trace"),
+      ),
+    ).toEqual([]);
+    expect(body.window?.openPause?.interactionId).toBe(pause.interactionId);
+
+    const retried = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "ні"),
+    );
+    const after = (await retried.json()) as KitBody;
+
+    expect(after.status).toBe("abandoned");
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+    const said = (after.window?.messages ?? []).flatMap((message) =>
+      message.parts.flatMap((part) =>
+        part.kind === "text" && part.text !== undefined ? [part.text] : [],
+      ),
+    );
+    expect(said).toEqual(["ні"]);
+    expect(
+      (after.window?.messages ?? []).flatMap((message) =>
+        message.parts.filter((part) => part.kind === "trace"),
+      ),
+    ).toHaveLength(1);
   });
 
   it("stores the person's words before the trace, for a reload", async () => {

@@ -261,6 +261,10 @@ export type AssistantKitResponse =
       readonly status: "abandoned";
       readonly window: AssistantChatWindowWithTurn;
     }
+  | {
+      readonly status: "answer_in_flight";
+      readonly window: AssistantChatWindowWithTurn;
+    }
   | { readonly status: "expired" }
   | { readonly status: "pause_rejected"; readonly reason: string }
   | {

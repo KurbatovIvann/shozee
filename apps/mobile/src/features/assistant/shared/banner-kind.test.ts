@@ -31,11 +31,12 @@ const ALL = Object.keys({
   stale: true,
   unresolvable: true,
   action_failed: true,
+  answer_in_flight: true,
 } satisfies Record<AssistantKitFailureKind, true>) as AssistantKitFailureKind[];
 
 describe("bannerKindFor", () => {
   it("says nothing when an answer came back with the question as it now stands", () => {
-    for (const kind of ["stale", "unresolvable"] as const) {
+    for (const kind of ["stale", "unresolvable", "answer_in_flight"] as const) {
       expect(bannerKindFor({ kind })).toBeNull();
     }
   });
