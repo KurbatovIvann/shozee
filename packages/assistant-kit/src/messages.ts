@@ -27,6 +27,20 @@ export const textPartStatusSchema = z.enum([
   "interrupted",
 ]);
 
+export const traceOutcomeSchema = z.enum([
+  "done",
+  "rejected",
+  "failed",
+  "chosen",
+  "superseded",
+]);
+
+export const traceAttemptSchema = z.strictObject({
+  action: z.string().min(1).max(128),
+  outcome: z.enum(["done", "failed"]),
+  recordId: z.string().min(1).max(128).nullable(),
+});
+
 /**
  * `complete` is set when generation finished, never to mark a write. A write
  * is proven by its surface part; a provider failure must not be able to
@@ -38,19 +52,6 @@ export const textPartStatusSchema = z.enum([
  * caller may offer to continue it. What the turn stored before it stopped
  * stands.
  */
-export const traceOutcomeSchema = z.enum([
-  "done",
-  "rejected",
-  "failed",
-  "chosen",
-]);
-
-export const traceAttemptSchema = z.strictObject({
-  action: z.string().min(1).max(128),
-  outcome: z.enum(["done", "failed"]),
-  recordId: z.string().min(1).max(128).nullable(),
-});
-
 export const chatPartSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("text"),

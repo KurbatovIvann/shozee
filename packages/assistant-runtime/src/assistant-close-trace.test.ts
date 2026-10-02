@@ -63,7 +63,7 @@ describe("the trace an approved preview leaves", () => {
       value: approved(),
       outcome: {
         kind: "ok",
-        result: { customerId: CUSTOMER, name: "Оксана", archived: false },
+        result: { id: CUSTOMER, name: "Оксана", archived: false },
       },
     });
 
@@ -95,7 +95,7 @@ describe("the trace an approved preview leaves", () => {
           done: [
             {
               action: "customers.updateCustomer",
-              result: { customerId: CUSTOMER },
+              result: { id: CUSTOMER },
             },
           ],
           failed: {
@@ -129,9 +129,9 @@ describe("the trace an approved preview leaves", () => {
           done: [
             {
               action: "customers.updateCustomer",
-              result: { customerId: CUSTOMER },
+              result: { id: CUSTOMER },
             },
-            { action: "orders.confirm", result: { orderId: ORDER } },
+            { action: "orders.confirm", result: { id: ORDER } },
           ],
         },
       },
@@ -144,20 +144,28 @@ describe("the trace an approved preview leaves", () => {
     ]);
   });
 
-  it("leaves no trace when the card asked again instead of closing", () => {
-    expect(
-      assistantCloseTrace({
-        interactionId: INTERACTION,
-        kind: "confirmation",
-        value: approved(),
-        outcome: {
-          kind: "pause",
-          interaction: "confirmation",
-          prompt: {},
-          secret: {},
-        },
-      }),
-    ).toEqual([]);
+  it("marks the card superseded when drift replaced it with a new one", () => {
+    const [trace] = assistantCloseTrace({
+      interactionId: INTERACTION,
+      kind: "confirmation",
+      value: approved(),
+      outcome: {
+        kind: "pause",
+        interaction: "confirmation",
+        prompt: { title: "Нова ціна" },
+        secret: {},
+      },
+    });
+
+    expect(trace).toEqual({
+      kind: "trace",
+      interactionId: INTERACTION,
+      interactionKind: "confirmation",
+      outcome: "superseded",
+      optionId: null,
+      attempts: [],
+    });
+    expect(Object.keys(trace ?? {}).sort()).toEqual(TRACE_KEYS);
   });
 
   it("leaves no trace when the action refused and the card stayed open", () => {
@@ -245,13 +253,9 @@ describe("the record id an action result names", () => {
     );
   });
 
-  it("takes the one id-shaped field when there is exactly one", () => {
-    expect(assistantTraceRecordId({ orderId: ORDER, number: "CO-1" })).toBe(
-      ORDER,
-    );
-  });
-
-  it("guesses nothing when two fields could be the record", () => {
+  it("guesses nothing from a field that merely ends in Id", () => {
+    expect(assistantTraceRecordId({ customerId: CUSTOMER })).toBeNull();
+    expect(assistantTraceRecordId({ orderId: ORDER, number: "CO-1" })).toBeNull();
     expect(
       assistantTraceRecordId({ orderId: ORDER, customerId: CUSTOMER }),
     ).toBeNull();

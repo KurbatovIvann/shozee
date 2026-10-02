@@ -17,18 +17,8 @@ export function assistantTraceRecordId(result: unknown): string | null {
   if (typeof result !== "object" || result === null || Array.isArray(result)) {
     return null;
   }
-  const fields: Record<string, unknown> = { ...result };
-  const direct = fields["id"];
-  if (typeof direct === "string") {
-    return storableId(direct);
-  }
-  const named = Object.keys(fields).filter(
-    (key) =>
-      key.length > 2 && key.endsWith("Id") && typeof fields[key] === "string",
-  );
-  const only = named.length === 1 ? named[0] : undefined;
-  const value = only === undefined ? undefined : fields[only];
-  return typeof value === "string" ? storableId(value) : null;
+  const direct = (result as Record<string, unknown>)["id"];
+  return typeof direct === "string" ? storableId(direct) : null;
 }
 
 function storableId(value: string): string | null {
@@ -86,6 +76,18 @@ function confirmedAttempts(
 }
 
 function confirmationTrace(args: CloseArgs): readonly AssistantTracePart[] {
+  if (args.outcome.kind === "pause") {
+    return [
+      {
+        kind: "trace",
+        interactionId: args.interactionId,
+        interactionKind: "confirmation",
+        outcome: "superseded",
+        optionId: null,
+        attempts: [],
+      },
+    ];
+  }
   if (args.outcome.kind !== "ok") {
     return [];
   }

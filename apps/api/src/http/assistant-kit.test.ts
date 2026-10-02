@@ -159,6 +159,25 @@ const SECOND_QUESTION: ResolveAnswer = () =>
     },
   } satisfies ToolOutcome);
 
+const DRIFTED_CONFIRMATION: ResolveAnswer = () =>
+  Promise.resolve({
+    kind: "pause",
+    interaction: "confirmation",
+    prompt: {
+      summary: "Ціна змінилася. Оновити клієнта?",
+      preview: { title: "Оновити клієнта", lines: [], notes: [] },
+      also: [],
+      level: "card",
+    },
+    secret: {
+      actionName: UPDATE_ACTION,
+      canonicalInput: { customerId: RECORD },
+      idempotencyKey: "key-2",
+      challengeId: "challenge-2",
+      also: [],
+    } satisfies ConfirmationSecret,
+  } satisfies ToolOutcome);
+
 const PAUSING_TOOLS: ToolSet = {
   orders_create: {
     description: "create one",
@@ -1767,7 +1786,7 @@ describe("the trace a closed card leaves in the stored log", () => {
     const written: ResolveAnswer = () =>
       Promise.resolve({
         kind: "ok",
-        result: { customerId: RECORD, name: "Оксана" },
+        result: { id: RECORD, name: "Оксана" },
       } satisfies ToolOutcome);
     const { app, kit, bind } = harness({ resolveAnswer: written });
     const pause = await openConfirmation(kit, bind);
@@ -1795,7 +1814,7 @@ describe("the trace a closed card leaves in the stored log", () => {
     const written: ResolveAnswer = () =>
       Promise.resolve({
         kind: "ok",
-        result: { customerId: RECORD, name: "Оксана", phone: "+380" },
+        result: { id: RECORD, name: "Оксана", phone: "+380" },
       } satisfies ToolOutcome);
     const { app, kit, bind } = harness({ resolveAnswer: written });
     const pause = await openConfirmation(kit, bind);
@@ -1829,7 +1848,7 @@ describe("the trace a closed card leaves in the stored log", () => {
       Promise.resolve({
         kind: "ok",
         result: {
-          done: [{ action: UPDATE_ACTION, result: { customerId: RECORD } }],
+          done: [{ action: UPDATE_ACTION, result: { id: RECORD } }],
           failed: {
             action: CONFIRM_ACTION,
             code: "CONFLICT",
@@ -1885,6 +1904,38 @@ describe("the trace a closed card leaves in the stored log", () => {
     });
   });
 
+  it("marks a card that drift replaced as superseded, with the new question", async () => {
+    const { app, kit, bind } = harness({
+      resolveAnswer: DRIFTED_CONFIRMATION,
+    });
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_ANSWER_PATH,
+      approvalBody(pause.interactionId, pause.revision),
+    );
+    expect(response.status).toBe(200);
+
+    const body = (await response.json()) as KitBody;
+    const traces = (body.window?.messages ?? []).flatMap((message) =>
+      message.parts.filter((part) => part.kind === "trace"),
+    );
+    expect(traces).toEqual([
+      {
+        kind: "trace",
+        interactionId: pause.interactionId,
+        interactionKind: "confirmation",
+        outcome: "superseded",
+        optionId: null,
+        attempts: [],
+      },
+    ]);
+    expect(body.window?.openPause?.interactionId).not.toBe(
+      pause.interactionId,
+    );
+  });
+
   it("records a dropped question as rejected, once", async () => {
     const { app, kit, bind } = harness();
     const pause = await openConfirmation(kit, bind);
@@ -1912,6 +1963,31 @@ describe("the trace a closed card leaves in the stored log", () => {
     ]);
   });
 
+  it("records one rejection when two dismisses race", async () => {
+    const { app, kit, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+    const dropping = {
+      conversationId: CONVERSATION,
+      interactionId: pause.interactionId,
+    };
+
+    const [first, second] = await Promise.all([
+      post(app, ASSISTANT_KIT_ABANDON_PATH, dropping),
+      post(app, ASSISTANT_KIT_ABANDON_PATH, dropping),
+    ]);
+    expect([first.status, second.status]).toEqual([200, 200]);
+
+    const reload = await get(app, messagesPath());
+    const body = (await reload.json()) as KitBody;
+    const traces = (body.window?.messages ?? []).flatMap((message) =>
+      message.parts.filter((part) => part.kind === "trace"),
+    );
+
+    expect(traces).toHaveLength(1);
+    expect(traces[0]?.outcome).toBe("rejected");
+    expect(body.window?.openPause).toBeNull();
+  });
+
   it("leaves no trace while the card is still answerable after a refused action", async () => {
     const { app, kit, bind } = harness({ resolveAnswer: FAILING_RESOLVE });
     const pause = await openConfirmation(kit, bind);
@@ -1935,7 +2011,7 @@ describe("the trace a closed card leaves in the stored log", () => {
     const written: ResolveAnswer = () =>
       Promise.resolve({
         kind: "ok",
-        result: { customerId: RECORD },
+        result: { id: RECORD },
       } satisfies ToolOutcome);
     const { app, kit, bind } = harness({ resolveAnswer: written });
     const pause = await openConfirmation(kit, bind);

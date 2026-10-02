@@ -98,22 +98,27 @@ export async function handleAssistantKitAbandon(
     clientIp: c.get("clientIp"),
   });
   const scope = { conversationId, bind: caller.bind };
-  const open = await kit.peek(scope);
+  const traced: {
+    outcome: Awaited<ReturnType<typeof kit.messages.write>> | null;
+  } = { outcome: null };
   const dropped = await kit.abandon({
     ...scope,
     interactionId: parsed.data.interactionId,
+    whileHeld: async (pause) => {
+      traced.outcome = await kit.messages.write(scope, {
+        kind: "append",
+        messageId: randomUUID(),
+        role: "assistant",
+        parts: [assistantRejectedTrace(pause)],
+      });
+    },
   });
 
-  if (
-    dropped.kind === "cancelled" &&
-    open?.interactionId === parsed.data.interactionId
-  ) {
-    await kit.messages.write(scope, {
-      kind: "append",
-      messageId: randomUUID(),
-      role: "assistant",
-      parts: [assistantRejectedTrace(open)],
-    });
+  if (traced.outcome !== null && traced.outcome.kind === "wrong_owner") {
+    return goneResponse(requestId);
+  }
+  if (traced.outcome !== null && traced.outcome.kind !== "written") {
+    return json(500, { error: { code: "INTERNAL" } }, requestId);
   }
 
   // Already gone answers the same as just cancelled: the caller wanted no open

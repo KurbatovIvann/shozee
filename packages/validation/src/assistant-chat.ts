@@ -60,18 +60,12 @@ export type AssistantChatTextStatus = z.output<
   typeof assistantChatTextStatusSchema
 >;
 
-/**
- * `type` and `payload` are an `AssistantSurfaceData` from
- * `./assistant-surfaces`, written by the server when the card was produced.
- * Left unvalidated here on purpose: that union has no schema — it is a parse
- * result, not an input shape — so the reader localizes defensively and drops a
- * payload it cannot render. Named as a gap rather than papered over.
- */
 export const ASSISTANT_TRACE_OUTCOMES = [
   "done",
   "rejected",
   "failed",
   "chosen",
+  "superseded",
 ] as const;
 
 export const assistantTraceOutcomeSchema = z.enum(ASSISTANT_TRACE_OUTCOMES);
@@ -90,6 +84,13 @@ export type AssistantTraceAttempt = z.output<
   typeof assistantTraceAttemptSchema
 >;
 
+/**
+ * `type` and `payload` are an `AssistantSurfaceData` from
+ * `./assistant-surfaces`, written by the server when the card was produced.
+ * Left unvalidated here on purpose: that union has no schema — it is a parse
+ * result, not an input shape — so the reader localizes defensively and drops a
+ * payload it cannot render. Named as a gap rather than papered over.
+ */
 export const assistantChatPartSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("text"),

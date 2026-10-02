@@ -118,9 +118,11 @@ function isExpired(record: PauseRecord, now: Date): boolean {
   return now.getTime() >= Date.parse(record.expiresAt);
 }
 
-/** Claimed, cancelled or past its ttl — the record no longer holds the slot. */
 function holdsTheSlot(record: PauseRecord, now: Date): boolean {
-  return record.status === "open" && !isExpired(record, now);
+  return (
+    (record.status === "open" || record.status === "cancelled") &&
+    !isExpired(record, now)
+  );
 }
 
 /**
@@ -371,11 +373,23 @@ export function createAssistantKit<T extends AnyTypes>(
       const existing = await readRecord(input);
       if (
         existing === null ||
-        existing.record.interactionId !== input.interactionId
+        existing.record.interactionId !== input.interactionId ||
+        existing.record.status === "cancelled"
       ) {
         return { kind: "gone" };
       }
-      await deps.pauses.delete(pauseKey(input.conversationId));
+      const cancelled: PauseRecord = {
+        ...existing.record,
+        status: "cancelled",
+      };
+      if (!(await put(cancelled, existing.raw))) {
+        return { kind: "gone" };
+      }
+      try {
+        await input.whileHeld?.(publicPauseOf(cancelled));
+      } finally {
+        await deps.pauses.delete(pauseKey(input.conversationId));
+      }
       return { kind: "cancelled" };
     },
 

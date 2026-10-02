@@ -115,7 +115,10 @@ export interface AssistantKit<T extends AnyTypes> {
   ): Promise<RevisePauseResult>;
 
   abandon(
-    input: PauseScope & { readonly interactionId: string },
+    input: PauseScope & {
+      readonly interactionId: string;
+      readonly whileHeld?: (pause: PublicPause) => Promise<void>;
+    },
   ): Promise<{ readonly kind: "cancelled" | "gone" }>;
 
   /**
