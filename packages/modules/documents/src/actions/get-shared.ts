@@ -15,6 +15,7 @@ import {
   storedShareDownloadUrl,
   storedSharePdfDownloadUrl,
 } from "../services/share-pdf-url.js";
+import { isLiveShareToken } from "../services/share-token-liveness.js";
 import { hashDocumentShareToken } from "../services/token-hash.js";
 
 export const sharedTokenResourceSchema = z.object({
@@ -50,12 +51,7 @@ async function resolveSharedDocument(
     .where(eq(documentShareTokens.tokenHash, tokenHash))
     .limit(1);
   const row = rows[0];
-  const nowMs = Date.now();
-  if (
-    row === undefined ||
-    row.revokedAt !== null ||
-    row.expiresAt.getTime() <= nowMs
-  ) {
+  if (row === undefined || !isLiveShareToken(row, new Date())) {
     throw new NotFoundError();
   }
   return {

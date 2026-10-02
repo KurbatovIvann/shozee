@@ -305,13 +305,13 @@ beforeAll(async () => {
       companyId: companyA,
       documentId: fixtures.docShared,
       tokenHash: "a".repeat(64),
-      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      expiresAt: new Date(Date.now() + 60_000),
     },
     {
       companyId: companyA,
       documentId: fixtures.docRevoked,
       tokenHash: "b".repeat(64),
-      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      expiresAt: new Date(Date.now() + 60_000),
       revokedAt: new Date("2026-03-16T00:00:00Z"),
     },
     {
@@ -354,7 +354,7 @@ describe("documents preview cards (core.md §7)", () => {
     ]);
   });
 
-  it("warns about the revoked link only when one is still unrevoked", async () => {
+  it("warns about the revoked link only when one is still live", async () => {
     const preview = await previewOf(shareDocument, {
       documentId: fixtures.docShared,
     });
