@@ -17,7 +17,7 @@ export const VOICE_MAX_TOTAL_BYTES =
 
 export const VOICE_FINALIZE_TIMEOUT_MS = 5_000;
 
-export const VOICE_BACKPRESSURE_REFUSALS = 3;
+export const VOICE_MAX_UNACKED_BYTES = 64_000;
 
 export const VOICE_CLOSE_CODE = {
   done: 1000,
@@ -83,7 +83,7 @@ export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
   let listening = true;
   let closed = false;
   let totalBytes = 0;
-  let refusedWrites = 0;
+  let unackedBytes = 0;
   let timer: NodeJS.Timeout | undefined;
 
   const logContext = {
@@ -152,12 +152,15 @@ export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
     listening = false;
     endedBy = reason;
     stopTimers();
-    stream.finish();
     timer = setTimeout(() => {
+      if (closed) {
+        return;
+      }
       logger.warn(logContext, "assistant voice recognizer never finalised");
       stream.abort();
       close(VOICE_CLOSE_CODE.recognizerFailed, "finalize-timeout");
     }, finalizeTimeoutMs);
+    stream.finish();
   };
 
   send({
@@ -200,11 +203,11 @@ export function startVoiceSession(options: VoiceSessionOptions): VoiceSession {
       }
       totalBytes += frame.byteLength;
       if (stream.write(frame)) {
-        refusedWrites = 0;
+        unackedBytes = 0;
         return;
       }
-      refusedWrites += 1;
-      if (refusedWrites >= VOICE_BACKPRESSURE_REFUSALS) {
+      unackedBytes += frame.byteLength;
+      if (unackedBytes > VOICE_MAX_UNACKED_BYTES) {
         reject(VOICE_CLOSE_CODE.overloaded, "upstream-behind");
       }
     },

@@ -216,6 +216,73 @@ describe("assistant voice route", () => {
     expect(slots.held.size).toBe(1);
   });
 
+  it("refuses a plain GET before it takes a slot", async () => {
+    const slots = countingSlots(1);
+    const voice = createAssistantVoiceApp(runtime({ slots }));
+
+    const response = await voice.app.request(
+      ASSISTANT_VOICE_PATH,
+      { headers: { [COMPANY_SELECTOR_HEADER]: COMPANY } },
+      {},
+    );
+
+    expect(response.status).toBe(426);
+    expect(slots.held.size).toBe(0);
+  });
+
+  it("releases the slot when the upgrade itself fails", async () => {
+    const slots = countingSlots(1);
+    const voice = createAssistantVoiceApp(runtime({ slots }));
+
+    const response = await voice.app.request(ASSISTANT_VOICE_PATH, {
+      headers: { upgrade: "websocket", [COMPANY_SELECTOR_HEADER]: COMPANY },
+    });
+
+    expect(response.status).toBe(500);
+    expect(slots.held.size).toBe(0);
+  });
+
+  it("answers 500 and takes no slot when membership cannot be read", async () => {
+    const slots = countingSlots(1);
+    const voice = createAssistantVoiceApp(
+      runtime({
+        slots,
+        staffCompany: () => Promise.reject(new Error("redis is down")),
+      }),
+    );
+
+    const response = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+
+    expect(response.status).toBe(500);
+    expect(slots.held.size).toBe(0);
+  });
+
+  it("releases the slot when the session cannot start", () => {
+    const slots = countingSlots(1);
+    void slots.acquire(USER, "stream-1");
+    const failing: VoiceRecognizer = {
+      start: () => {
+        throw new Error("recognizer unavailable");
+      },
+      close: () => Promise.resolve(),
+    };
+    const events = voiceSocketEvents(
+      runtime({ slots, recognizer: failing }),
+      { userId: USER, companyId: COMPANY, requestId: "req-1" },
+      () => {
+        void slots.release(USER, "stream-1");
+      },
+    );
+    const socket = fakeSocket();
+
+    events.onOpen?.(new Event("open"), socket.ws);
+
+    expect(slots.held.size).toBe(0);
+    expect(socket.closed).toEqual([VOICE_CLOSE_CODE.recognizerFailed]);
+  });
+
   it("releases the slot when the socket closes", () => {
     const slots = countingSlots(1);
     void slots.acquire(USER, "stream-1");

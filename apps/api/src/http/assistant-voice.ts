@@ -5,6 +5,7 @@ import type {
   AssistantCaller,
   AssistantStreamSlots,
 } from "@showzy/assistant-runtime";
+import { NotFoundError, PermissionDeniedError } from "@showzy/core/errors";
 import { Hono } from "hono";
 import type { WSEvents } from "hono/ws";
 import type { Logger } from "pino";
@@ -63,19 +64,28 @@ export function voiceSocketEvents(
   };
   return {
     onOpen(_event, ws) {
-      session = startVoiceSession({
-        recognizer: runtime.recognizer,
-        logger: runtime.logger,
-        caller,
-        socket: {
-          send: (payload) => {
-            ws.send(payload);
+      try {
+        session = startVoiceSession({
+          recognizer: runtime.recognizer,
+          logger: runtime.logger,
+          caller,
+          socket: {
+            send: (payload) => {
+              ws.send(payload);
+            },
+            close: (code, reason) => {
+              ws.close(code, reason);
+            },
           },
-          close: (code, reason) => {
-            ws.close(code, reason);
-          },
-        },
-      });
+        });
+      } catch (error) {
+        runtime.logger.error(
+          { err: error, request_id: caller.requestId },
+          "assistant voice session failed to start",
+        );
+        finish();
+        ws.close(VOICE_CLOSE_CODE.recognizerFailed, "start-failed");
+      }
     },
     onMessage(event: { readonly data: unknown }, ws) {
       if (session === undefined) {
@@ -132,6 +142,12 @@ export function createAssistantVoiceApp(
     try {
       companyId = await runtime.staffCompany(assistantCaller);
     } catch (error) {
+      if (
+        !(error instanceof PermissionDeniedError) &&
+        !(error instanceof NotFoundError)
+      ) {
+        throw error;
+      }
       runtime.logger.info(
         { err: error, request_id: requestId, user_id: caller.userId },
         "assistant voice refused a caller without staff membership",
@@ -139,21 +155,40 @@ export function createAssistantVoiceApp(
       return json(403, { error: { code: "FORBIDDEN" } }, requestId);
     }
 
+    if (c.req.header("upgrade")?.toLowerCase() !== "websocket") {
+      return c.body(null, 426);
+    }
+
     const streamId = randomUUID();
     if (!(await runtime.slots.acquire(caller.userId, streamId))) {
       return json(429, { error: { code: "RATE_LIMITED" } }, requestId);
     }
+    const releaseSlot = (): void => {
+      void runtime.slots.release(caller.userId, streamId);
+    };
 
-    return nodeWebSocket.upgradeWebSocket(
-      c,
-      voiceSocketEvents(
-        runtime,
-        { userId: caller.userId, companyId, requestId },
-        () => {
-          void runtime.slots.release(caller.userId, streamId);
-        },
-      ),
+    try {
+      return await nodeWebSocket.upgradeWebSocket(
+        c,
+        voiceSocketEvents(
+          runtime,
+          { userId: caller.userId, companyId, requestId },
+          releaseSlot,
+        ),
+      );
+    } catch (error) {
+      releaseSlot();
+      throw error;
+    }
+  });
+
+  app.onError((error, c) => {
+    const requestId = c.get("requestId");
+    runtime.logger.error(
+      { err: error, request_id: requestId },
+      "assistant voice handshake failed",
     );
+    return json(500, { error: { code: "INTERNAL" } }, requestId);
   });
 
   return {

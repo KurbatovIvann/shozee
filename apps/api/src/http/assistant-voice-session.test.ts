@@ -8,12 +8,12 @@ import type {
 } from "./assistant-voice-chirp.js";
 import {
   startVoiceSession,
-  VOICE_BACKPRESSURE_REFUSALS,
   VOICE_CLOSE_CODE,
   VOICE_FINALIZE_TIMEOUT_MS,
   VOICE_MAX_FRAME_BYTES,
   VOICE_MAX_SESSION_MS,
   VOICE_MAX_TOTAL_BYTES,
+  VOICE_MAX_UNACKED_BYTES,
   VOICE_STOP_FRAME,
   type VoiceSession,
 } from "./assistant-voice-session.js";
@@ -163,6 +163,20 @@ describe("voice session", () => {
     ]);
   });
 
+  it("says nothing about finalisation when the recognizer answers at once", () => {
+    const recognizer = fakeRecognizer();
+    const { session, socket } = startSession(recognizer);
+
+    session.control(VOICE_STOP_FRAME);
+    recognizer.emit.final("дві пачки кави");
+    vi.advanceTimersByTime(VOICE_FINALIZE_TIMEOUT_MS * 2);
+
+    expect(recognizer.calls.aborted).toBe(0);
+    expect(socket.closed).toEqual([
+      { code: VOICE_CLOSE_CODE.done, reason: "final" },
+    ]);
+  });
+
   it("gives up when the recognizer never finalises the utterance", () => {
     const recognizer = fakeRecognizer();
     const { session, socket } = startSession(recognizer);
@@ -212,31 +226,34 @@ describe("voice session", () => {
     ]);
   });
 
-  it("stops pushing at a recognizer that keeps refusing writes", () => {
+  it("stops pushing once the unacked audio passes its bound", () => {
     const recognizer = fakeRecognizer();
     const { session, socket } = startSession(recognizer);
     recognizer.accept.writes = false;
 
-    for (let sent = 0; sent < VOICE_BACKPRESSURE_REFUSALS; sent += 1) {
-      session.audio(pcm(640));
+    const frames = VOICE_MAX_UNACKED_BYTES / VOICE_MAX_FRAME_BYTES;
+    for (let sent = 0; sent < frames; sent += 1) {
+      session.audio(pcm(VOICE_MAX_FRAME_BYTES));
     }
+    expect(socket.closed).toHaveLength(0);
 
-    expect(recognizer.written).toHaveLength(VOICE_BACKPRESSURE_REFUSALS);
+    session.audio(pcm(VOICE_MAX_FRAME_BYTES));
+
     expect(socket.closed).toEqual([
       { code: VOICE_CLOSE_CODE.overloaded, reason: "upstream-behind" },
     ]);
   });
 
-  it("keeps going when a refused write is followed by an accepted one", () => {
+  it("keeps going while ordinary backpressure clears between frames", () => {
     const recognizer = fakeRecognizer();
     const { session, socket } = startSession(recognizer);
 
-    recognizer.accept.writes = false;
-    session.audio(pcm(640));
-    recognizer.accept.writes = true;
-    session.audio(pcm(640));
-    recognizer.accept.writes = false;
-    session.audio(pcm(640));
+    for (let sent = 0; sent < 10; sent += 1) {
+      recognizer.accept.writes = false;
+      session.audio(pcm(VOICE_MAX_FRAME_BYTES));
+      recognizer.accept.writes = true;
+      session.audio(pcm(2));
+    }
 
     expect(socket.closed).toHaveLength(0);
   });
