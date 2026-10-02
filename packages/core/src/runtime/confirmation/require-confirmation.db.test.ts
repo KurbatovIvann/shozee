@@ -10,6 +10,7 @@ import { z } from "zod";
 import { defineActionContract } from "../../contract/define-action-contract.js";
 import {
   ConfirmationRequiredError,
+  ConflictError,
   CoreInvariantError,
 } from "../../errors/index.js";
 import { createAuditHook } from "../audit/create-audit-hook.js";
@@ -574,6 +575,85 @@ describe("execution-time confirmationOnly (core.md §5/§7)", () => {
     });
     expect(result.resultId).toHaveLength(36);
     expect(runs).toBe(1);
+  });
+
+  it("re-challenges without revoking the grant the next attempt resumes under", async () => {
+    const consumed: string[] = [];
+    const inner = createInMemoryConfirmationStore();
+    const store: ConfirmationStore = {
+      set: (storeKey, value, ttlMs) => inner.set(storeKey, value, ttlMs),
+      getAndDelete: async (storeKey) => {
+        const value = await inner.getAndDelete(storeKey);
+        if (value !== null) {
+          consumed.push(storeKey);
+        }
+        return value;
+      },
+    };
+    let runs = 0;
+    const action = implementAction(writeContract, {
+      handler: () => {
+        runs += 1;
+        return runs === 1
+          ? Promise.reject(new ConflictError("First attempt fails."))
+          : Promise.resolve({ resultId: randomUUID() });
+      },
+      preview: (input: { note: string }) => ({
+        title: `Rename to ${input.note}`,
+        lines: [],
+        notes: [],
+      }),
+      auditTarget: () => ({ type: "thing", id: "fixture" }),
+    });
+    const key = randomUUID();
+    const invoke = (options: RunOptions): Promise<{ resultId: string }> =>
+      executeAction(deps(store), {
+        action,
+        input: { note: "Oksana" },
+        request: requestMeta({ ...options, key }),
+        principal: {
+          mode: "staff",
+          session: { userId: annaId },
+          companySelector: companyA,
+        },
+      });
+    const refusal = async (
+      options: RunOptions,
+    ): Promise<ConfirmationRequiredError> => {
+      const error = await invoke(options).then(
+        () => undefined,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(ConfirmationRequiredError);
+      return error as ConfirmationRequiredError;
+    };
+
+    const first = await refusal({ requireConfirmation: true });
+    await expect(
+      invoke({
+        requireConfirmation: true,
+        challengeId: first.challenge.challengeId,
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+    const reChallenge = await refusal({ confirmationOnly: true });
+    expect(reChallenge.challenge.challengeId).not.toBe(
+      first.challenge.challengeId,
+    );
+
+    const resumed = await invoke({ requireConfirmation: true });
+
+    expect(resumed.resultId).toHaveLength(36);
+    expect(runs).toBe(2);
+    expect(
+      consumed.some((storeKey) =>
+        storeKey.endsWith(first.challenge.challengeId),
+      ),
+    ).toBe(true);
+    expect(
+      consumed.some((storeKey) =>
+        storeKey.endsWith(reChallenge.challenge.challengeId),
+      ),
+    ).toBe(false);
   });
 
   it("refuses the flag on an action that is not a write", async () => {
