@@ -539,6 +539,7 @@ async function runConfirmationGate<
       `"${contract.name}" requires confirmation but no confirmation hook is composed — high-risk execution cannot proceed`,
     );
   }
+  const confirmationOnly = env.request.confirmationOnly === true;
   let grant: ConfirmationGrant | undefined;
   const idempotencyHook = deps.hooks.idempotency;
   if (idempotencyHook !== undefined) {
@@ -556,7 +557,7 @@ async function runConfirmationGate<
         ),
       };
     }
-    if (probed.kind === "resume") {
+    if (probed.kind === "resume" && !confirmationOnly) {
       grant = probed.grant;
     }
   }
@@ -566,6 +567,11 @@ async function runConfirmationGate<
       authorization: confirmedAuth,
       summarize: bindConfirmationSummary(env, confirmedAuth),
     });
+  }
+  if (confirmationOnly) {
+    throw new CoreInvariantError(
+      `"${contract.name}" was invoked confirmation-only but the confirmation gate returned a grant (core.md §7)`,
+    );
   }
   return { kind: "execute", grant };
 }
@@ -1080,24 +1086,37 @@ function confirmationIsRequired(
   contract: AnyActionContract,
   request: PipelineHookRequestMeta,
 ): boolean {
-  return contract.requiresConfirmation || request.requireConfirmation === true;
+  return (
+    contract.requiresConfirmation ||
+    request.requireConfirmation === true ||
+    request.confirmationOnly === true
+  );
 }
 
 function assertExecutionTimeConfirmation(
   contract: AnyActionContract,
   request: PipelineHookRequestMeta,
 ): void {
-  if (request.requireConfirmation !== true) {
-    return;
+  if (request.requireConfirmation === true) {
+    assertConfirmationFlagApplies(contract, "requireConfirmation");
   }
+  if (request.confirmationOnly === true) {
+    assertConfirmationFlagApplies(contract, "confirmationOnly");
+  }
+}
+
+function assertConfirmationFlagApplies(
+  contract: AnyActionContract,
+  flag: string,
+): void {
   const problems = confirmationPreconditionProblems(
     contract,
-    "requireConfirmation",
+    flag,
     CONFIRMABLE_RISKS,
   );
   if (problems.length > 0) {
     throw new CoreInvariantError(
-      `"${contract.name}" cannot be gated by an execution-time requireConfirmation (core.md §7): ${problems.join("; ")}`,
+      `"${contract.name}" cannot be gated by an execution-time ${flag} (core.md §7): ${problems.join("; ")}`,
     );
   }
 }

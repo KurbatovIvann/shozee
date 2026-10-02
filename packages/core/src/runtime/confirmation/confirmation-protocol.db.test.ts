@@ -55,6 +55,7 @@ import {
 import { executeAction } from "../pipeline/execute-action.js";
 import type {
   ActionPipelineDeps,
+  ConfirmationHook,
   PipelineRequestMeta,
   RateLimitHook,
 } from "../pipeline/types.js";
@@ -196,6 +197,7 @@ function deps(
     readonly store?: ConfirmationStore;
     readonly now?: () => number;
     readonly confirmation?: boolean;
+    readonly confirmationHook?: ConfirmationHook;
     readonly beforeTakeover?: () => Promise<void>;
   } = {},
 ): ActionPipelineDeps {
@@ -218,7 +220,9 @@ function deps(
       ...(options.confirmation === false
         ? {}
         : {
-            confirmation: createConfirmationHook({ store, ...clock }),
+            confirmation:
+              options.confirmationHook ??
+              createConfirmationHook({ store, ...clock }),
           }),
     },
   };
@@ -244,8 +248,10 @@ interface RunOptions {
   readonly store?: ConfirmationStore;
   readonly now?: () => number;
   readonly confirmation?: boolean;
+  readonly confirmationHook?: ConfirmationHook;
   readonly beforeTakeover?: () => Promise<void>;
   readonly action?: FixtureAction;
+  readonly confirmationOnly?: true;
 }
 
 /**
@@ -291,6 +297,9 @@ function run(options: RunOptions = {}): Promise<{ resultId: string }> {
       ...(options.key !== undefined ? { idempotencyKey: options.key } : {}),
       ...(options.challengeId !== undefined
         ? { confirmationChallengeId: options.challengeId }
+        : {}),
+      ...(options.confirmationOnly === true
+        ? { confirmationOnly: true as const }
         : {}),
     }),
     principal: {
@@ -680,5 +689,121 @@ describe("confirmation protocol — summary environment", () => {
     expect(error).toBeInstanceOf(ConfirmationRequiredError);
     expect(seen?.companyId).toBe(parityIds.companies.published);
     expect(seen?.target).toMatchObject({ id: parityIds.crmSentinel });
+  });
+});
+
+describe("confirmation-only requests (core.md §5/§7)", () => {
+  it("issues a challenge for a fresh key and reserves nothing", async () => {
+    const { action, runs } = countingAction();
+    const key = randomUUID();
+    const flow = session();
+
+    const required = await flow.requireChallenge({
+      action,
+      key,
+      confirmationOnly: true,
+    });
+
+    expect(required.challenge.summary).toBe("Revoke access for Confirm Co.");
+    expect(runs()).toBe(0);
+    expect(await rowsForKey(key)).toHaveLength(0);
+  });
+
+  it("issues a fresh challenge instead of consuming the one it carries", async () => {
+    const { action, runs } = countingAction();
+    const key = randomUUID();
+    const flow = session();
+    const first = await flow.requireChallenge({ action, key });
+
+    const second = await flow.requireChallenge({
+      action,
+      key,
+      challengeId: first.challenge.challengeId,
+      confirmationOnly: true,
+    });
+
+    expect(second.challenge.challengeId).not.toBe(first.challenge.challengeId);
+    expect(runs()).toBe(0);
+    expect(await rowsForKey(key)).toHaveLength(0);
+
+    const ran = await flow.run({
+      action,
+      key,
+      challengeId: second.challenge.challengeId,
+    });
+    expect(ran.resultId).toBeTruthy();
+    expect(runs()).toBe(1);
+  });
+
+  it("replays a completed key rather than asking about work already done", async () => {
+    const { action, runs } = countingAction();
+    const key = randomUUID();
+    const flow = session();
+    const required = await flow.requireChallenge({ action, key });
+    const first = await flow.run({
+      action,
+      key,
+      challengeId: required.challenge.challengeId,
+    });
+
+    const replayed = await flow.run({ action, key, confirmationOnly: true });
+
+    expect(replayed.resultId).toBe(first.resultId);
+    expect(runs()).toBe(1);
+  });
+
+  it("never resumes a stale attempt under its persisted grant", async () => {
+    let runs = 0;
+    const action = implementAction(contract, {
+      handler: () => {
+        runs += 1;
+        return Promise.reject(new ConflictError("First attempt fails."));
+      },
+      confirmationSummary: () => "Revoke access for Confirm Co.",
+      auditTarget: () => ({ type: "note", id: "fixture" }),
+    });
+    const key = randomUUID();
+    const flow = session();
+    const required = await flow.requireChallenge({ action, key });
+    await expect(
+      flow.run({ action, key, challengeId: required.challenge.challengeId }),
+    ).rejects.toThrow(ConflictError);
+    const [failed] = await rowsForKey(key);
+    expect(failed?.confirmationChallengeId).toBe(
+      required.challenge.challengeId,
+    );
+
+    const reasked = await flow.requireChallenge({
+      action,
+      key,
+      confirmationOnly: true,
+    });
+
+    expect(reasked.challenge.challengeId).not.toBe(
+      required.challenge.challengeId,
+    );
+    expect(runs).toBe(1);
+  });
+
+  it("fails closed when a gate hands back a grant", async () => {
+    const { action, runs } = countingAction();
+    const grantingHook: ConfirmationHook = {
+      gate: () =>
+        Promise.resolve({
+          challengeId: randomUUID(),
+          confirmedAt: new Date(),
+          expiresAt: new Date(Date.now() + CONFIRMATION_TTL_MS),
+        }),
+    };
+
+    await expect(
+      run({
+        action,
+        key: randomUUID(),
+        confirmationOnly: true,
+        confirmationHook: grantingHook,
+      }),
+    ).rejects.toThrow(CoreInvariantError);
+    expect(runs()).toBe(0);
   });
 });

@@ -17,19 +17,22 @@
  * been answered `no tool named undefined` (SHO-553).
  */
 import type { ToolOutcome } from "@showzy/assistant-kit";
-import { CoreError } from "@showzy/core/errors";
+import { CoreError, CoreInvariantError } from "@showzy/core/errors";
 
 import type {
   AssistantInteractionTypes,
   ChoicePickerTarget,
   ChoiceResolution,
+  ConfirmationAlsoSecret,
   ConfirmationAttemptSecret,
   ConfirmationResolution,
 } from "./assistant-interactions.js";
 import {
   AssistantConfirmationRequired,
+  confirmationAlso,
   confirmationPause,
 } from "./assistant-kit-confirmation.js";
+import type { AssistantToolLogger } from "./assistant-kit-tools.js";
 import type { AssistantToolContext, ResolveAnswer } from "./runtime-types.js";
 
 interface FacadeInput {
@@ -114,8 +117,17 @@ export type RunConfirmedAction = (args: {
   readonly challengeId: string;
 }) => Promise<unknown>;
 
+export type ReSummarizeAction = (args: {
+  readonly context: AssistantToolContext;
+  readonly actionName: string;
+  readonly input: unknown;
+  readonly idempotencyKey: string;
+}) => Promise<unknown>;
+
 export interface ResolveAnswerDeps {
   readonly runConfirmed: RunConfirmedAction;
+  readonly reSummarize: ReSummarizeAction;
+  readonly logger: AssistantToolLogger;
 }
 
 type ResolveArgs = Parameters<ResolveAnswer>[0];
@@ -188,6 +200,54 @@ function confirmedAttempts(
   ];
 }
 
+function dropCarried(
+  deps: ResolveAnswerDeps,
+  one: ConfirmationAlsoSecret,
+  fields: Record<string, unknown>,
+): void {
+  deps.logger.warn(
+    {
+      action: one.actionName,
+      idempotencyKey: one.idempotencyKey,
+      ...fields,
+    },
+    "carried confirmation left off the re-asked card",
+  );
+}
+
+async function recarryAlso(
+  args: ResolveArgs,
+  deps: ResolveAnswerDeps,
+  also: readonly ConfirmationAlsoSecret[],
+): Promise<readonly ConfirmationAlsoSecret[]> {
+  const asked: ConfirmationAlsoSecret[] = [];
+  for (const one of also) {
+    try {
+      await deps.reSummarize({
+        context: args.context,
+        actionName: one.actionName,
+        input: one.canonicalInput,
+        idempotencyKey: one.idempotencyKey,
+      });
+      dropCarried(deps, one, { outcome: "done" });
+    } catch (error) {
+      if (error instanceof AssistantConfirmationRequired) {
+        asked.push(confirmationAlso(error));
+        continue;
+      }
+      if (error instanceof CoreInvariantError) {
+        throw error;
+      }
+      if (error instanceof CoreError) {
+        dropCarried(deps, one, { outcome: "failed", code: error.code });
+        continue;
+      }
+      throw error;
+    }
+  }
+  return asked;
+}
+
 async function resolveConfirmation(
   args: ResolveArgs,
   deps: ResolveAnswerDeps,
@@ -210,7 +270,10 @@ async function resolveConfirmation(
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         if (done.length === 0) {
-          return confirmationPause(error, resolution.also);
+          return confirmationPause(
+            error,
+            await recarryAlso(args, deps, resolution.also),
+          );
         }
         return halted(done, {
           action: attempt.actionName,
