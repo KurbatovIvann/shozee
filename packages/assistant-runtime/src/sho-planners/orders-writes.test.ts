@@ -250,6 +250,21 @@ describe("SHO_WRITE_PLANNERS maps the conformance order-create parses", () => {
     });
   });
 
+  it("stores the comment as it was said, never a normalised value", () => {
+    const said = parseOf("dv3-lines-01")["params"] as Json;
+    const plan = planOf(
+      commandOf("dv3-lines-01", {
+        params: {
+          ...said,
+          comment: { text: "передзвонити зранку", value: "0503341290" },
+        },
+      }),
+    );
+    expect(plan.kind === "call" ? plan.input["comment"] : null).toBe(
+      "передзвонити зранку",
+    );
+  });
+
   it("refuses a create whose customer the parse never named", () => {
     const said = parseOf("dv3-lines-01")["params"] as Json;
     expect(

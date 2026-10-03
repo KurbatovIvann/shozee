@@ -72,12 +72,12 @@ describe("assistant conversation chrome (SHO-392)", () => {
     expect(sheetView).toContain("assistantShozikPose");
     expect(sheetView).toContain("SHOZIK_HEADER_POSE_SIZE");
     expect(sheetView).toContain("SHOZIK_EMPTY_POSE_SIZE");
-    expect(sheetView).toContain('pose="sit"');
+    expect(sheetView).toContain('listening ? "listen" : "sit"');
     expect(sheetView).not.toContain("SparklesIcon");
     expect(sheetView).not.toContain("listen.svg");
     expect(poseMark).toContain("sit.svg");
     expect(poseMark).toContain("dig.svg");
-    expect(poseMark).not.toContain("listen.svg");
+    expect(poseMark).toContain("listen.svg");
     expect(poseMark).not.toContain("magicpatterns");
     expect(SHOZIK_HEADER_POSE_SIZE).toBe(40);
     expect(SHOZIK_EMPTY_POSE_SIZE).toBe(72);
@@ -86,7 +86,6 @@ describe("assistant conversation chrome (SHO-392)", () => {
   it("hides the send control until there is text", () => {
     expect(composer).toContain("assistantComposerSendVisible");
     expect(composer).toContain("showSend ?");
-    expect(composer).not.toContain("MicIcon");
     expect(composer).not.toContain("AudioLinesIcon");
   });
 
@@ -238,21 +237,24 @@ describe("assistant example chips and reply tones (SHO-748)", () => {
     expect(sheetView).toContain("model.sendExample");
     expect(composer).toContain('layout="scroll"');
     expect(composer).toContain("props.onSendExample");
-    expect(hook).toContain("sendExample,");
+    expect(hook).toContain(
+      "sendExample: (text: string) => void sendText(text)",
+    );
   });
 
   it("leaves a typed draft alone when a chip is tapped", () => {
     const composerSend = hook.slice(
       hook.indexOf("const send = useCallback("),
-      hook.indexOf("const sendExample = useCallback("),
+      hook.indexOf("const sendText = useCallback("),
     );
     const chipSend = hook.slice(
-      hook.indexOf("const sendExample = useCallback("),
+      hook.indexOf("const sendText = useCallback("),
       hook.indexOf("const openHref = useCallback("),
     );
     expect(composerSend).toContain('setInput("")');
-    expect(chipSend).toContain("void conversation.send(text)");
-    expect(chipSend).not.toContain("setInput");
+    expect(chipSend).toContain("conversation.send(text)");
+    expect(chipSend).not.toContain('setInput("")');
+    expect(chipSend).toContain("current.length === 0 ? text : current");
   });
 
   it("groups the chips without a label no reader would announce", () => {
@@ -277,5 +279,78 @@ describe("assistant example chips and reply tones (SHO-748)", () => {
     expect(messageRow).toContain("theme.colors.warning");
     expect(messageRow).toContain("theme.colors.destructive");
     expect(messageRow).toContain("theme.colors.destructiveSoft");
+  });
+});
+
+describe("assistant mic composer (SHO-779)", () => {
+  const micButton = readFileSync(
+    new URL("./mic-button.tsx", import.meta.url),
+    "utf8",
+  );
+  const voiceModel = readFileSync(
+    new URL("../voice/voice-composer.ts", import.meta.url),
+    "utf8",
+  );
+  const voiceFacade = readFileSync(
+    new URL("../voice/use-voice-composer.ts", import.meta.url),
+    "utf8",
+  );
+  const hook = readFileSync(
+    new URL("./use-assistant-sheet.ts", import.meta.url),
+    "utf8",
+  );
+  const messageRow = readFileSync(
+    new URL("./assistant-message-row.tsx", import.meta.url),
+    "utf8",
+  );
+
+  it("shows the mic where the send control is not, with the live transcript in the field", () => {
+    expect(composer).toContain("AssistantMicButton");
+    expect(composer).toContain("voice !== null && !showSend");
+    expect(composer).toContain("voiceComposerValue");
+    expect(composer).toContain("voiceComposerPlaceholder");
+    expect(composer).toContain("props.editable && !dictating");
+  });
+
+  it("counts the session down beside the field, from the server's limit", () => {
+    expect(composer).toContain("voice.countdown");
+    expect(composer).toContain("voice.countdownLabel");
+    expect(hook).toContain("copy.voice.remaining");
+    expect(voiceModel).not.toContain("VOICE_MAX_SESSION_MS");
+    expect(voiceFacade).toContain("sessionMs: capture.sessionMs");
+  });
+
+  it("keeps the facade hook under the composer-hook limit", () => {
+    expect(voiceFacade.split("\n").length).toBeLessThanOrEqual(150);
+  });
+
+  it("renders the settings action when the microphone is denied and retry after an error", () => {
+    expect(composer).toContain('mode === "denied"');
+    expect(composer).toContain("voice.copy.deniedAction");
+    expect(composer).toContain("voice.onSettings");
+    expect(composer).toContain('mode === "error"');
+    expect(composer).toContain("voice.copy.retry");
+    expect(composer).toContain("voice.onRetry");
+  });
+
+  it("draws the mic states from theme tokens and reports them to a reader", () => {
+    expect(micButton).toContain("accessibilityState");
+    expect(micButton).toContain("buttonActive");
+    expect(micButton).toContain("buttonOff");
+    expect(micButton).not.toMatch(/#[0-9a-fA-F]{3}/);
+  });
+
+  it("marks a user bubble that was spoken and wakes the listen pose", () => {
+    expect(messageRow).toContain("props.spoken");
+    expect(messageRow).toContain("props.spokenLabel");
+    expect(sheetView).toContain("voiceRowSpoken");
+    expect(sheetView).toContain("copy.voice.spoken");
+    expect(sheetView).toContain("voiceMicActive");
+  });
+
+  it("sends a final transcript down the one send path", () => {
+    expect(hook).toContain("useVoiceComposer");
+    expect(hook).toContain("send: sendText,");
+    expect(hook).not.toContain("conversation.send(transcript");
   });
 });

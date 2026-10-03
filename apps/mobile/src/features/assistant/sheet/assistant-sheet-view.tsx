@@ -14,6 +14,7 @@ import { AppHeader, Banner, EmptyState } from "../../../components/ui";
 import type { AssistantCopy } from "../../../i18n/assistant";
 import { assistantInterruptedNotice } from "../shared/interrupted-notice";
 import type { AssistantThreadRow } from "../thread/thread-rows";
+import { voiceMicActive, voiceRowSpoken } from "../voice/voice-composer";
 import {
   assistantExampleChips,
   type AssistantExampleChip,
@@ -22,7 +23,10 @@ import {
   SHOZIK_HEADER_POSE_SIZE,
   SHOZIK_WAIT_POSE_SIZE,
 } from "./assistant-chrome";
-import { AssistantComposer } from "./assistant-composer";
+import {
+  AssistantComposer,
+  type AssistantComposerVoice,
+} from "./assistant-composer";
 import { AssistantExampleChips } from "./assistant-example-chips";
 import { AssistantMessageRow } from "./assistant-message-row";
 import {
@@ -66,6 +70,8 @@ export type AssistantSheetViewModel = {
    */
   readonly loadOlder: () => void;
   readonly loadingOlder: boolean;
+  readonly voice: AssistantComposerVoice | null;
+  readonly spokenTexts: ReadonlySet<string>;
 };
 
 const NO_EXAMPLE_CHIPS: readonly AssistantExampleChip[] = [];
@@ -155,6 +161,12 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         onAnswer={model.answer}
         onCompose={focusComposer}
         onDismiss={model.dismiss}
+        spoken={voiceRowSpoken({
+          role: item.role,
+          text: item.text,
+          spoken: model.spokenTexts,
+        })}
+        spokenLabel={copy.voice.spoken}
       />
     ),
     [
@@ -166,11 +178,16 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
       model.dismiss,
       model.openHref,
       model.pendingOptionId,
+      model.spokenTexts,
     ],
   );
 
   const showEmpty = model.rows.length === 0 && !model.thinking;
-  const headerPose = assistantShozikPose({ thinking: model.thinking });
+  const listening = model.voice !== null && voiceMicActive(model.voice.mode);
+  const headerPose = assistantShozikPose({
+    thinking: model.thinking,
+    listening,
+  });
   const exampleChips = assistantExampleChips({
     examples: copy.examples,
     busy: model.busy,
@@ -196,7 +213,10 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         ) : null}
         {showEmpty ? (
           <View style={styles.empty}>
-            <ShozikPoseMark pose="sit" size={SHOZIK_EMPTY_POSE_SIZE} />
+            <ShozikPoseMark
+              pose={listening ? "listen" : "sit"}
+              size={SHOZIK_EMPTY_POSE_SIZE}
+            />
             <Text style={styles.emptyTitle}>{copy.emptyTitle}</Text>
             <Text style={styles.emptyDescription}>{copy.emptyDescription}</Text>
             <AssistantExampleChips
@@ -240,6 +260,7 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
             canSend={model.canSend}
             exampleChips={showEmpty ? NO_EXAMPLE_CHIPS : exampleChips}
             onSendExample={model.sendExample}
+            voice={model.voice}
           />
         </View>
       </KeyboardAvoidingView>

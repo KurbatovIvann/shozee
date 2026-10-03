@@ -311,6 +311,27 @@ describe("useVoiceCapture", () => {
     expect(view.binary()).toHaveLength(0);
   });
 
+  it("keeps a transcript the composer has not consumed when the app goes to the background", async () => {
+    const view = await listening();
+
+    act(() => {
+      view.wire().onText(
+        JSON.stringify({
+          type: "final",
+          text: "дві пачки",
+          endedBy: "limit",
+        }),
+      );
+      appState.background?.();
+    });
+
+    expect(view.capture()).toMatchObject({
+      status: "idle",
+      transcript: "дві пачки",
+      endedBy: "limit",
+    });
+  });
+
   it("reports an audio session that will not close", async () => {
     const view = await listening();
     audio.audioModeFails = true;
