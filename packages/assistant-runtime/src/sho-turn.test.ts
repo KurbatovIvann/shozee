@@ -1,4 +1,6 @@
+import { createAssistantKit } from "@showzy/assistant-kit";
 import type { ModelMessage, ToolSet } from "@showzy/assistant-kit";
+import { testDeps } from "@showzy/assistant-kit/testing";
 import { toProviderToolName } from "@showzy/ai";
 import { shoCommandSchema, type ShoCommand } from "@showzy/sho-protocol";
 import {
@@ -7,6 +9,7 @@ import {
 } from "@showzy/validation/assistant-chat";
 import { describe, expect, it, vi } from "vitest";
 
+import { assistantInteractions } from "./assistant-interactions.js";
 import { shoFocusFrom, shoPreviousFrom } from "./sho-focus.js";
 
 import {
@@ -15,6 +18,7 @@ import {
   shoToolCallId,
   type ShoEngine,
   type ShoPlan,
+  type ShoTurnAsk,
   type ShoTurnInput,
   type ShoTurnRequest,
 } from "./sho-turn.js";
@@ -23,6 +27,8 @@ const NOW = new Date("2026-09-11T09:30:00.000Z");
 const COMMAND = "0d1f4b2a-6c3e-4a1d-9f55-7b2c8e1a4d60";
 const TOOL = "customers_list_customers";
 const SESSION = "4f2d6c1b-88a3-4e59-9a07-3c5d2e8f1b44";
+const CONVERSATION = "7c9a1e35-4b62-4d08-9f71-2a6b5c8d3e10";
+const BIND = "owner-1:scope-1";
 
 const engineOf = (plan: ShoPlan): ShoEngine => ({
   plan: () => Promise.resolve(plan),
@@ -367,39 +373,66 @@ describe("runShoTurn over the stored log", () => {
     } as ToolSet[string],
   });
 
-  const openCard = async (): Promise<readonly ModelMessage[]> => {
+  const askCard = async (
+    history: readonly ModelMessage[] = [],
+  ): Promise<ShoTurnAsk> => {
     const { engine } = recordingEngine(createPlan);
     const outcome = await runShoTurn({
       text: "створи клієнта Катя",
       commandId: COMMAND,
       sessionId: SESSION,
       now: NOW,
-      history: [],
+      history,
       tools: () => Promise.resolve(pausing()),
       engine,
     });
-    return outcome.kind === "ask" ? outcome.continuation.messages : [];
+    if (outcome.kind !== "ask") {
+      throw new Error("expected the write to pause on its card");
+    }
+    return outcome;
   };
 
-  const answered = (
-    messages: readonly ModelMessage[],
+  const openCard = async (): Promise<readonly ModelMessage[]> =>
+    (await askCard()).continuation.messages;
+
+  const answered = async (
+    ask: ShoTurnAsk,
     result: unknown,
-  ): readonly ModelMessage[] =>
-    messages.map((message) =>
-      message.role !== "tool"
-        ? message
-        : {
-            ...message,
-            content: message.content.map((part) =>
-              part.type === "tool-result"
-                ? {
-                    ...part,
-                    output: { type: "json", value: result as never } as const,
-                  }
-                : part,
-            ),
-          },
-    );
+  ): Promise<readonly ModelMessage[]> => {
+    const kit = createAssistantKit(testDeps(assistantInteractions));
+    const scope = { conversationId: CONVERSATION, bind: BIND };
+    const opened = await kit.open({
+      ...scope,
+      kind: "confirmation",
+      prompt: {
+        summary: "Створити Катю?",
+        preview: { title: "Новий клієнт", lines: [], notes: [] },
+        also: [],
+        level: "card",
+      },
+      secret: {
+        actionName: "customers.createCustomer",
+        canonicalInput: { name: "Катя" },
+        idempotencyKey: "k",
+        challengeId: "c",
+        also: [],
+      },
+      continuation: ask.continuation,
+    });
+    if (opened.kind !== "opened") {
+      throw new Error("expected an open card");
+    }
+    const claimed = await kit.claim({
+      ...scope,
+      interactionId: opened.pause.interactionId,
+      revision: opened.pause.revision,
+      answer: { approved: true },
+    });
+    if (claimed.kind !== "claimed") {
+      throw new Error("expected the tap to claim the card");
+    }
+    return kit.resume(claimed, result).messages;
+  };
 
   it("holds the open card's command and no id while the person has not answered", async () => {
     const paused = await openCard();
@@ -414,7 +447,10 @@ describe("runShoTurn over the stored log", () => {
   });
 
   it("takes the created id and drops previous once the write settles", async () => {
-    const settled = answered(await openCard(), { id: CREATED, name: "Катя" });
+    const settled = await answered(await askCard(), {
+      id: CREATED,
+      name: "Катя",
+    });
 
     expect(shoFocusFrom(settled, SESSION)).toEqual([
       { type: "customer", id: CREATED, name: "Катя", how: "created", turns: 0 },
@@ -423,7 +459,10 @@ describe("runShoTurn over the stored log", () => {
   });
 
   it("asks Шо with the focus the stored log holds, never with what a client sent", async () => {
-    const settled = answered(await openCard(), { id: CREATED, name: "Катя" });
+    const settled = await answered(await askCard(), {
+      id: CREATED,
+      name: "Катя",
+    });
     const { engine, asked } = recordingEngine(readPlan);
 
     await runShoTurn({

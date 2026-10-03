@@ -16,6 +16,7 @@ import {
   parseWithShoContext,
   type ShoContextSource,
 } from "./sho-context-source.js";
+import { shoFocusHolds } from "./sho-focus.js";
 import { createShoPlanner } from "./sho-plan.js";
 import type { ShoEngine, ShoPlan } from "./sho-turn.js";
 
@@ -103,10 +104,11 @@ export function createShoEngine(deps: ShoEngineDeps): ShoEngineFor {
       if (parsed.outcome !== "ok") {
         return fallback("unreadable");
       }
-      return told(
-        deps.plan(parsed.value.result, request.now),
-        parsed.value.result.commands[0],
-      );
+      const command = parsed.value.result.commands[0];
+      if (command !== undefined && !shoFocusHolds(command, request.focus)) {
+        return fallback("unresolved_reference");
+      }
+      return told(deps.plan(parsed.value.result, request.now), command);
     },
   });
 }

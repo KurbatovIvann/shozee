@@ -630,10 +630,10 @@ describe("shoLocatorFor", () => {
     ).toEqual({ kind: "locator", locator: { by: "id", id: "c-1" } });
   });
 
-  it("refuses a focus binding the runtime gave no id", () => {
+  it("leaves a focus pointer the runtime gave no id to the model", () => {
     expect(
       shoLocatorFor(ref({ text: "неї", status: "context", focus: 0 })),
-    ).toEqual({ kind: "fallback", reason: "unresolved_reference" });
+    ).toEqual({ kind: "fallback", reason: "conversation_dependent" });
   });
 
   it("gives a write planner the focus id only when it is shaped like one", () => {

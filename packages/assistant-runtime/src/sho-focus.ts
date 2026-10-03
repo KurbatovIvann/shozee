@@ -4,16 +4,6 @@ import {
 } from "@showzy/ai";
 import type { ModelMessage } from "@showzy/assistant-kit";
 import {
-  CATALOG_GET_PRODUCT_TOOL_NAME,
-  CATALOG_LIST_PRODUCTS_TOOL_NAME,
-  CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
-  CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
-  CUSTOMERS_LIST_GROUPS_TOOL_NAME,
-  ORDERS_CREATE_TOOL_NAME,
-  ORDERS_LIST_PAGE_TOOL_NAME,
-  PRICING_LIST_PRICE_LISTS_TOOL_NAME,
-} from "@showzy/ai";
-import {
   shoCommandSchema,
   shoFocusEntrySchema,
   SHO_MOST_FOCUS,
@@ -44,17 +34,6 @@ export const shoTurnLogSchema = z.object({
 
 export type ShoFocusRecord = z.infer<typeof shoFocusRecordSchema>;
 export type ShoTurnLog = z.infer<typeof shoTurnLogSchema>;
-
-export const SHO_FOCUS_TOOL_TYPES: Readonly<Record<string, ShoRecordType>> = {
-  [CATALOG_GET_PRODUCT_TOOL_NAME]: "product",
-  [CATALOG_LIST_PRODUCTS_TOOL_NAME]: "product",
-  [CUSTOMERS_GET_CUSTOMER_TOOL_NAME]: "customer",
-  [CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]: "customer",
-  [CUSTOMERS_LIST_GROUPS_TOOL_NAME]: "group",
-  [ORDERS_CREATE_TOOL_NAME]: "order",
-  [ORDERS_LIST_PAGE_TOOL_NAME]: "order",
-  [PRICING_LIST_PRICE_LISTS_TOOL_NAME]: "price_list",
-};
 
 const FOCUS_PARAM_TYPES: Readonly<Record<string, ShoRecordType>> = {
   customer: "customer",
@@ -121,11 +100,11 @@ function ranOf(
   toolName: string,
   result: unknown,
 ): readonly ShoFocusRecord[] | null {
-  const type = SHO_FOCUS_TOOL_TYPES[toolName];
   const shape = STAFF_ASSISTANT_RECORD_SHAPES[toolName];
-  if (type === undefined || shape === undefined) {
+  if (shape === undefined) {
     return null;
   }
+  const type: ShoRecordType = shape.kind;
   const rows = rowsOf(result, shape);
   if (rows === null) {
     const seen = viewOf(result, shape);
@@ -177,6 +156,20 @@ export function shoTurnRecords(
       ? (ranOf(toolName, result) ?? [])
       : [madeBy(creates, toolName, result)];
   return [...ran, ...namedIn(command)].slice(0, SHO_MOST_FOCUS);
+}
+
+export function shoFocusHolds(
+  command: ShoCommand,
+  focus: readonly ShoFocusEntry[],
+): boolean {
+  const held = new Set(focus.map((entry) => entry.id));
+  for (const param of Object.values(command.params)) {
+    const id = shoIsRef(param) && param.status === "context" ? param.id : null;
+    if (typeof id === "string" && id.length > 0 && !held.has(id)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function shoLogOptions(log: ShoTurnLog): {
@@ -237,6 +230,19 @@ function resultIn(
 const stillPaused = (result: unknown): boolean =>
   isJson(result) && result["status"] === "paused";
 
+function recordsOf(
+  command: ShoCommand,
+  toolName: string,
+  result: unknown,
+  paused: boolean,
+  open: boolean,
+): readonly ShoFocusRecord[] {
+  if (!paused) {
+    return shoTurnRecords(command, toolName, result);
+  }
+  return open ? shoTurnRecords(command, toolName, undefined) : namedIn(command);
+}
+
 interface Touched {
   readonly log: ShoTurnLog;
   readonly records: readonly ShoFocusRecord[];
@@ -262,15 +268,18 @@ function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
       continue;
     }
     const result = resultIn(history, index, ran.toolCallId);
-    const open = stillPaused(result);
+    const paused = stillPaused(result);
+    const open = paused && turns === 0;
     touched.push({
       log: parsed.data,
       open,
       turns,
-      records: shoTurnRecords(
+      records: recordsOf(
         parsed.data.command,
         ran.toolName,
-        open ? undefined : result,
+        result,
+        paused,
+        open,
       ),
     });
   }

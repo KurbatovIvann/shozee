@@ -75,7 +75,7 @@ export function shoLocatorFor(ref: ShoRef): ShoLocatorOutcome {
   if (ref.status === "context") {
     return typeof ref.id === "string" && ref.id.length > 0
       ? { kind: "locator", locator: { by: "id", id: ref.id } }
-      : refused("unresolved_reference");
+      : refused("conversation_dependent");
   }
   if (ref.focus !== undefined || ref.status === "previous") {
     return refused("conversation_dependent");

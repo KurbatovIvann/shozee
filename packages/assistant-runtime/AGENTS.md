@@ -274,14 +274,17 @@ registry is injected into `createAssistantRuntime`; this package never imports
   D78/D88–D90). A Шо turn writes one entry — the command, the session and the
   moment — into the tool-call message's `providerOptions.sho`, which no
   provider reads; the records are read back out of that command and the tool
-  result stored beside it, through `STAFF_ASSISTANT_RECORD_SHAPES` (the
-  façade keys: `rows` and `orderId` for `orders_list_page`, `items` and `id`
-  for the copies), never the module's own output shape. Reading rather than
-  storing them is what closes a card: while the result is still
-  `{status: "paused"}` the create has no id and `previous` is that open
-  card's command (D93), and the kit's resume puts the real result in its
-  place, so the next parse sees the created id and `previous` is nothing
-  after a write. The walk is newest first, counts the person's commands since
+  result stored beside it, through `STAFF_ASSISTANT_RECORD_SHAPES` — which
+  carries each façade's own keys **and** the record kind, so nothing here
+  keys a second table by the same tool names. Reading rather than storing
+  them is what closes a card. A card is open while its result is still
+  `{status: "paused"}` **and** no later command stands in the log: then the
+  create has no id and `previous` is that card's command (D93). The kit's
+  resume puts the real result in its place, so a confirmed write hands back
+  its created id and `previous` goes null; a card the person walked away from
+  (the next message abandons the pause) is one command older by the parse
+  after it, and its records and its `previous` go with it, with no second
+  open-or-closed check against Redis. The walk is newest first, counts the person's commands since
   each entry for `turns`, marks another session's entries `earlier`, keeps one
   entry per record and one marker per kind, and sends at most
   `SHO_MOST_FOCUS`.

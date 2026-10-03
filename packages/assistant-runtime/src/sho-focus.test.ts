@@ -356,6 +356,20 @@ describe("shoFocusFrom", () => {
     expect(shoFocusFrom(history, SESSION)).toEqual([]);
   });
 
+  it("drops the card the person walked away from", () => {
+    const abandoned = [
+      ...turn("створи клієнта Катя", {
+        command: createKate,
+        toolName: CREATE_CUSTOMER_TOOL,
+        result: PAUSED,
+      }),
+      asked("покажи клієнтів"),
+    ];
+
+    expect(shoFocusFrom(abandoned, SESSION)).toEqual([]);
+    expect(shoPreviousFrom(abandoned)).toBeUndefined();
+  });
+
   it("holds no id for a write still waiting on its card", () => {
     const waiting = turn("створи клієнта Катя", {
       command: createKate,

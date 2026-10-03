@@ -4,6 +4,7 @@ import {
   shoCommandSchema,
   shoResultSchema,
   type ShoClient,
+  type ShoCommand,
   type ShoParseInput,
   type ShoParseOutcome,
   type ShoResult,
@@ -267,6 +268,70 @@ describe("what createShoEngine asks Шо", () => {
 
     expect(asked[0]?.focus).toEqual(focus);
     expect(asked[0]?.previous?.command.action).toBe("customers.listCustomers");
+  });
+
+  const boundTo = (id: string) =>
+    shoCommandSchema.parse({
+      ...COMMAND,
+      action: "orders.list",
+      params: {
+        customer: {
+          text: "неї",
+          status: "context",
+          id,
+          name: "Катя",
+          focus: 0,
+        },
+      },
+    });
+
+  const engineOver = (
+    command: ShoCommand,
+  ): ReturnType<typeof createShoEngine> =>
+    createShoEngine({
+      client: clientOf(() =>
+        Promise.resolve({
+          outcome: "ok",
+          value: {
+            model: { id: "sho", md5: "0" },
+            contextRevision: null,
+            result: { ...RESULT, commands: [command] },
+            ms: 12,
+          },
+        }),
+      ),
+      source: sourceOf(() => Promise.resolve(BUILD)),
+      plan: () => CALL,
+    });
+
+  const FOCUS = [
+    {
+      type: "customer" as const,
+      id: "c-1",
+      name: "Катя",
+      how: "created" as const,
+      turns: 0,
+    },
+  ];
+
+  it("plans a reference the focus it sent holds", async () => {
+    await expect(
+      engineOver(boundTo("c-1"))(MEMBER).plan({
+        text: "покажи її замовлення",
+        now: new Date("2026-10-02T09:00:00.000Z"),
+        focus: FOCUS,
+      }),
+    ).resolves.toMatchObject({ kind: "call" });
+  });
+
+  it("refuses an id no entry of the focus it sent holds", async () => {
+    await expect(
+      engineOver(boundTo("c-2"))(MEMBER).plan({
+        text: "покажи її замовлення",
+        now: new Date("2026-10-02T09:00:00.000Z"),
+        focus: FOCUS,
+      }),
+    ).resolves.toEqual({ kind: "fallback", reason: "unresolved_reference" });
   });
 
   it("tells the turn which command it planned, so the log stores it", async () => {
