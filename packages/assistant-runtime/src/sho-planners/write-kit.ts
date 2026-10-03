@@ -9,6 +9,7 @@ import {
   shoPlanFallback,
   shoRefLocator,
   shoRefused,
+  SHO_UUID,
   type ShoActionPlan,
   type ShoActionPlanner,
   type ShoActionPlanners,
@@ -48,6 +49,19 @@ export const shoIdOnly =
   (field: string) =>
   (param: ShoParam): ShoWriteMapped =>
     shoIdFrom(param, field);
+
+export function shoVariantId(param: ShoParam): ShoWriteMapped {
+  if (
+    Array.isArray(param) ||
+    !("attrs" in param) ||
+    param.status !== "resolved"
+  ) {
+    return "unsupported_param";
+  }
+  return typeof param.id === "string" && SHO_UUID.test(param.id)
+    ? { variantId: param.id }
+    : "unsupported_param";
+}
 
 export interface ShoMoney {
   readonly minor: number;

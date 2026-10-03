@@ -10,7 +10,6 @@ import type { ShoParam } from "@showzy/sho-protocol";
 import {
   shoIsRef,
   shoRefused,
-  SHO_UUID,
   type ShoActionPlanners,
   type ShoPlanFallbackReason,
 } from "./kit.js";
@@ -21,6 +20,7 @@ import {
   shoMoneyOf,
   shoRenamedName,
   shoSpokenText,
+  shoVariantId,
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
@@ -107,22 +107,16 @@ function productLines(
   return lines;
 }
 
+const unsaidVariant = (param: ShoParam): boolean =>
+  !Array.isArray(param) &&
+  "attrs" in param &&
+  (param.status === "none" || param.status === "unspecified");
+
 function variantOfLine(param: ShoParam | undefined): ShoWriteMapped {
-  if (param === undefined) {
+  if (param === undefined || unsaidVariant(param)) {
     return {};
   }
-  if (Array.isArray(param) || !("attrs" in param)) {
-    return "unsupported_param";
-  }
-  if (param.status === "none" || param.status === "unspecified") {
-    return {};
-  }
-  const id = param.id;
-  return param.status === "resolved" &&
-    typeof id === "string" &&
-    SHO_UUID.test(id)
-    ? { variantId: id }
-    : "unsupported_param";
+  return shoVariantId(param);
 }
 
 function priceOfLine(param: ShoParam | undefined): ShoWriteMapped {
