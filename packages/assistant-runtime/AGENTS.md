@@ -288,19 +288,49 @@ registry is injected into `createAssistantRuntime`; this package never imports
   the runtime resolves against the parent product's variants, so a variant
   binds only as a **resolved** uuid — ambiguous, unknown, unspecified and
   `none` are all `unsupported_param`, because nothing here may guess between
-  two variants and the four actions take no query. The parent is the same
-  bound `product` the product planners take: `createVariant` and
-  `updateVariant` send it as `productId`, and the lifecycle two, whose
-  actions take the variant alone, still require it to bind and then drop it —
-  it located the variant, it is not a field of the write. An update needs a
-  rename or a price as the product one does, and the override pair follows
-  the same money rule; clearing an override is the LLM, since a parse says
-  no null pair. The D84 misread becomes the card's note; `read_as_focus_type`
-  is not mapped here, because the focus holds no variant record and the
-  delete family reads a focused product as `archiveProduct`. No gold
-  conformance parse carries a variant intent, so the planner tests borrow the
-  verbatim `variant` and `product` params of `d79-price-list-case` and name
-  that case id.
+  two variants and the four actions take no query.
+  The parent product is **only** a `status: "resolved"` ref here, unlike the
+  product planners, which take a focus-held one too: a pronoun parent is no
+  product index for the runtime (`command.ts` `productIndex`), so
+  `resolveVariant` matches the attrs across every product in the company and
+  can come back `resolved` on a variant of a product the person never named —
+  archiving it would be the wrong write. A `status: "context"` parent beside
+  a variant is therefore the LLM.
+  The catalogue marks `product` optional on all four, and so is it here: only
+  a **said** parent must bind. `createVariant` and `updateVariant` send it as
+  `productId` — `catalog.updateVariant` takes a uuid `productId` beside the
+  variant and nothing derives one, so the planner requires the parent there
+  although the catalogue does not — and the lifecycle two, whose actions take
+  the variant alone, bind it and then drop it: it located the variant, it is
+  not a field of the write. An update needs a rename or a price as the
+  product one does, and the override pair follows the same money rule;
+  clearing an override is the LLM, since a parse says no null pair. The D84
+  misread and a non-blocking `unknown_attr` — an attr word no variant of the
+  product has, which the resolution drops — become the card's notes;
+  `read_as_focus_type` is not mapped here, because the focus holds no variant
+  record and the delete family reads a focused product as `archiveProduct`.
+  No gold conformance parse carries a variant intent, so the planner tests
+  borrow the verbatim `variant` and `product` params of `d79-price-list-case`
+  and name that case id.
+- `sho-planners/pricing-writes.ts` — the price list write planners (SHO-857):
+  `pricing.createPriceList`, `pricing.updatePriceList`,
+  `pricing.activatePriceList`, `pricing.deactivatePriceList`,
+  `pricing.setDefaultPriceList` and `pricing.deletePriceList` onto their own
+  action tools, `writes: true`, so each pauses on the ADR-0050 preview — the
+  delete on a strong card, since its risk is `high`. `price_list` is a
+  resolved or focus-held uuid (`shoIdOnly`) and a spoken name is
+  `unsupported_param`; `new_name` takes the nominative the parse created over
+  the span, `rename_to` the span, and the catalogue's `is_default` /
+  `is_active` booleans arrive as the enum values «true» / «false». An update
+  that would change nothing is a `blocking_need`, not an empty card.
+  `pricing.clearDefaultPriceList` is an intent Shozee has no action for: it
+  plans `pricing.setDefaultPriceList` `{ priceListId: null }`, which is what
+  that action already means by null, and a parse that carries any param at
+  all falls back. That null is the plan's `constants` — a field the write kit
+  merges into the input after the mapped params, refusing a constant a mapper
+  already wrote — so there is one planner path and no second plan shape.
+  `SHO_PRICING_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
+  config default stays empty.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never

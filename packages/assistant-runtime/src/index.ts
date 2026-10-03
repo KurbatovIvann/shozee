@@ -30,6 +30,7 @@ export * from "./sho-planners/customers-writes.js";
 export * from "./sho-planners/documents-writes.js";
 export * from "./sho-planners/orders-lifecycle.js";
 export * from "./sho-planners/orders-writes.js";
+export * from "./sho-planners/pricing-writes.js";
 export * from "./sho-planners/reads.js";
 export * from "./sho-turn.js";
 export * from "./runtime-types.js";

@@ -33,6 +33,7 @@ import {
   SHO_READ_AS_VARIANT_UPDATE_NOTE,
   SHO_RESTORE_PRODUCT,
   SHO_RESTORE_VARIANT,
+  SHO_UNKNOWN_VARIANT_ATTR_NOTE,
   SHO_UPDATE_PRODUCT,
   SHO_UPDATE_VARIANT,
 } from "./catalog-writes.js";
@@ -701,9 +702,27 @@ describe("the archive and restore of a variant take the variant alone", () => {
         ),
       }).toEqual({
         action,
-        plan: { kind: "fallback", reason: "unresolved_reference" },
+        plan: { kind: "fallback", reason: "unsupported_param" },
       });
     }
+  });
+
+  it("notes an attr no variant of the product carries", () => {
+    expect(
+      notesOf(
+        planOf(
+          onTheVariant(SHO_ARCHIVE_VARIANT, ourVariant(), {
+            needs: [
+              {
+                path: "variant.attrs[1]",
+                reason: "unknown_attr",
+                blocking: false,
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toEqual([`${SHO_UNKNOWN_VARIANT_ATTR_NOTE}.`]);
   });
 });
 
@@ -725,6 +744,38 @@ describe("a variant write binds no variant the parse did not resolve", () => {
         onTheVariant(SHO_ARCHIVE_VARIANT, {
           variant: variantRef(OUR_VARIANT),
           product: goldParent(),
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses a focus-held parent beside a variant the attrs resolved", () => {
+    for (const action of [
+      SHO_UPDATE_VARIANT,
+      SHO_ARCHIVE_VARIANT,
+      SHO_RESTORE_VARIANT,
+    ]) {
+      expect({
+        action,
+        plan: planOf(
+          onTheVariant(action, {
+            variant: variantRef(OUR_VARIANT),
+            product: productRef(OUR_PRODUCT),
+          }),
+        ),
+      }).toEqual({
+        action,
+        plan: { kind: "fallback", reason: "unsupported_param" },
+      });
+    }
+  });
+
+  it("refuses a focus-held parent for a created variant", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_CREATE_VARIANT, {
+          product: productRef(OUR_PRODUCT),
+          new_name: suggestedCreate()["new_name"],
         }),
       ),
     ).toEqual({ kind: "fallback", reason: "unsupported_param" });

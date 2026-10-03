@@ -5,7 +5,12 @@ import {
   PRODUCT_NAME_MAX,
 } from "@showzy/validation/catalog";
 
-import { shoRefused, SHO_UUID, type ShoActionPlanners } from "./kit.js";
+import {
+  shoIsRef,
+  shoRefused,
+  SHO_UUID,
+  type ShoActionPlanners,
+} from "./kit.js";
 import {
   shoCreatedName,
   shoIdFrom,
@@ -14,6 +19,7 @@ import {
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
+  type ShoWriteMapped,
   type ShoWriteParamMapper,
   type ShoWritePlan,
   type ShoWritePlans,
@@ -53,7 +59,15 @@ const UPDATE_NOTES: Readonly<Record<string, string>> = {
 export const SHO_READ_AS_VARIANT_UPDATE_NOTE =
   "Прочитано як редагування варіанта, не створення";
 
+export const SHO_UNKNOWN_VARIANT_ATTR_NOTE =
+  "Ознаку варіанта не впізнано, вибрано за рештою";
+
+const VARIANT_NOTES: Readonly<Record<string, string>> = {
+  unknown_attr: SHO_UNKNOWN_VARIANT_ATTR_NOTE,
+};
+
 const VARIANT_UPDATE_NOTES: Readonly<Record<string, string>> = {
+  ...VARIANT_NOTES,
   read_as_update: SHO_READ_AS_VARIANT_UPDATE_NOTE,
 };
 
@@ -124,8 +138,13 @@ const variant: ShoWriteParamMapper = (param) => {
     : "unsupported_param";
 };
 
+const resolvedProduct = (param: ShoParam): ShoWriteMapped =>
+  shoIsRef(param) && param.status === "resolved"
+    ? shoIdFrom(param, "productId")
+    : "unsupported_param";
+
 const locatingProduct: ShoWriteParamMapper = (param) => {
-  const bound = shoIdFrom(param, "productId");
+  const bound = resolvedProduct(param);
   return shoRefused(bound) ? bound : {};
 };
 
@@ -134,6 +153,7 @@ const onVariant = (action: string, reply: string): ShoWritePlan => ({
   reply,
   params: { variant, product: locatingProduct },
   required: ["variant"],
+  notes: VARIANT_NOTES,
 });
 
 const SHO_CATALOG_WRITES: ShoWritePlans = {
@@ -167,7 +187,7 @@ const SHO_CATALOG_WRITES: ShoWritePlans = {
     toolName: toProviderToolName(SHO_CREATE_VARIANT),
     reply: "Варіант створено.",
     params: {
-      product,
+      product: resolvedProduct,
       new_name: variantName,
       price: basePrice,
     },
@@ -178,7 +198,7 @@ const SHO_CATALOG_WRITES: ShoWritePlans = {
     reply: "Варіант оновлено.",
     params: {
       variant,
-      product,
+      product: resolvedProduct,
       rename_to: variantName,
       price: basePrice,
     },
