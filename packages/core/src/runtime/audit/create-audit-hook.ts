@@ -45,6 +45,7 @@ export function createAuditHook(deps: AuditHookDeps): AuditHook {
         input: env.input,
         output: env.output,
         ctx: env.ctx,
+        ...(env.resolvedId !== undefined ? { resolvedId: env.resolvedId } : {}),
       };
       const target = await env.auditTarget(targetEnv);
       const inputHash = hashInput(env.input);
@@ -84,7 +85,12 @@ export function createAuditHook(deps: AuditHookDeps): AuditHook {
       let target: AuditTargetRef | undefined;
       if (env.auditTarget !== undefined) {
         try {
-          const targetEnv: AuditTargetEnv = { input: env.input };
+          const targetEnv: AuditTargetEnv = {
+            input: env.input,
+            ...(env.resolvedId !== undefined
+              ? { resolvedId: env.resolvedId }
+              : {}),
+          };
           target = await env.auditTarget(targetEnv);
         } catch (targetError) {
           // The audit row must still be written — fall back to a synthetic

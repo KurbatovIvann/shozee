@@ -52,7 +52,7 @@ const shareAuditTarget = holderAuditTarget({
   type: "document",
   field: "documentId",
   fallback: "unknown",
-  sources: ["output", "input"],
+  sources: ["output", "resolved", "input"],
 });
 
 export const shareDocument = implementAction(shareDocumentContract, {
@@ -78,6 +78,7 @@ export const shareDocument = implementAction(shareDocumentContract, {
     if (locked[0] === undefined) {
       throw new NotFoundError();
     }
+    ctx.auditTarget(documentId);
 
     const view = await loadStaffDocument({
       db: ctx.db,

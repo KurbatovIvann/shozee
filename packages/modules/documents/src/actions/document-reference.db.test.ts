@@ -7,6 +7,7 @@ import {
 } from "@showzy/core";
 import {
   ConfirmationRequiredError,
+  ConflictError,
   ValidationError,
 } from "@showzy/core/errors";
 import {
@@ -14,6 +15,7 @@ import {
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
+import { auditLog } from "@showzy/db";
 import { products } from "@showzy/db/schema/catalog";
 import { companyCustomers } from "@showzy/db/schema/customers";
 import { documentGenerationJobs } from "@showzy/db/schema/doc-generation";
@@ -76,6 +78,7 @@ const fixtures = {
   idempotent: randomUUID(),
   signablePdf: randomUUID(),
   foreign: randomUUID(),
+  auditConflict: randomUUID(),
 };
 
 const sellerSnapshot = {
@@ -254,6 +257,11 @@ beforeAll(async () => {
       documentNumber: row.documentNumber,
     });
   }
+  await insertSeedDocument({
+    id: fixtures.auditConflict,
+    companyId: companyA,
+    documentNumber: "KA-РХ-000500",
+  });
   await insertSeedDocument({
     id: fixtures.foreign,
     companyId: companyB,
@@ -467,5 +475,71 @@ describe("the preview resolves the same reference and mints nothing", () => {
         { request: { idempotencyKey } },
       ),
     ).toEqual(first);
+  });
+});
+
+describe("a write that fails after resolution audits the document it named (SHO-867)", () => {
+  async function auditRow(requestId: string) {
+    const rows = await kit.db.runtime.db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.requestId, requestId));
+    expect(rows).toHaveLength(1);
+    return rows[0];
+  }
+
+  it("records the resolved document id when the number names a cancelled document", async () => {
+    await kit.invoke(cancelDocument, { documentId: fixtures.auditConflict });
+
+    const requestId = randomUUID();
+    expect(
+      await rejection(() =>
+        kit.invoke(
+          cancelDocument,
+          { documentNumber: "500" },
+          {},
+          { request: { requestId } },
+        ),
+      ),
+    ).toBeInstanceOf(ConflictError);
+
+    expect(await auditRow(requestId)).toMatchObject({
+      action: "documents.cancel",
+      companyId: companyA,
+      targetType: "document",
+      targetId: fixtures.auditConflict,
+      outcome: "CONFLICT",
+    });
+  });
+
+  it("leaves the target unknown when the number names no document", async () => {
+    const requestId = randomUUID();
+    await rejection(() =>
+      kit.invoke(
+        cancelDocument,
+        { documentNumber: "777" },
+        {},
+        { request: { requestId } },
+      ),
+    );
+
+    expect((await auditRow(requestId))?.targetId).toBe("unknown");
+  });
+
+  it("never records company A's document id for company B's number", async () => {
+    const requestId = randomUUID();
+    await rejection(() =>
+      kit.invoke(
+        cancelDocument,
+        { documentNumber: SPOKEN_NUMBER },
+        asCompanyB,
+        { request: { requestId } },
+      ),
+    );
+
+    const row = await auditRow(requestId);
+    expect(row?.companyId).toBe(companyB);
+    expect(row?.targetId).toBe("unknown");
+    expect(row?.targetId).not.toBe(fixtures.spoken);
   });
 });

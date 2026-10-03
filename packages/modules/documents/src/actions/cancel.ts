@@ -28,7 +28,7 @@ const cancelAuditTarget = holderAuditTarget({
   type: "document",
   field: "documentId",
   fallback: "unknown",
-  sources: ["output", "input"],
+  sources: ["output", "resolved", "input"],
 });
 
 export const cancelDocument = implementAction(cancelDocumentContract, {
@@ -61,6 +61,7 @@ export const cancelDocument = implementAction(cancelDocumentContract, {
     if (row === undefined) {
       throw new NotFoundError();
     }
+    ctx.auditTarget(documentId);
     if (row.status === "cancelled") {
       throw new ConflictError(ALREADY_CANCELLED_MESSAGE);
     }

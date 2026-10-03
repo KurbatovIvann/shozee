@@ -51,6 +51,10 @@ import {
 } from "../../errors/index.js";
 import type { AnyActionContract } from "../action-registry.js";
 import {
+  createAuditTargetBox,
+  type AuditTargetBox,
+} from "../audit/audit-target-box.js";
+import {
   createAccountContext,
   createConsumerContext,
   createCustomerContext,
@@ -141,6 +145,7 @@ interface RunState {
   reserved: { readonly reservation: unknown } | undefined;
   /** Marks the finish log line when a stored response replayed. */
   replayed: boolean;
+  readonly auditTarget: AuditTargetBox;
 }
 
 /** A step that either replays a stored response or lets execution proceed. */
@@ -201,6 +206,7 @@ export async function executeAction<
     validatedInput: undefined,
     reserved: undefined,
     replayed: false,
+    auditTarget: createAuditTargetBox(contract.name),
   };
 
   const finish = (outcome: string): void => {
@@ -325,6 +331,7 @@ export async function executeAction<
       request,
       principal,
       auditTarget: invocation.action.auditTarget,
+      resolvedId: state.auditTarget.resolvedId(),
       state,
       error: coreError,
       durationMs: now() - startedAt,
@@ -428,6 +435,7 @@ function buildRunEnv<
       enqueue: enqueueBuffer.enqueue,
       call: ctxCall,
       callAtomic: ctxCallAtomic,
+      auditTarget: state.auditTarget.record,
     }),
   };
   const hookEnv: PipelineHookEnv = {
@@ -714,6 +722,7 @@ async function runExecutionTransaction<
           durationMs: now() - options.startedAt,
           auditTarget: requireAuditTarget(env),
           auditSnapshot: env.action.auditSnapshot,
+          resolvedId: state.auditTarget.resolvedId(),
         });
       }
       if (
@@ -778,6 +787,7 @@ async function runPostCommitReadAudit<
         durationMs: options.now() - options.startedAt,
         auditTarget: requireAuditTarget(env),
         auditSnapshot: env.action.auditSnapshot,
+        resolvedId: state.auditTarget.resolvedId(),
       });
     });
   } catch (auditError) {
@@ -797,6 +807,7 @@ async function recordFailureOutcome(options: {
   readonly request: PipelineHookRequestMeta;
   readonly principal: PrincipalInvocation;
   readonly auditTarget: AuditTargetFn | undefined;
+  readonly resolvedId: string | undefined;
   readonly state: RunState;
   readonly error: CoreError;
   readonly durationMs: number;
@@ -829,6 +840,7 @@ async function recordFailureOutcome(options: {
         error: options.error,
         durationMs: options.durationMs,
         auditTarget: options.auditTarget,
+        resolvedId: options.resolvedId,
       });
     } catch (hookError) {
       options.log.error({ err: hookError }, "audit recordFailure hook failed");

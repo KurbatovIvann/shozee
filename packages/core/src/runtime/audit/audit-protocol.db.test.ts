@@ -492,6 +492,7 @@ describe("audit protocol — transactionality", () => {
       auditTarget: () => {
         throw new Error("target builder exploded");
       },
+      resolvedId: undefined,
     });
 
     // The audit row is still written, with the synthetic fallback target.
@@ -526,7 +527,122 @@ describe("audit protocol — transactionality", () => {
         },
         durationMs: 1,
         auditTarget: () => ({ type: "order", id: randomUUID() }),
+        resolvedId: undefined,
       }),
     ).rejects.toThrow(CoreInvariantError);
+  });
+});
+
+describe("audit protocol — the handler-resolved target (core.md §8)", () => {
+  const resolvedTarget = (env: { readonly resolvedId?: string }) => ({
+    type: "order",
+    id: env.resolvedId ?? "unknown",
+  });
+
+  const staffPrincipal = {
+    mode: "staff",
+    session: { userId: users.anna },
+    companySelector: companyA,
+  } as const;
+
+  it("records the id the handler resolved when the write fails after resolution", async () => {
+    const resolved = randomUUID();
+    const req = requestMeta();
+
+    const action = implementAction(writeContract, {
+      handler: (_input, ctx) => {
+        ctx.auditTarget(resolved);
+        return Promise.reject(new ConflictError("Order already confirmed."));
+      },
+      auditTarget: resolvedTarget,
+    });
+
+    await expect(
+      executeAction(depsWithAudit(), {
+        action,
+        input: { orderId: randomUUID(), note: "By number" },
+        request: req,
+        principal: staffPrincipal,
+      }),
+    ).rejects.toThrow(ConflictError);
+
+    const rows = await auditRows(req.requestId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      targetType: "order",
+      targetId: resolved,
+      outcome: "CONFLICT",
+    });
+  });
+
+  it("stays unknown when the handler failed before resolving a target", async () => {
+    const req = requestMeta();
+
+    const action = implementAction(writeContract, {
+      handler: () => Promise.reject(new ConflictError("Nothing resolved.")),
+      auditTarget: resolvedTarget,
+    });
+
+    await expect(
+      executeAction(depsWithAudit(), {
+        action,
+        input: { orderId: randomUUID(), note: "Unresolved" },
+        request: req,
+        principal: staffPrincipal,
+      }),
+    ).rejects.toThrow(ConflictError);
+
+    const rows = await auditRows(req.requestId);
+    expect(rows[0]?.targetId).toBe("unknown");
+  });
+
+  it("carries the resolved id into the success row", async () => {
+    const resolved = randomUUID();
+    const req = requestMeta();
+
+    const action = implementAction(writeContract, {
+      handler: (_input, ctx) => {
+        ctx.auditTarget(resolved);
+        return Promise.resolve({ id: resolved });
+      },
+      auditTarget: resolvedTarget,
+    });
+
+    await executeAction(depsWithAudit(), {
+      action,
+      input: { orderId: randomUUID(), note: "Resolved then written" },
+      request: req,
+      principal: staffPrincipal,
+    });
+
+    const rows = await auditRows(req.requestId);
+    expect(rows[0]).toMatchObject({ targetId: resolved, outcome: "ok" });
+  });
+
+  it("refuses a second resolved target in one invocation", async () => {
+    const first = randomUUID();
+    const req = requestMeta();
+
+    const action = implementAction(writeContract, {
+      handler: (_input, ctx) => {
+        ctx.auditTarget(first);
+        ctx.auditTarget(randomUUID());
+        return Promise.resolve({ id: first });
+      },
+      auditTarget: resolvedTarget,
+    });
+
+    await expect(
+      executeAction(depsWithAudit(), {
+        action,
+        input: { orderId: randomUUID(), note: "Set twice" },
+        request: req,
+        principal: staffPrincipal,
+      }),
+    ).rejects.toThrow(CoreInvariantError);
+
+    const rows = await auditRows(req.requestId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.targetId).toBe(first);
   });
 });

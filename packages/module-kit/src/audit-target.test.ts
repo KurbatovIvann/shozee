@@ -165,3 +165,35 @@ describe("audit-target factory", () => {
     expect(target({ input: {} }).id).toBe("unknown");
   });
 });
+
+describe("the handler-resolved source (SHO-867)", () => {
+  const orderId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const resolvedId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const target = holderAuditTarget({
+    type: "order",
+    field: "orderId",
+    fallback: "unknown",
+    sources: ["output", "resolved", "input"],
+  });
+
+  it("names the resolved record when a by-number write fails before output", () => {
+    expect(target({ input: { orderNumber: "KA-131" }, resolvedId })).toEqual({
+      type: "order",
+      id: resolvedId,
+    });
+  });
+
+  it("keeps the fallback when nothing resolved", () => {
+    expect(target({ input: { orderNumber: "KA-999" } })).toEqual({
+      type: "order",
+      id: "unknown",
+    });
+  });
+
+  it("leaves output and input precedence untouched", () => {
+    expect(target({ output: { orderId }, input: {}, resolvedId }).id).toBe(
+      orderId,
+    );
+    expect(target({ input: { orderId } }).id).toBe(orderId);
+  });
+});

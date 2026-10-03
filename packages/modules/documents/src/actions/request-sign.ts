@@ -47,7 +47,7 @@ const requestSignAuditTarget = holderAuditTarget({
   type: "document",
   field: "documentId",
   fallback: "unknown",
-  sources: ["output", "input"],
+  sources: ["output", "resolved", "input"],
 });
 
 export const requestSign = implementAction(requestSignContract, {
@@ -76,6 +76,7 @@ export const requestSign = implementAction(requestSignContract, {
     if (row === undefined) {
       throw new NotFoundError();
     }
+    ctx.auditTarget(documentId);
     if (row.status === "cancelled") {
       throw new ConflictError(CANCELLED_REQUEST_SIGN_MESSAGE);
     }
