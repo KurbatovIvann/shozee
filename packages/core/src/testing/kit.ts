@@ -376,12 +376,12 @@ export async function createTestKit(db?: TestDatabase): Promise<TestKit> {
   await seedTestKit(database);
 
   const jobs = createRecordingJobPort();
-  const pipeline: ActionPipelineDeps = {
+  const pipeline: ActionPipelineDeps = Object.freeze({
     db: jobs.commitBound(database.runtime.db),
     logger: silentLogger,
     projectionGrants: createProjectionGrantManifest([fixtureDiscoveryGrant]),
-    hooks: kitProtocolHooks(database, jobs),
-  };
+    hooks: Object.freeze(kitProtocolHooks(database, jobs)),
+  });
 
   const kit: TestKit = {
     db: database,

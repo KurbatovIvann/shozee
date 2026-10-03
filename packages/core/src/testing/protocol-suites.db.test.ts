@@ -23,6 +23,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RateLimitError } from "../errors/index.js";
 import { createRateLimitHook } from "../runtime/rate-limit/create-rate-limit-hook.js";
 import { createInMemoryRateLimitStore } from "../runtime/rate-limit/token-bucket.js";
+import { invokeConfirmedAction } from "./confirmation-gate.js";
 import { createCorrectFixtureActions } from "./fixture-actions.js";
 import { createProtocolFixtureActions } from "./fixture-module.js";
 import { kitIdentities } from "./identities.js";
@@ -47,9 +48,23 @@ const isolation = createCorrectFixtureActions();
 const protocol = createProtocolFixtureActions();
 let stockProductId: string;
 
+const gatedFollows = {
+  replay: randomUUID(),
+  conflict: randomUUID(),
+  concurrent: randomUUID(),
+  guard: randomUUID(),
+  guardConcurrent: randomUUID(),
+};
+
 beforeAll(async () => {
   kit = await createTestKit();
   stockProductId = await seedStock(5);
+  await kit.db.runtime.db.insert(fixtureCompanyFollows).values(
+    Object.values(gatedFollows).map((companyId) => ({
+      userId: kitIdentities.users.anna,
+      companyId,
+    })),
+  );
 });
 
 afterAll(async () => {
@@ -129,6 +144,19 @@ async function followExists(userId: string): Promise<boolean> {
 
 const replayNote = noteInput("hello");
 
+async function confirmFollowOkAudits(): Promise<number> {
+  const rows = await kit.db.runtime.db
+    .select({ id: auditLog.id })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.action, "kitFixture.confirmFollow"),
+        eq(auditLog.outcome, "ok"),
+      ),
+    );
+  return rows.length;
+}
+
 idempotencySuite(
   () => kit,
   [
@@ -138,6 +166,13 @@ idempotencySuite(
       conflictingInput: { ...replayNote, body: "changed" },
       freshInput: () => noteInput("concurrent"),
       readEffect: () => noteRowCount(replayNote.noteId),
+    },
+    {
+      action: isolation.accountConfirmFollow,
+      input: { companyId: gatedFollows.replay },
+      conflictingInput: { companyId: gatedFollows.conflict },
+      freshInput: () => ({ companyId: gatedFollows.concurrent }),
+      readEffect: confirmFollowOkAudits,
     },
   ],
 );
@@ -194,6 +229,51 @@ atomicCallSuite(
     },
   ],
 );
+
+describe("idempotencySuite drives the confirmation gate", () => {
+  it("leaves the kit's shared hooks untouched and frozen", async () => {
+    const hooks = kit.pipeline.hooks;
+    const confirmation = hooks?.confirmation;
+    await runIdempotencyCase(kit, {
+      action: isolation.accountConfirmFollow,
+      input: { companyId: gatedFollows.guard },
+      conflictingInput: { companyId: gatedFollows.conflict },
+      freshInput: () => ({ companyId: gatedFollows.guardConcurrent }),
+      readEffect: confirmFollowOkAudits,
+    });
+    expect(kit.pipeline.hooks).toBe(hooks);
+    expect(kit.pipeline.hooks?.confirmation).toBe(confirmation);
+    expect(Object.isFrozen(hooks)).toBe(true);
+    expect(() =>
+      Object.assign(hooks as object, { confirmation: undefined }),
+    ).toThrow(TypeError);
+  });
+
+  it("replays a completed key without issuing a second card", async () => {
+    const companyId = randomUUID();
+    await kit.db.runtime.db
+      .insert(fixtureCompanyFollows)
+      .values({ userId: kitIdentities.users.anna, companyId });
+    const idempotencyKey = randomUUID();
+    const confirmed = await invokeConfirmedAction(
+      kit,
+      isolation.accountConfirmFollow,
+      { companyId },
+      {},
+      { request: { idempotencyKey } },
+    );
+    const before = await confirmFollowOkAudits();
+    const replay = await invokeAction(
+      kit,
+      isolation.accountConfirmFollow,
+      { companyId },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(replay).toEqual(confirmed);
+    expect(await confirmFollowOkAudits()).toBe(before);
+  });
+});
 
 describe("idempotencySuite fails on a non-idempotent twin", () => {
   it("detects replay that re-runs the handler", async () => {

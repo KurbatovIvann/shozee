@@ -17,6 +17,7 @@ export {
   declaredErrorsReportPath,
   UndeclaredActionError,
 } from "./declared-errors.js";
+export { challengeIdFor, invokeConfirmedAction } from "./confirmation-gate.js";
 export {
   buildJobEnvelope,
   buildTestContext,
