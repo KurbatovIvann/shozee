@@ -14,14 +14,13 @@ import type {
   ShoVariantRef,
 } from "@showzy/sho-protocol";
 
-import type { ShoPlan } from "../sho-turn.js";
-
 import {
   shoIsRef,
   shoPlanFallback,
   shoRefLocator,
   shoRefused,
   SHO_UUID,
+  type ShoActionPlan,
   type ShoActionPlanner,
   type ShoActionPlanners,
   type ShoLocator,
@@ -77,10 +76,10 @@ function isOrderItems(param: ShoParam): param is ShoOrderItem[] {
   );
 }
 
-const MEASURED_UNITS: readonly string[] = ["g", "kg", "t", "ml", "l"];
+const COUNTING_UNITS: readonly string[] = ["pcs", "pair", "bottle", "can"];
 
 function quantityFields(quantity: ShoQuantity): Mapped {
-  if (quantity.unit !== null && MEASURED_UNITS.includes(quantity.unit)) {
+  if (quantity.unit !== null && !COUNTING_UNITS.includes(quantity.unit)) {
     return "unsupported_param";
   }
   const said = quantity.value;
@@ -258,7 +257,7 @@ function inputFor(write: WritePlan, command: ShoCommand): Mapped {
 function plannerFor(write: WritePlan): ShoActionPlanner {
   return {
     writes: true,
-    plan: (command): ShoPlan => {
+    plan: (command): ShoActionPlan => {
       const input = inputFor(write, command);
       if (refused(input)) {
         return shoPlanFallback(input);
@@ -266,7 +265,6 @@ function plannerFor(write: WritePlan): ShoActionPlanner {
       const notes = shoWriteNotes(command);
       return {
         kind: "call",
-        writes: true,
         toolName: write.toolName,
         input,
         reply: write.reply,

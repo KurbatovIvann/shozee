@@ -6,8 +6,7 @@ import {
 } from "@showzy/sho-protocol";
 import { describe, expect, it } from "vitest";
 
-import { createShoPlanner } from "../sho-plan.js";
-import type { ShoPlan } from "../sho-turn.js";
+import { createShoPlanner, type ShoActionPlan } from "../sho-plan.js";
 
 import { shoOrderWriteParse } from "./__tests__/order-write-parses.js";
 import {
@@ -32,6 +31,8 @@ const COMPANY_IDS: Readonly<Record<string, string>> = {
   "v-tee-1": "4b2e7a18-9d31-4c6f-83a5-1e0d6f24c7b9",
   "c-olena": "9a3f1c25-5e78-4d0b-b6e4-2c8a7f13d509",
   "p-rolls": "1d7e4a63-0b92-4f85-9c31-6a5e8d2b4f07",
+  "c-oleh": "3f8b2d64-7c15-4e90-a2d3-8b6f1c04e725",
+  "p-cheese": "5c4a9e03-1b76-4d82-9f15-7e3b2a60c814",
 };
 
 type Json = Record<string, unknown>;
@@ -85,7 +86,7 @@ function resultOf(command: ShoCommand): ShoResult {
   });
 }
 
-function planOf(command: ShoCommand): ShoPlan {
+function planOf(command: ShoCommand): ShoActionPlan {
   const planner = SHO_WRITE_PLANNERS[command.action];
   if (planner === undefined) {
     throw new Error(`no write planner for ${command.action}`);
@@ -93,7 +94,7 @@ function planOf(command: ShoCommand): ShoPlan {
   return planner.plan(command, NOW);
 }
 
-const itemsOf = (plan: ShoPlan): unknown =>
+const itemsOf = (plan: ShoActionPlan): unknown =>
   plan.kind === "call" ? plan.input["items"] : null;
 
 const whitelisted = createShoPlanner({
@@ -104,7 +105,6 @@ describe("SHO_WRITE_PLANNERS maps the conformance order-create parses", () => {
   it("plans dv3-lines-01 as queries, implicit quantities and attr variants", () => {
     expect(planOf(commandOf("dv3-lines-01"))).toEqual({
       kind: "call",
-      writes: true,
       toolName: "orders_create",
       reply: "Замовлення створено.",
       input: {
@@ -143,7 +143,6 @@ describe("SHO_WRITE_PLANNERS maps the conformance order-create parses", () => {
   it("plans d78-attrs-colour-size on the company's own ids", () => {
     expect(planOf(asCompanyRecords("d78-attrs-colour-size"))).toEqual({
       kind: "call",
-      writes: true,
       toolName: "orders_create",
       reply: "Замовлення створено.",
       input: {
@@ -165,11 +164,76 @@ describe("SHO_WRITE_PLANNERS maps the conformance order-create parses", () => {
     ]);
   });
 
+  it("plans the dv3-lines-20 count said in cans", () => {
+    expect(itemsOf(planOf(commandOf("dv3-lines-20")))).toEqual([
+      {
+        productQuery: "фарба caparol",
+        variantQuery: "біла 10 літрів",
+        quantityMilli: "2000",
+      },
+    ]);
+  });
+
   it("refuses the d75-kilo weight until the context carries the sale unit", () => {
     expect(planOf(asCompanyRecords("d75-kilo"))).toEqual({
       kind: "fallback",
       reason: "unsupported_param",
     });
+  });
+
+  it("refuses the dv3-lines-19 area and sacks for the same reason", () => {
+    expect(planOf(commandOf("dv3-lines-19"))).toEqual({
+      kind: "fallback",
+      reason: "unsupported_param",
+    });
+  });
+
+  it("counts only the units that count pieces whatever the product is sold in", () => {
+    const withUnit = (unit: string | null): ShoActionPlan => {
+      const said = parseOf("dv3-lines-20")["params"] as Json;
+      const items = JSON.parse(JSON.stringify(said["items"])) as {
+        quantity: { unit: string | null };
+      }[];
+      const line = items[0];
+      if (line === undefined) {
+        throw new Error("dv3-lines-20 lost its line");
+      }
+      line.quantity.unit = unit;
+      return planOf(
+        commandOf("dv3-lines-20", {
+          params: { customer: said["customer"], items },
+        }),
+      );
+    };
+
+    for (const unit of [null, "pcs", "pair", "bottle", "can"]) {
+      expect({ unit, kind: withUnit(unit).kind }).toEqual({
+        unit,
+        kind: "call",
+      });
+    }
+    for (const unit of [
+      "box",
+      "set",
+      "bag",
+      "roll",
+      "sheet",
+      "bucket",
+      "pack",
+      "m",
+      "m2",
+      "m3",
+      "g",
+      "kg",
+      "t",
+      "l",
+      "ml",
+    ]) {
+      expect({ unit, plan: withUnit(unit) }).toEqual({
+        unit,
+        plan: { kind: "fallback", reason: "unsupported_param" },
+      });
+    }
   });
 
   it("refuses a resolved id that is not shaped like a uuid", () => {

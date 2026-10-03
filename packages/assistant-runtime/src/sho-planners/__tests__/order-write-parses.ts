@@ -140,6 +140,117 @@ export const SHO_ORDER_WRITE_PARSES: Readonly<Record<string, unknown>> =
       domain: "orders",
       verb: "create",
     },
+    "dv3-lines-19": {
+      text: "заказ олегу плитка 60 на 60 серая 15 квадратов и клей для плитки 5 мешков",
+      action: "orders.create",
+      kind: "write",
+      effect: "write",
+      confirm: "card",
+      params: {
+        customer: {
+          text: "олегу",
+          status: "unchecked",
+        },
+        items: [
+          {
+            product: {
+              text: "плитка",
+              status: "unchecked",
+            },
+            attrs: [
+              {
+                text: "60 на 60",
+                variantIds: null,
+              },
+              {
+                text: "серая",
+                variantIds: null,
+              },
+            ],
+            variant: {
+              status: "unchecked",
+            },
+            quantity: {
+              text: "15 квадратов",
+              said: ["15 квадратов"],
+              value: 15,
+              unit: "m2",
+              unitText: "квадратов",
+            },
+          },
+          {
+            product: {
+              text: "клей для плитки",
+              status: "unchecked",
+            },
+            attrs: [],
+            variant: {
+              status: "unchecked",
+            },
+            quantity: {
+              text: "5 мешков",
+              said: ["5 мешков"],
+              value: 5,
+              unit: "bag",
+              unitText: "мешков",
+            },
+          },
+        ],
+      },
+      needs: [],
+      ready: true,
+      refPrevious: {},
+      catalogued: false,
+      domain: "orders",
+      verb: "create",
+    },
+    "dv3-lines-20": {
+      text: "фарба caparol біла 10 літрів дві банки для андрія",
+      action: "orders.create",
+      kind: "write",
+      effect: "write",
+      confirm: "card",
+      params: {
+        customer: {
+          text: "андрія",
+          status: "unchecked",
+        },
+        items: [
+          {
+            product: {
+              text: "фарба caparol",
+              status: "unchecked",
+            },
+            attrs: [
+              {
+                text: "біла",
+                variantIds: null,
+              },
+              {
+                text: "10 літрів",
+                variantIds: null,
+              },
+            ],
+            variant: {
+              status: "unchecked",
+            },
+            quantity: {
+              text: "дві банки",
+              said: ["дві банки"],
+              value: 2,
+              unit: "can",
+              unitText: "банки",
+            },
+          },
+        ],
+      },
+      needs: [],
+      ready: true,
+      refPrevious: {},
+      catalogued: false,
+      domain: "orders",
+      verb: "create",
+    },
     "d73-surname-unknown": {
       text: "олені петренко три рулети макові",
       action: "orders.create",

@@ -108,10 +108,13 @@ registry is injected into `createAssistantRuntime`; this package never imports
   locator — an unchecked name becomes the query the resolver raises the
   picker from (SHO-747), where a read refuses it — the line's attrs to
   `variantQuery` when the variant is unresolved, and the spoken quantity to
-  `quantityMilli` (scale 3, so «10 штук» is `10000`). `unsupported_param`,
-  which is the LLM: a quantity said in a mass or volume unit (`g`, `kg`,
-  `t`, `ml`, `l`), because the Шо context carries no sale unit and «0,5»
-  of a kilogram product is not half a piece; a quantity that is not a whole
+  `quantityMilli` (scale 3, so «10 штук» is `10000`) — but only when the
+  spoken unit counts pieces whatever the product is sold in: nothing,
+  `pcs`, `pair`, `bottle` or `can`, the runtime's own `COUNTING_UNITS`.
+  `unsupported_param`, which is the LLM: every other unit, a `box`, `bag`,
+  `pack` or `m2` as much as a `kg`, because the Шо context carries no sale
+  unit, so «5 мішків» is not 5 of what the line sells and «0,5» of a
+  kilogram product is not half a piece; a quantity that is not a whole
   milli; a `due`, `payment_method` or `discount` the façade cannot take,
   which would otherwise be dropped from what the staff member said; and a
   resolved id that is not shaped like a uuid. The order lifecycle
@@ -122,9 +125,10 @@ registry is injected into `createAssistantRuntime`; this package never imports
   A non-blocking `read_as_create` need becomes a note on the plan, and
   `runShoTurn` prepends the plan's notes to a confirmation pause's own, so
   a misread is visible on the card before the tap and a full list cannot
-  drop it. A plan carries `writes`, and `runShoTurn` falls back
-  (`write_did_not_pause`) when a declared write comes back as anything but
-  a pause rather than deriving that level a second time.
+  drop it. A planner returns a `ShoActionPlan`, which carries no `writes`:
+  `planFor` stamps the planner's own flag onto the call it hands back, so
+  the effect gate and `runShoTurn`'s `write_did_not_pause` fallback — taken
+  when a declared write comes back as anything but a pause — read one fact.
   `SHO_WRITE_ACTIONS` joins `SHO_READ_ACTIONS` as the dev list for
   `SHO_ACTIONS`; the config default stays empty, so no deployment plans a
   write until someone names it. The planner tests run on verbatim `expect`

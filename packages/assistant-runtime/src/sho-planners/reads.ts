@@ -16,12 +16,11 @@ import type { ShoCommand, ShoParam } from "@showzy/sho-protocol";
 import { ENTITY_REF_QUERY_MAX } from "@showzy/validation/entity-ref";
 import { isCanonicalOrderNumberToken } from "@showzy/validation/search";
 
-import type { ShoPlan } from "../sho-turn.js";
-
 import {
   shoPlanFallback,
   shoRefLocator,
   shoRefused,
+  type ShoActionPlan,
   type ShoActionPlanner,
   type ShoActionPlanners,
   type ShoPlanFallbackReason,
@@ -287,13 +286,12 @@ function inputFor(
 function plannerFor(read: ReadPlan): ShoActionPlanner {
   return {
     writes: false,
-    plan: (command, now): ShoPlan => {
+    plan: (command, now): ShoActionPlan => {
       const input = inputFor(read, command, now);
       return refused(input)
         ? shoPlanFallback(input)
         : {
             kind: "call",
-            writes: false,
             toolName: read.toolName,
             input,
             reply: read.reply,

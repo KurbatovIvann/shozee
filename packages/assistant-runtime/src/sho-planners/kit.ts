@@ -1,6 +1,6 @@
 import type { ShoCommand, ShoParam, ShoRef } from "@showzy/sho-protocol";
 
-import type { ShoPlan } from "../sho-turn.js";
+import type { ShoToolCall } from "../sho-turn.js";
 
 export const SHO_PLAN_FALLBACK_REASONS = [
   "many_commands",
@@ -29,14 +29,24 @@ export type ShoLocatorOutcome =
   | { readonly kind: "locator"; readonly locator: ShoLocator }
   | { readonly kind: "fallback"; readonly reason: ShoPlanFallbackReason };
 
+export interface ShoPlanRefusal {
+  readonly kind: "fallback";
+  readonly reason: ShoPlanFallbackReason;
+}
+
+export type ShoActionPlan =
+  ({ readonly kind: "call" } & Omit<ShoToolCall, "writes">) | ShoPlanRefusal;
+
 export interface ShoActionPlanner {
   readonly writes: boolean;
-  readonly plan: (command: ShoCommand, now: Date) => ShoPlan;
+  readonly plan: (command: ShoCommand, now: Date) => ShoActionPlan;
 }
 
 export type ShoActionPlanners = Readonly<Record<string, ShoActionPlanner>>;
 
-export const shoPlanFallback = (reason: ShoPlanFallbackReason): ShoPlan => ({
+export const shoPlanFallback = (
+  reason: ShoPlanFallbackReason,
+): ShoPlanRefusal => ({
   kind: "fallback",
   reason,
 });

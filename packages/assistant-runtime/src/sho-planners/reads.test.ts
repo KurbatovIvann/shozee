@@ -7,8 +7,7 @@ import {
 } from "@showzy/sho-protocol";
 import { describe, expect, it } from "vitest";
 
-import { createShoPlanner } from "../sho-plan.js";
-import type { ShoPlan } from "../sho-turn.js";
+import { createShoPlanner, type ShoActionPlan } from "../sho-plan.js";
 
 import {
   SHO_READ_ACTIONS,
@@ -61,7 +60,7 @@ function resultOf(said: Said): ShoResult {
   });
 }
 
-function planOf(said: Said): ShoPlan {
+function planOf(said: Said): ShoActionPlan {
   const planner = SHO_READ_PLANNERS[said.action];
   if (planner === undefined) {
     throw new Error(`no planner for ${said.action}`);
@@ -85,7 +84,6 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
       }),
     ).toEqual({
       kind: "call",
-      writes: false,
       toolName: "orders_list_page",
       input: {
         createdFrom: "2026-08-23T21:00:00.000Z",
@@ -139,7 +137,6 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
       }),
     ).toEqual({
       kind: "call",
-      writes: false,
       toolName: "orders_list_counts",
       input: { groupBy: "status", statuses: ["confirmed"] },
       reply: "Ось підсумок.",
@@ -189,7 +186,6 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
       }),
     ).toEqual({
       kind: "call",
-      writes: false,
       toolName: "orders_list_page",
       input: { query: "SP-1A33" },
       reply: "Ось замовлення.",
@@ -205,7 +201,6 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
       }),
     ).toEqual({
       kind: "call",
-      writes: false,
       toolName: "customers_get_customer",
       input: { customerId: CUSTOMER_ID },
       reply: "Ось клієнт.",
@@ -253,7 +248,6 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
       }),
     ).toEqual({
       kind: "call",
-      writes: false,
       toolName: "customers_list_customers",
       input: { groupId: GROUP_ID },
       reply: "Ось клієнти.",
@@ -285,7 +279,6 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
       }),
     ).toEqual({
       kind: "call",
-      writes: false,
       toolName: "catalog_get_product",
       input: { productId: PRODUCT_ID },
       reply: "Ось товар.",
@@ -301,7 +294,6 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
       }),
     ).toEqual({
       kind: "call",
-      writes: false,
       toolName: "catalog_list_products",
       input: { query: "торти" },
       reply: "Ось товари.",
@@ -313,7 +305,6 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
       planOf({ text: "покажи прайс-листи", action: "pricing.listPriceLists" }),
     ).toEqual({
       kind: "call",
-      writes: false,
       toolName: "pricing_list_price_lists",
       input: {},
       reply: "Ось прайс-листи.",
