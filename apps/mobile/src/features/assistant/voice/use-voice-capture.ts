@@ -9,6 +9,7 @@ import {
   VOICE_ENCODING,
   VOICE_MAX_SESSION_MS,
   VOICE_SAMPLE_RATE_HZ,
+  voiceFrameLevel,
 } from "@showzy/validation/assistant-voice";
 
 import {
@@ -31,10 +32,15 @@ export interface UseVoiceCaptureRequest {
   readonly createSocket?: VoiceWebSocketFactory | undefined;
 }
 
+export type VoiceLevelListener = (level: number) => void;
+
+export type SubscribeVoiceLevel = (listener: VoiceLevelListener) => () => void;
+
 export interface VoiceCapture extends VoiceCaptureState {
   readonly start: () => void;
   readonly stop: () => void;
   readonly reset: () => void;
+  readonly onLevel: SubscribeVoiceLevel;
 }
 
 export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
@@ -50,6 +56,21 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
   const deadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const releaseRef = useRef<() => void>(() => {});
   const stopRef = useRef<() => void>(() => {});
+  const levelListenersRef = useRef(new Set<VoiceLevelListener>());
+
+  const emitLevel = useCallback((level: number) => {
+    for (const listener of levelListenersRef.current) {
+      listener(level);
+    }
+  }, []);
+
+  const onLevel = useCallback<SubscribeVoiceLevel>((listener) => {
+    const listeners = levelListenersRef.current;
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
 
   const { stream } = useAudioStream({
     sampleRate: VOICE_SAMPLE_RATE_HZ,
@@ -67,6 +88,7 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
         return;
       }
       socket.send(frame);
+      emitLevel(voiceFrameLevel(frame));
     },
   });
 
@@ -90,10 +112,11 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
   const silence = useCallback(() => {
     clearDeadline();
     stream.stop();
+    emitLevel(0);
     setAudioModeAsync({ allowsRecording: false }).catch(() => {
       dispatch({ type: "failed", failure: "audio" });
     });
-  }, [clearDeadline, stream]);
+  }, [clearDeadline, emitLevel, stream]);
 
   const release = useCallback(() => {
     sessionRef.current += 1;
@@ -206,5 +229,5 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
     };
   }, []);
 
-  return { ...state, start, stop, reset };
+  return { ...state, start, stop, reset, onLevel };
 }

@@ -76,6 +76,7 @@ import {
   VOICE_MAX_SESSION_MS,
   VOICE_SAMPLE_RATE_HZ,
   VOICE_STOP_FRAME,
+  voiceFrameLevel,
 } from "@showzy/validation/assistant-voice";
 import type {
   VoiceWebSocketFactory,
@@ -94,6 +95,20 @@ function ready(maxSessionMs: number = VOICE_MAX_SESSION_MS): string {
 
 function frame(sampleRate = VOICE_SAMPLE_RATE_HZ, channels = 1): Captured {
   return { data: new ArrayBuffer(3_200), sampleRate, channels, timestamp: 0 };
+}
+
+function toneFrame(amplitude: number): Captured {
+  const data = new ArrayBuffer(3_200);
+  const view = new DataView(data);
+  for (let offset = 0; offset < data.byteLength; offset += 2) {
+    view.setInt16(offset, offset % 4 === 0 ? amplitude : -amplitude, true);
+  }
+  return {
+    data,
+    sampleRate: VOICE_SAMPLE_RATE_HZ,
+    channels: 1,
+    timestamp: 0,
+  };
 }
 
 let roots: Root[] = [];
@@ -465,5 +480,68 @@ describe("useVoiceCapture", () => {
     await flush();
 
     expect(view.capture().status).toBe("starting");
+  });
+});
+
+describe("useVoiceCapture level", () => {
+  it("reports the frame level while it streams", async () => {
+    const view = await listening();
+    const levels: number[] = [];
+    act(() => {
+      view.capture().onLevel((level) => levels.push(level));
+    });
+
+    const loud = toneFrame(16_384);
+    act(() => {
+      audio.onBuffer?.(frame());
+      audio.onBuffer?.(loud);
+    });
+
+    expect(levels).toEqual([0, voiceFrameLevel(loud.data)]);
+    expect(levels[1]).toBeCloseTo(0.5, 6);
+  });
+
+  it("reports no level before capture starts", () => {
+    const view = mount();
+    const levels: number[] = [];
+    act(() => {
+      view.capture().onLevel((level) => levels.push(level));
+      audio.onBuffer?.(toneFrame(16_384));
+    });
+
+    expect(levels).toEqual([]);
+  });
+
+  it("falls back to silence when the microphone goes quiet", async () => {
+    const view = await listening();
+    const levels: number[] = [];
+    act(() => {
+      view.capture().onLevel((level) => levels.push(level));
+      audio.onBuffer?.(toneFrame(16_384));
+    });
+
+    act(() => {
+      view.capture().stop();
+    });
+
+    expect(audio.stops).toBe(1);
+    expect(levels[levels.length - 1]).toBe(0);
+  });
+
+  it("stops reporting to a listener that unsubscribed", async () => {
+    const view = await listening();
+    const levels: number[] = [];
+    let drop = (): void => {};
+    act(() => {
+      drop = view.capture().onLevel((level) => levels.push(level));
+    });
+
+    act(() => {
+      audio.onBuffer?.(toneFrame(16_384));
+      drop();
+      audio.onBuffer?.(toneFrame(16_384));
+    });
+
+    expect(levels).toHaveLength(1);
   });
 });

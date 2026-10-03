@@ -245,6 +245,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
               }),
         canPress: dictation.canPress,
         copy: copy.voice,
+        onLevel: dictation.onLevel,
         onToggle: dictation.toggle,
         onRetry: dictation.retry,
         onSettings: dictation.openSettings,

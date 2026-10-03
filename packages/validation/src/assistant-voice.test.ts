@@ -9,6 +9,7 @@ import {
   VOICE_MAX_TOTAL_BYTES,
   VOICE_SAMPLE_RATE_HZ,
   VOICE_STOP_FRAME,
+  voiceFrameLevel,
 } from "./assistant-voice.js";
 
 describe("voice protocol constants", () => {
@@ -77,5 +78,42 @@ describe("parseVoiceServerMessage", () => {
     expect(
       parseVoiceServerMessage(JSON.stringify(VOICE_STOP_FRAME)),
     ).toBeNull();
+  });
+});
+
+describe("voiceFrameLevel", () => {
+  function pcm16(samples: readonly number[]): ArrayBuffer {
+    const data = new ArrayBuffer(samples.length * VOICE_BYTES_PER_SAMPLE);
+    const view = new DataView(data);
+    samples.forEach((sample, index) => {
+      view.setInt16(index * VOICE_BYTES_PER_SAMPLE, sample, true);
+    });
+    return data;
+  }
+
+  it("is zero for silence and for an empty frame", () => {
+    expect(voiceFrameLevel(pcm16([0, 0, 0, 0]))).toBe(0);
+    expect(voiceFrameLevel(new ArrayBuffer(0))).toBe(0);
+  });
+
+  it("is the root mean square of the frame against full scale", () => {
+    expect(voiceFrameLevel(pcm16([16_384, -16_384, 16_384, -16_384]))).toBe(
+      0.5,
+    );
+    expect(voiceFrameLevel(pcm16([-32_768, -32_768]))).toBe(1);
+  });
+
+  it("reads a quiet frame below a loud one", () => {
+    const quiet = voiceFrameLevel(pcm16([800, -800, 800, -800]));
+    const loud = voiceFrameLevel(pcm16([9_000, -9_000, 9_000, -9_000]));
+    expect(quiet).toBeGreaterThan(0);
+    expect(quiet).toBeLessThan(loud);
+    expect(loud).toBeLessThan(1);
+  });
+
+  it("averages over the frame rather than taking its peak", () => {
+    expect(voiceFrameLevel(pcm16([32_767, 0, 0, 0]))).toBeLessThan(
+      voiceFrameLevel(pcm16([32_767, 32_767, 32_767, 32_767])),
+    );
   });
 });

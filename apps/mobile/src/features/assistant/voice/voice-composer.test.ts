@@ -9,7 +9,14 @@ import {
   voiceMicActive,
   voiceMicMode,
   voiceRemainingSeconds,
+  voiceRingMotion,
+  voiceRingOpacity,
+  voiceRingScale,
   voiceRowSpoken,
+  VOICE_RING_FULL_LEVEL,
+  VOICE_RING_PEAK_OPACITY,
+  VOICE_RING_PEAK_SCALE,
+  VOICE_RING_REST_SCALE,
   VOICE_SPOKEN_MEMORY,
 } from "./voice-composer";
 
@@ -134,5 +141,45 @@ describe("spoken messages", () => {
     expect(spoken.size).toBe(VOICE_SPOKEN_MEMORY);
     expect(spoken.has("said 0")).toBe(false);
     expect(spoken.has(`said ${String(VOICE_SPOKEN_MEMORY)}`)).toBe(true);
+  });
+});
+
+describe("voiceRingScale", () => {
+  it("rests on silence and grows with the level", () => {
+    expect(voiceRingScale(0)).toBe(VOICE_RING_REST_SCALE);
+    const quiet = voiceRingScale(VOICE_RING_FULL_LEVEL / 4);
+    const loud = voiceRingScale(VOICE_RING_FULL_LEVEL / 2);
+    expect(quiet).toBeGreaterThan(VOICE_RING_REST_SCALE);
+    expect(loud).toBeGreaterThan(quiet);
+    expect(loud).toBeLessThan(VOICE_RING_PEAK_SCALE);
+  });
+
+  it("stops at the peak however loud the frame is", () => {
+    expect(voiceRingScale(VOICE_RING_FULL_LEVEL)).toBe(VOICE_RING_PEAK_SCALE);
+    expect(voiceRingScale(1)).toBe(VOICE_RING_PEAK_SCALE);
+  });
+
+  it("rests on a level that is not a reading", () => {
+    expect(voiceRingScale(Number.NaN)).toBe(VOICE_RING_REST_SCALE);
+    expect(voiceRingScale(-1)).toBe(VOICE_RING_REST_SCALE);
+  });
+});
+
+describe("voiceRingOpacity", () => {
+  it("fades in with the level and stops at the peak", () => {
+    expect(voiceRingOpacity(0)).toBe(0);
+    expect(voiceRingOpacity(VOICE_RING_FULL_LEVEL / 2)).toBeCloseTo(
+      VOICE_RING_PEAK_OPACITY / 2,
+      6,
+    );
+    expect(voiceRingOpacity(1)).toBe(VOICE_RING_PEAK_OPACITY);
+    expect(voiceRingOpacity(Number.NaN)).toBe(0);
+  });
+});
+
+describe("voiceRingMotion", () => {
+  it("drops the scale for a reader who asked for less motion", () => {
+    expect(voiceRingMotion(false)).toBe("scale");
+    expect(voiceRingMotion(true)).toBe("opacity");
   });
 });

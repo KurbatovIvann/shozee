@@ -10,6 +10,8 @@ export const VOICE_ENCODING = "int16";
 
 export const VOICE_BYTES_PER_SAMPLE = 2;
 
+export const VOICE_SAMPLE_FULL_SCALE = 32_768;
+
 export const VOICE_STOP_FRAME = "stop";
 
 export const VOICE_MAX_SESSION_MS = 15_000;
@@ -52,6 +54,22 @@ export type VoiceSessionLimits = Omit<
   Extract<VoiceServerMessage, { type: "ready" }>,
   "type" | "sampleRateHz"
 >;
+
+export function voiceFrameLevel(data: ArrayBuffer): number {
+  const samples = Math.floor(data.byteLength / VOICE_BYTES_PER_SAMPLE);
+  if (samples === 0) {
+    return 0;
+  }
+  const view = new DataView(data);
+  let squares = 0;
+  for (let index = 0; index < samples; index += 1) {
+    const sample =
+      view.getInt16(index * VOICE_BYTES_PER_SAMPLE, true) /
+      VOICE_SAMPLE_FULL_SCALE;
+    squares += sample * sample;
+  }
+  return Math.sqrt(squares / samples);
+}
 
 export function parseVoiceServerMessage(
   raw: string,

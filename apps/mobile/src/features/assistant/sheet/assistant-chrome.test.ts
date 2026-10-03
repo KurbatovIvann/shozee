@@ -287,6 +287,10 @@ describe("assistant mic composer (SHO-779)", () => {
     new URL("./mic-button.tsx", import.meta.url),
     "utf8",
   );
+  const levelRing = readFileSync(
+    new URL("./use-mic-level-ring.ts", import.meta.url),
+    "utf8",
+  );
   const voiceModel = readFileSync(
     new URL("../voice/voice-composer.ts", import.meta.url),
     "utf8",
@@ -338,6 +342,25 @@ describe("assistant mic composer (SHO-779)", () => {
     expect(micButton).toContain("buttonActive");
     expect(micButton).toContain("buttonOff");
     expect(micButton).not.toMatch(/#[0-9a-fA-F]{3}/);
+  });
+
+  it("rings the mic with the frame level, from the theme and out of the reader's way", () => {
+    expect(micButton).toContain("useMicLevelRing");
+    expect(micButton).toContain("onLevel: props.onLevel");
+    expect(micButton).toContain('pointerEvents="none"');
+    expect(micButton).toContain("accessibilityElementsHidden");
+    expect(micButton).toContain("importantForAccessibility");
+    expect(micButton).toContain("borderColor: theme.colors.accent");
+    expect(micButton).not.toMatch(/#[0-9a-fA-F]{3}/);
+  });
+
+  it("holds the ring back from a reader who asked for less motion", () => {
+    expect(levelRing).toContain("useReducedMotion");
+    expect(levelRing).toContain("voiceRingMotion");
+    expect(levelRing).toContain('motion === "opacity"');
+    expect(levelRing).toContain("voiceRingOpacity");
+    expect(levelRing).toContain("scale.set(");
+    expect(levelRing).not.toContain(".value =");
   });
 
   it("marks a user bubble that was spoken and wakes the listen pose", () => {
