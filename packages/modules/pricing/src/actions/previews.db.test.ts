@@ -17,6 +17,7 @@ import { user } from "@showzy/db/schema/auth";
 import { products, productVariants } from "@showzy/db/schema/catalog";
 import { companyMembers } from "@showzy/db/schema/companies";
 import { priceListEntries, priceLists } from "@showzy/db/schema/pricing";
+import { PREVIEW_CARD_LINES_PER_INPUT_ITEM } from "@showzy/module-kit/preview-card-lines";
 import {
   PREVIEW_CHANGES_LABEL,
   PREVIEW_NO_CHANGES,
@@ -42,11 +43,27 @@ const fixtures = {
   listIdle: randomUUID(),
   listDelete: randomUUID(),
   listB: randomUUID(),
+  listPin: randomUUID(),
   productA: randomUUID(),
   variantA: randomUUID(),
+  productPin: randomUUID(),
+  variantPin: randomUUID(),
   productB: randomUUID(),
   missingId: randomUUID(),
 };
+
+const SET_ENTRIES_FIXED_LINES = 0;
+const REMOVE_ENTRIES_FIXED_LINES = 1;
+
+const pinnedEntryKeys: readonly {
+  readonly productId: string;
+  readonly variantId?: string;
+}[] = [
+  { productId: fixtures.productA },
+  { productId: fixtures.productA, variantId: fixtures.variantA },
+  { productId: fixtures.productPin },
+  { productId: fixtures.productPin, variantId: fixtures.variantPin },
+];
 
 const managerOnlyPricing = randomUUID();
 
@@ -136,6 +153,13 @@ beforeAll(async () => {
       isActive: true,
     },
     { id: fixtures.listB, companyId: companyB, name: "Чужий прайс" },
+    {
+      id: fixtures.listPin,
+      companyId: companyA,
+      name: "Пінований прайс",
+      isDefault: false,
+      isActive: true,
+    },
   ]);
 
   await kit.db.runtime.db.insert(products).values([
@@ -146,18 +170,32 @@ beforeAll(async () => {
       basePriceMinor: 15000n,
     },
     {
+      id: fixtures.productPin,
+      companyId: companyA,
+      name: "Чай Пуер",
+      basePriceMinor: 24_050n,
+    },
+    {
       id: fixtures.productB,
       companyId: companyB,
       name: "Чужий товар",
       basePriceMinor: 100n,
     },
   ]);
-  await kit.db.runtime.db.insert(productVariants).values({
-    id: fixtures.variantA,
-    companyId: companyA,
-    productId: fixtures.productA,
-    name: "1 кг",
-  });
+  await kit.db.runtime.db.insert(productVariants).values([
+    {
+      id: fixtures.variantA,
+      companyId: companyA,
+      productId: fixtures.productA,
+      name: "1 кг",
+    },
+    {
+      id: fixtures.variantPin,
+      companyId: companyA,
+      productId: fixtures.productPin,
+      name: "100 г",
+    },
+  ]);
 
   await kit.db.runtime.db.insert(priceListEntries).values([
     {
@@ -174,6 +212,14 @@ beforeAll(async () => {
       priceMinor: 11000n,
       currency: "UAH",
     },
+    ...pinnedEntryKeys.map((entry) => ({
+      companyId: companyA,
+      priceListId: fixtures.listPin,
+      productId: entry.productId,
+      variantId: entry.variantId ?? null,
+      priceMinor: 9000n,
+      currency: "UAH" as const,
+    })),
   ]);
 });
 
@@ -366,6 +412,40 @@ describe("pricing preview cards", () => {
     expect(preview.lines).toEqual([
       { label: "Ціни", value: "нічого не знайдено" },
     ]);
+  });
+
+  it("SHO-840: pricing.setPriceListEntries stays within its declared lines per entry", async () => {
+    const entries = pinnedEntryKeys.map((entry) => ({
+      ...entry,
+      priceMinor: "13000",
+    }));
+    const preview = await previewOf(setPriceListEntries, {
+      priceListId: fixtures.listPin,
+      entries,
+    });
+    expect(preview.lines.length).toBeGreaterThanOrEqual(entries.length);
+    expect(preview.lines.length).toBeLessThanOrEqual(
+      SET_ENTRIES_FIXED_LINES +
+        entries.length *
+          PREVIEW_CARD_LINES_PER_INPUT_ITEM[
+            "pricing.setPriceListEntries.entries"
+          ],
+    );
+  });
+
+  it("SHO-840: pricing.removePriceListEntries stays within its declared lines per entry", async () => {
+    const preview = await previewOf(removePriceListEntries, {
+      priceListId: fixtures.listPin,
+      entries: pinnedEntryKeys,
+    });
+    expect(preview.lines.length).toBeGreaterThanOrEqual(pinnedEntryKeys.length);
+    expect(preview.lines.length).toBeLessThanOrEqual(
+      REMOVE_ENTRIES_FIXED_LINES +
+        pinnedEntryKeys.length *
+          PREVIEW_CARD_LINES_PER_INPUT_ITEM[
+            "pricing.removePriceListEntries.entries"
+          ],
+    );
   });
 
   it("leaves the stored rows untouched while the cards are issued", async () => {
