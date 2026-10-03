@@ -7,6 +7,12 @@ export type VoiceAnnouncementKey = "listening" | "done" | null;
 
 export const VOICE_SPOKEN_MEMORY = 20;
 
+export const VOICE_RING_FULL_LEVEL = 0.2;
+
+export const VOICE_RING_REST_SCALE = 1;
+
+export const VOICE_RING_PEAK_SCALE = 1.6;
+
 export function voiceMicMode(status: VoiceCaptureStatus): VoiceMicMode {
   switch (status) {
     case "requesting":
@@ -27,6 +33,20 @@ export function voiceMicMode(status: VoiceCaptureStatus): VoiceMicMode {
 
 export function voiceMicActive(mode: VoiceMicMode): boolean {
   return mode === "pending" || mode === "listening" || mode === "recognizing";
+}
+
+export function voiceRingScale(input: {
+  readonly active: boolean;
+  readonly level: number;
+}): number {
+  if (!input.active || !Number.isFinite(input.level)) {
+    return VOICE_RING_REST_SCALE;
+  }
+  const reach = Math.min(1, Math.max(0, input.level) / VOICE_RING_FULL_LEVEL);
+  return (
+    VOICE_RING_REST_SCALE +
+    reach * (VOICE_RING_PEAK_SCALE - VOICE_RING_REST_SCALE)
+  );
 }
 
 export function voiceComposerValue(input: {

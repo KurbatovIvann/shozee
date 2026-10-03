@@ -4,6 +4,7 @@ import { SendHorizonalIcon } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import type { AssistantVoiceCopy } from "../../../i18n/assistant";
+import type { SubscribeVoiceLevel } from "../voice/use-voice-capture";
 import { keyboardAppearance } from "../../../theme/tokens";
 import {
   voiceComposerPlaceholder,
@@ -25,6 +26,7 @@ export type AssistantComposerVoice = {
   readonly countdownLabel: string | null;
   readonly canPress: boolean;
   readonly copy: AssistantVoiceCopy;
+  readonly onLevel: SubscribeVoiceLevel;
   readonly onToggle: () => void;
   readonly onRetry: () => void;
   readonly onSettings: () => void;
@@ -130,6 +132,7 @@ export function AssistantComposer(props: {
             mode={mode}
             label={dictating ? voice.copy.stop : voice.copy.start}
             disabled={!voice.canPress}
+            onLevel={voice.onLevel}
             onPress={voice.onToggle}
           />
         ) : null}

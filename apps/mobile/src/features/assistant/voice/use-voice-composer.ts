@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { AssistantKitCall } from "../api/assistant-kit-client";
-import { useVoiceCapture } from "./use-voice-capture";
+import { useVoiceCapture, type SubscribeVoiceLevel } from "./use-voice-capture";
 import type { VoiceCaptureFailure } from "./voice-capture-state";
 import {
   rememberSpoken,
@@ -35,6 +35,7 @@ export interface VoiceComposerModel {
   readonly remaining: number;
   readonly failure: VoiceCaptureFailure | null;
   readonly spoken: ReadonlySet<string>;
+  readonly onLevel: SubscribeVoiceLevel;
   readonly toggle: () => void;
   readonly retry: () => void;
   readonly openSettings: () => void;
@@ -133,6 +134,7 @@ export function useVoiceComposer(
     remaining,
     failure: capture.failure,
     spoken,
+    onLevel: capture.onLevel,
     toggle,
     retry,
     openSettings,

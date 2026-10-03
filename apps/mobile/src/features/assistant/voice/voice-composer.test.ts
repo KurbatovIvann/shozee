@@ -9,7 +9,11 @@ import {
   voiceMicActive,
   voiceMicMode,
   voiceRemainingSeconds,
+  voiceRingScale,
   voiceRowSpoken,
+  VOICE_RING_FULL_LEVEL,
+  VOICE_RING_PEAK_SCALE,
+  VOICE_RING_REST_SCALE,
   VOICE_SPOKEN_MEMORY,
 } from "./voice-composer";
 
@@ -134,5 +138,45 @@ describe("spoken messages", () => {
     expect(spoken.size).toBe(VOICE_SPOKEN_MEMORY);
     expect(spoken.has("said 0")).toBe(false);
     expect(spoken.has(`said ${String(VOICE_SPOKEN_MEMORY)}`)).toBe(true);
+  });
+});
+
+describe("voiceRingScale", () => {
+  it("rests on silence and grows with the level", () => {
+    expect(voiceRingScale({ active: true, level: 0 })).toBe(
+      VOICE_RING_REST_SCALE,
+    );
+    const quiet = voiceRingScale({
+      active: true,
+      level: VOICE_RING_FULL_LEVEL / 4,
+    });
+    const loud = voiceRingScale({
+      active: true,
+      level: VOICE_RING_FULL_LEVEL / 2,
+    });
+    expect(quiet).toBeGreaterThan(VOICE_RING_REST_SCALE);
+    expect(loud).toBeGreaterThan(quiet);
+    expect(loud).toBeLessThan(VOICE_RING_PEAK_SCALE);
+  });
+
+  it("stops at the peak however loud the frame is", () => {
+    expect(voiceRingScale({ active: true, level: VOICE_RING_FULL_LEVEL })).toBe(
+      VOICE_RING_PEAK_SCALE,
+    );
+    expect(voiceRingScale({ active: true, level: 1 })).toBe(
+      VOICE_RING_PEAK_SCALE,
+    );
+  });
+
+  it("rests whenever the mic is not capturing, whatever the last level was", () => {
+    expect(voiceRingScale({ active: false, level: 1 })).toBe(
+      VOICE_RING_REST_SCALE,
+    );
+    expect(voiceRingScale({ active: true, level: Number.NaN })).toBe(
+      VOICE_RING_REST_SCALE,
+    );
+    expect(voiceRingScale({ active: true, level: -1 })).toBe(
+      VOICE_RING_REST_SCALE,
+    );
   });
 });
