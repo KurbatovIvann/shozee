@@ -18,6 +18,7 @@
  */
 import type { ToolOutcome } from "@showzy/assistant-kit";
 import { CoreError, CoreInvariantError } from "@showzy/core/errors";
+import { ASSISTANT_PREVIEW_TEXT_MAX } from "@showzy/validation/assistant-chat";
 
 import type {
   AssistantInteractionTypes,
@@ -32,7 +33,10 @@ import {
   confirmationAlso,
   confirmationPause,
 } from "./assistant-kit-confirmation.js";
-import type { AssistantToolLogger } from "./assistant-kit-tools.js";
+import {
+  handlerRefusedTheWrite,
+  type AssistantToolLogger,
+} from "./assistant-kit-tools.js";
 import type { AssistantToolContext, ResolveAnswer } from "./runtime-types.js";
 
 interface FacadeInput {
@@ -200,27 +204,63 @@ function confirmedAttempts(
   ];
 }
 
+type DroppedKind = "done" | "gone" | "unchecked";
+
+const DROPPED_NOTE: Record<DroppedKind, (title: string) => string> = {
+  done: (title) => `Вже виконано: «${title}»`,
+  gone: (title) => `Більше не можна виконати: «${title}»`,
+  unchecked: (title) => `Не вдалося перевірити: «${title}» — спробуйте ще раз`,
+};
+
+function clippedTitle(title: string, room: number): string {
+  if (title.length <= room) {
+    return title;
+  }
+  let kept = "";
+  for (const point of title) {
+    if (kept.length + point.length > room - 1) {
+      break;
+    }
+    kept += point;
+  }
+  return `${kept}…`;
+}
+
+function droppedNote(one: ConfirmationAlsoSecret, kind: DroppedKind): string {
+  const write = DROPPED_NOTE[kind];
+  const room = ASSISTANT_PREVIEW_TEXT_MAX - write("").length;
+  return write(clippedTitle(one.preview.title, room));
+}
+
 function dropCarried(
   deps: ResolveAnswerDeps,
   one: ConfirmationAlsoSecret,
-  fields: Record<string, unknown>,
-): void {
+  dropped: { readonly kind: DroppedKind; readonly code?: string },
+): string {
   deps.logger.warn(
     {
       action: one.actionName,
       idempotencyKey: one.idempotencyKey,
-      ...fields,
+      outcome: dropped.kind === "done" ? "done" : "failed",
+      ...(dropped.code === undefined ? {} : { code: dropped.code }),
     },
     "carried confirmation left off the re-asked card",
   );
+  return droppedNote(one, dropped.kind);
+}
+
+interface RecarriedAlso {
+  readonly asked: readonly ConfirmationAlsoSecret[];
+  readonly droppedNotes: readonly string[];
 }
 
 async function recarryAlso(
   args: ResolveArgs,
   deps: ResolveAnswerDeps,
   also: readonly ConfirmationAlsoSecret[],
-): Promise<readonly ConfirmationAlsoSecret[]> {
+): Promise<RecarriedAlso> {
   const asked: ConfirmationAlsoSecret[] = [];
+  const droppedNotes: string[] = [];
   for (const one of also) {
     try {
       await deps.reSummarize({
@@ -229,7 +269,7 @@ async function recarryAlso(
         input: one.canonicalInput,
         idempotencyKey: one.idempotencyKey,
       });
-      dropCarried(deps, one, { outcome: "done" });
+      droppedNotes.push(dropCarried(deps, one, { kind: "done" }));
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         asked.push(confirmationAlso(error));
@@ -239,13 +279,18 @@ async function recarryAlso(
         throw error;
       }
       if (error instanceof CoreError) {
-        dropCarried(deps, one, { outcome: "failed", code: error.code });
+        droppedNotes.push(
+          dropCarried(deps, one, {
+            kind: handlerRefusedTheWrite(error) ? "gone" : "unchecked",
+            code: error.code,
+          }),
+        );
         continue;
       }
       throw error;
     }
   }
-  return asked;
+  return { asked, droppedNotes };
 }
 
 async function resolveConfirmation(
@@ -270,9 +315,11 @@ async function resolveConfirmation(
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         if (done.length === 0) {
+          const recarried = await recarryAlso(args, deps, resolution.also);
           return confirmationPause(
             error,
-            await recarryAlso(args, deps, resolution.also),
+            recarried.asked,
+            recarried.droppedNotes,
           );
         }
         return halted(done, {

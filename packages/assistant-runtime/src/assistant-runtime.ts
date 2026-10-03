@@ -48,7 +48,6 @@ import {
 } from "@showzy/core";
 import {
   ConfirmationRequiredError,
-  CoreError,
   CoreInvariantError,
 } from "@showzy/core/errors";
 import type { Redis } from "ioredis";
@@ -68,7 +67,10 @@ import {
   type ReSummarizeAction,
   type RunConfirmedAction,
 } from "./assistant-kit-resolve.js";
-import { assistantKitTurnTools } from "./assistant-kit-tools.js";
+import {
+  assistantKitTurnTools,
+  handlerRefusedTheWrite,
+} from "./assistant-kit-tools.js";
 import {
   ASSISTANT_CHAT_WINDOW_MESSAGES,
   type AssistantCaller,
@@ -134,17 +136,6 @@ export function assistantKitIdempotencyKey(
       ? `${context.commandId}:${actionName}`
       : `${context.commandId}:${actionName}:after-${String(refusedBefore)}`,
   );
-}
-
-const HANDLER_REFUSALS: ReadonlySet<string> = new Set([
-  "VALIDATION",
-  "NOT_FOUND",
-  "CONFLICT",
-  "PERMISSION_DENIED",
-]);
-
-export function handlerRefusedTheWrite(error: unknown): boolean {
-  return error instanceof CoreError && HANDLER_REFUSALS.has(error.code);
 }
 
 function aiRequest(

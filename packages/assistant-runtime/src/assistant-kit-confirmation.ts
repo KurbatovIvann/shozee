@@ -28,6 +28,7 @@ import type {
   AssistantPreview,
   AssistantPreviewLevel,
 } from "@showzy/validation/assistant-chat";
+import { ASSISTANT_PREVIEW_LIST_MAX } from "@showzy/validation/assistant-chat";
 
 import type {
   ConfirmationAlsoSecret,
@@ -122,9 +123,23 @@ export function confirmationAlso(
   };
 }
 
+export function previewNoting(
+  preview: AssistantPreview,
+  notes: readonly string[],
+): AssistantPreview {
+  if (notes.length === 0) {
+    return preview;
+  }
+  return {
+    ...preview,
+    notes: [...notes, ...preview.notes].slice(0, ASSISTANT_PREVIEW_LIST_MAX),
+  };
+}
+
 export function confirmationPause(
   required: AssistantConfirmationRequired,
   also: readonly ConfirmationAlsoSecret[] = [],
+  notes: readonly string[] = [],
 ): Extract<ToolOutcome, { kind: "pause" }> {
   const secret: ConfirmationSecret = { ...attemptSecretOf(required), also };
   const strong =
@@ -134,7 +149,7 @@ export function confirmationPause(
     interaction: "confirmation",
     prompt: {
       summary: required.challenge.summary,
-      preview: previewOf(required),
+      preview: previewNoting(previewOf(required), notes),
       also: also.map((one) => one.preview),
       level: strong ? "strong" : "card",
     },

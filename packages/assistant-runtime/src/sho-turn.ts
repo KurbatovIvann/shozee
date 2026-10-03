@@ -13,10 +13,7 @@ import type {
   ShoFocusEntry,
   ShoPrevious,
 } from "@showzy/sho-protocol";
-import {
-  assistantConfirmationPromptSchema,
-  ASSISTANT_PREVIEW_LIST_MAX,
-} from "@showzy/validation/assistant-chat";
+import { assistantConfirmationPromptSchema } from "@showzy/validation/assistant-chat";
 
 import type { ShoPlanFallbackReason } from "./sho-plan.js";
 
@@ -31,6 +28,7 @@ import {
   emptyStaffAssistantBudgetHold,
   type StaffAssistantBudgetHold,
 } from "./assistant-budget-guard.js";
+import { previewNoting } from "./assistant-kit-confirmation.js";
 import {
   assistantAskedMessage,
   assistantTurnEarnedCard,
@@ -133,13 +131,9 @@ function promptWithNotes(prompt: unknown, notes: readonly string[]): unknown {
   if (!parsed.success) {
     return prompt;
   }
-  const preview = parsed.data.preview;
   return {
     ...parsed.data,
-    preview: {
-      ...preview,
-      notes: [...notes, ...preview.notes].slice(0, ASSISTANT_PREVIEW_LIST_MAX),
-    },
+    preview: previewNoting(parsed.data.preview, notes),
   };
 }
 

@@ -2,6 +2,7 @@ import { createAssistantKit } from "@showzy/assistant-kit";
 import type { ModelMessage, ToolSet } from "@showzy/assistant-kit";
 import { testDeps } from "@showzy/assistant-kit/testing";
 import { toProviderToolName } from "@showzy/ai";
+import { ConfirmationRequiredError } from "@showzy/core/errors";
 import { shoCommandSchema, type ShoCommand } from "@showzy/sho-protocol";
 import {
   assistantConfirmationPromptSchema,
@@ -11,8 +12,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   assistantInteractions,
+  confirmation,
   type assistantInteractionTypes,
+  type ConfirmationAlsoSecret,
 } from "./assistant-interactions.js";
+import { AssistantConfirmationRequired } from "./assistant-kit-confirmation.js";
+import { createResolveAnswer } from "./assistant-kit-resolve.js";
 import { shoFocusFrom, shoPreviousFrom } from "./sho-focus.js";
 
 import {
@@ -308,6 +313,117 @@ describe("runShoTurn", () => {
     const prompt = assistantConfirmationPromptSchema.parse(outcome.prompt);
     expect(prompt.preview.notes).toHaveLength(ASSISTANT_PREVIEW_LIST_MAX);
     expect(prompt.preview.notes[0]).toBe("Прочитано як нове замовлення.");
+  });
+
+  const CARRIED: ConfirmationAlsoSecret = {
+    actionName: "customers.updateCustomer",
+    canonicalInput: { id: "b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1" },
+    idempotencyKey: "tool:carried",
+    challengeId: "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1",
+    preview: { title: "Змінити клієнта: Галина", lines: [], notes: [] },
+    level: "card",
+  };
+
+  const ASKED = {
+    actionName: "orders.create",
+    input: { customerQuery: "оксани" },
+    idempotencyKey: "tool:asked",
+  };
+
+  const DRIFTED = {
+    challengeId: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1",
+    summary: "Створити замовлення?",
+    expiresAt: "2026-09-11T09:35:00.000Z",
+    preview: confirmationPrompt.preview,
+  };
+
+  async function rePauseDroppingTheCarried(): Promise<unknown> {
+    const resolution = confirmation.resolve({
+      answer: { approved: true },
+      secret: {
+        actionName: ASKED.actionName,
+        canonicalInput: ASKED.input,
+        idempotencyKey: ASKED.idempotencyKey,
+        challengeId: "d1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1",
+        also: [CARRIED],
+      },
+    });
+    if (resolution.kind !== "resolved") {
+      throw new Error("a confirmation always resolves");
+    }
+    const outcome = await createResolveAnswer({
+      runConfirmed: () =>
+        Promise.reject(
+          new AssistantConfirmationRequired(
+            ASKED,
+            new ConfirmationRequiredError(DRIFTED),
+          ),
+        ),
+      reSummarize: () => Promise.resolve({ id: "already-committed" }),
+      logger: { warn: () => undefined },
+    })({
+      toolName: TOOL,
+      kind: "confirmation",
+      value: resolution.value,
+      tools: {},
+      context: {
+        userId: "user-1",
+        companySelector: "company-1",
+        conversationId: CONVERSATION,
+        commandId: COMMAND,
+        requestId: "request-answer",
+      },
+    });
+    if (outcome.kind !== "pause") {
+      throw new Error("a drifted confirmation pauses");
+    }
+    return outcome.prompt;
+  }
+
+  it("composes the plan's note and a dropped carried entry into one list", async () => {
+    const outcome = await runShoTurn(
+      turnWith(notedPlan, pauseWith(await rePauseDroppingTheCarried())),
+    );
+
+    expect(outcome.kind).toBe("ask");
+    if (outcome.kind !== "ask") return;
+    const prompt = assistantConfirmationPromptSchema.parse(outcome.prompt);
+    expect(prompt.preview.notes).toEqual([
+      "Прочитано як нове замовлення.",
+      `Вже виконано: «${CARRIED.preview.title}»`,
+      "Оксана",
+    ]);
+  });
+
+  it("keeps both notes when the card's own list is already full", async () => {
+    const prompt = assistantConfirmationPromptSchema.parse(
+      await rePauseDroppingTheCarried(),
+    );
+    const full = Array.from(
+      { length: ASSISTANT_PREVIEW_LIST_MAX - prompt.preview.notes.length },
+      (_, at) => String(at),
+    );
+    const outcome = await runShoTurn(
+      turnWith(
+        notedPlan,
+        pauseWith({
+          ...prompt,
+          preview: {
+            ...prompt.preview,
+            notes: [...prompt.preview.notes, ...full],
+          },
+        }),
+      ),
+    );
+
+    expect(outcome.kind).toBe("ask");
+    if (outcome.kind !== "ask") return;
+    const asked = assistantConfirmationPromptSchema.parse(outcome.prompt);
+    expect(asked.preview.notes).toHaveLength(ASSISTANT_PREVIEW_LIST_MAX);
+    expect(asked.preview.notes.slice(0, 2)).toEqual([
+      "Прочитано як нове замовлення.",
+      `Вже виконано: «${CARRIED.preview.title}»`,
+    ]);
   });
 
   it("leaves a pause that is not a preview card untouched", async () => {
