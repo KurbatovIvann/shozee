@@ -1,6 +1,10 @@
 import type { ActionCtx } from "@showzy/core";
 import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
 import { products, productVariants } from "@showzy/db/schema/catalog";
+import {
+  entityLookupPicker,
+  type EntityLookupPicker,
+} from "@showzy/module-kit/entity-lookup";
 import { referenceNameSearch } from "@showzy/module-kit/name-match";
 import { uniqueIds } from "@showzy/module-kit/unique-ids";
 import {
@@ -124,29 +128,12 @@ function variantSelectionOf(line: LineReferenceInput): VariantSelection {
   return line.variantSelection ?? { kind: "unspecified" };
 }
 
-function compareVariantNameThenId(
-  left: VariantCandidate,
-  right: VariantCandidate,
-): number {
-  const byName = left.name.localeCompare(right.name);
-  if (byName !== 0) {
-    return byName;
-  }
-  return left.id.localeCompare(right.id);
-}
-
-function pickerFromVariants(rows: readonly VariantCandidate[]): {
-  readonly options: readonly VariantSelectionOption[];
-  readonly optionsTruncated: boolean;
-} {
-  const sorted = [...rows].toSorted(compareVariantNameThenId);
-  return {
-    options: sorted.slice(0, VARIANT_SELECTION_OPTIONS_MAX).map((row) => ({
-      id: row.id,
-      label: row.name,
-    })),
-    optionsTruncated: sorted.length > VARIANT_SELECTION_OPTIONS_MAX,
-  };
+function pickerFromVariants(
+  rows: readonly VariantCandidate[],
+): EntityLookupPicker {
+  return entityLookupPicker(
+    rows.map((row) => ({ id: row.id, label: row.name })),
+  );
 }
 
 function throwProductSelectionConflict(args: {
