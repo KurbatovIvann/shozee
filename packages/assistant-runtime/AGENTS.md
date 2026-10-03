@@ -282,6 +282,25 @@ registry is injected into `createAssistantRuntime`; this package never imports
   what the staff member said; the counting-unit rule has no quantity to read
   here. `SHO_CATALOG_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`;
   the config default stays empty.
+  The same table carries the variant writes (SHO-856):
+  `catalog.createVariant`, `catalog.updateVariant`, `catalog.archiveVariant`
+  and `catalog.restoreVariant`. The catalogue gives `variant` as attrs, which
+  the runtime resolves against the parent product's variants, so a variant
+  binds only as a **resolved** uuid — ambiguous, unknown, unspecified and
+  `none` are all `unsupported_param`, because nothing here may guess between
+  two variants and the four actions take no query. The parent is the same
+  bound `product` the product planners take: `createVariant` and
+  `updateVariant` send it as `productId`, and the lifecycle two, whose
+  actions take the variant alone, still require it to bind and then drop it —
+  it located the variant, it is not a field of the write. An update needs a
+  rename or a price as the product one does, and the override pair follows
+  the same money rule; clearing an override is the LLM, since a parse says
+  no null pair. The D84 misread becomes the card's note; `read_as_focus_type`
+  is not mapped here, because the focus holds no variant record and the
+  delete family reads a focused product as `archiveProduct`. No gold
+  conformance parse carries a variant intent, so the planner tests borrow the
+  verbatim `variant` and `product` params of `d79-price-list-case` and name
+  that case id.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never
