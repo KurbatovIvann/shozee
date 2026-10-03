@@ -262,6 +262,22 @@ registry is injected into `createAssistantRuntime`; this package never imports
   never the «Підстава» sentence the action stores.
   `SHO_DOCUMENT_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
   config default stays empty.
+- `sho-planners/pricing-writes.ts` — the price list write planners (SHO-857):
+  `pricing.createPriceList`, `pricing.updatePriceList`,
+  `pricing.activatePriceList`, `pricing.deactivatePriceList`,
+  `pricing.setDefaultPriceList` and `pricing.deletePriceList` onto their own
+  action tools, `writes: true`, so each pauses on the ADR-0050 preview — the
+  delete on a strong card, since its risk is `high`. `price_list` is a
+  resolved or focus-held uuid (`shoIdOnly`) and a spoken name is
+  `unsupported_param`; `new_name` takes the nominative the parse created over
+  the span, `rename_to` the span, and the catalogue's `is_default` /
+  `is_active` booleans arrive as the enum values «true» / «false». An update
+  that would change nothing is a `blocking_need`, not an empty card.
+  `pricing.clearDefaultPriceList` is an intent Shozee has no action for: it
+  plans `pricing.setDefaultPriceList` `{ priceListId: null }`, which is what
+  that action already means by null, and a parse that carries any param at
+  all falls back. `SHO_PRICING_WRITE_ACTIONS` joins the dev list for
+  `SHO_ACTIONS`; the config default stays empty.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never
