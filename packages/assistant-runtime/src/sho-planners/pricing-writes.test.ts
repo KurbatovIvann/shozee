@@ -3,7 +3,9 @@ import {
   createPriceListContract,
   deactivatePriceListContract,
   deletePriceListContract,
+  REMOVE_PRICE_LIST_ENTRIES_MAX_ITEMS,
   removePriceListEntriesContract,
+  SET_PRICE_LIST_ENTRIES_MAX_ITEMS,
   setDefaultPriceListContract,
   setPriceListEntriesContract,
   updatePriceListContract,
@@ -557,6 +559,42 @@ describe("«в оптовий прайс лак есі за триста сор�
     ).toEqual({ kind: "fallback", reason: "unsupported_param" });
   });
 
+  it("refuses a variant scoped by a product the focus bound, not the index", () => {
+    expect(
+      planOf(
+        setCommand({
+          ...setSaid(),
+          product: {
+            ...resolvedAs(SET_PARSE, "product", OUR_PRODUCT),
+            status: "context",
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses more product lines than the action's batch takes", () => {
+    expect(
+      planOf(
+        setCommand({
+          ...setSaidOnly("price_list", "product", "price"),
+          product: Array.from(
+            { length: SET_PRICE_LIST_ENTRIES_MAX_ITEMS + 1 },
+            () => resolvedAs(SET_PARSE, "product", OUR_PRODUCT),
+          ),
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses a line list the parse left empty", () => {
+    expect(
+      planOf(
+        setCommand({ ...setSaidOnly("price_list", "price"), product: [] }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
   it("refuses half a price pair rather than guessing the currency", () => {
     expect(
       planOf(
@@ -644,6 +682,56 @@ describe("«поло kappa з опту прибери» plans the entry removal"
         entries: [{ productId: OUR_PRODUCT, variantId: OUR_VARIANT }],
       },
     });
+  });
+
+  it("refuses a variant scoped by a product the focus bound, not the index", () => {
+    expect(
+      planOf(
+        removeCommand({
+          ...removeSaid(),
+          product: {
+            ...resolvedAs(REMOVE_PARSE, "product", OUR_PRODUCT),
+            status: "context",
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("takes a focus-held product on its own, with no variant to scope", () => {
+    expect(
+      planOf(
+        removeCommand({
+          price_list: resolvedAs(REMOVE_PARSE, "price_list", OUR_PRICE_LIST),
+          product: {
+            ...resolvedAs(REMOVE_PARSE, "product", OUR_PRODUCT),
+            status: "context",
+          },
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "pricing_removePriceListEntries",
+      reply: "Ціни з прайс-листа прибрано.",
+      input: {
+        priceListId: OUR_PRICE_LIST,
+        entries: [{ productId: OUR_PRODUCT }],
+      },
+    });
+  });
+
+  it("refuses more product lines than the action's batch takes", () => {
+    expect(
+      planOf(
+        removeCommand({
+          price_list: resolvedAs(REMOVE_PARSE, "price_list", OUR_PRICE_LIST),
+          product: Array.from(
+            { length: REMOVE_PRICE_LIST_ENTRIES_MAX_ITEMS + 1 },
+            () => resolvedAs(REMOVE_PARSE, "product", OUR_PRODUCT),
+          ),
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
   });
 
   it("refuses a price said over a removal", () => {

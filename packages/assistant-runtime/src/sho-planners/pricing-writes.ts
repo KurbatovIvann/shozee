@@ -19,6 +19,7 @@ import {
   shoIdOnly,
   shoMoneyOf,
   shoRenamedName,
+  shoResolvedProductId,
   shoSpokenText,
   shoVariantId,
   shoWriteActions,
@@ -88,6 +89,7 @@ const onPriceList = (
 function productLines(
   param: ShoParam,
   max: number,
+  scopesAVariant: boolean,
 ): readonly ShoWriteFields[] | ShoPlanFallbackReason {
   const said: readonly unknown[] = Array.isArray(param) ? param : [param];
   if (said.length === 0 || said.length > max) {
@@ -98,7 +100,9 @@ function productLines(
     if (!shoIsRef(entry)) {
       return "unsupported_param";
     }
-    const mapped = shoIdFrom(entry, "productId");
+    const mapped = scopesAVariant
+      ? shoResolvedProductId(entry)
+      : shoIdFrom(entry, "productId");
     if (shoRefused(mapped)) {
       return mapped;
     }
@@ -132,19 +136,20 @@ function priceOfLine(param: ShoParam | undefined): ShoWriteMapped {
 const entriesFromProducts =
   (max: number, priced: boolean): ShoWriteParamMapper =>
   (param, command) => {
-    const lines = productLines(param, max);
-    if (shoRefused(lines)) {
-      return lines;
-    }
     const variant = variantOfLine(command.params["variant"]);
     if (shoRefused(variant)) {
       return variant;
+    }
+    const scopesAVariant = Object.hasOwn(variant, "variantId");
+    const lines = productLines(param, max, scopesAVariant);
+    if (shoRefused(lines)) {
+      return lines;
     }
     const price = priced ? priceOfLine(command.params["price"]) : {};
     if (shoRefused(price)) {
       return price;
     }
-    if (lines.length > 1 && Object.hasOwn(variant, "variantId")) {
+    if (lines.length > 1 && scopesAVariant) {
       return "unsupported_param";
     }
     return {

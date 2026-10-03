@@ -1,22 +1,20 @@
 import { toProviderToolName } from "@showzy/ai";
-import type { ShoParam } from "@showzy/sho-protocol";
 import {
   DEFAULT_PRODUCT_CURRENCY,
   PRODUCT_NAME_MAX,
 } from "@showzy/validation/catalog";
 
-import { shoIsRef, shoRefused, type ShoActionPlanners } from "./kit.js";
+import { shoRefused, type ShoActionPlanners } from "./kit.js";
 import {
   shoCreatedName,
-  shoIdFrom,
   shoIdOnly,
   shoMoneyOf,
   shoRenamedName,
+  shoResolvedProductId,
   shoVariantId,
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
-  type ShoWriteMapped,
   type ShoWriteParamMapper,
   type ShoWritePlan,
   type ShoWritePlans,
@@ -94,13 +92,8 @@ const onProduct = (action: string, reply: string): ShoWritePlan => ({
 
 const variantName = shoRenamedName(PRODUCT_NAME_MAX);
 
-const resolvedProduct = (param: ShoParam): ShoWriteMapped =>
-  shoIsRef(param) && param.status === "resolved"
-    ? shoIdFrom(param, "productId")
-    : "unsupported_param";
-
 const locatingProduct: ShoWriteParamMapper = (param) => {
-  const bound = resolvedProduct(param);
+  const bound = shoResolvedProductId(param);
   return shoRefused(bound) ? bound : {};
 };
 
@@ -154,7 +147,7 @@ const SHO_CATALOG_WRITES: ShoWritePlans = {
     reply: "Варіант оновлено.",
     params: {
       variant: shoVariantId,
-      product: resolvedProduct,
+      product: shoResolvedProductId,
       rename_to: variantName,
       price: basePrice,
     },

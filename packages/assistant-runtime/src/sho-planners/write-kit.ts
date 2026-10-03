@@ -6,6 +6,7 @@ import type {
 } from "@showzy/sho-protocol";
 
 import {
+  shoIsRef,
   shoPlanFallback,
   shoRefLocator,
   shoRefused,
@@ -49,6 +50,11 @@ export const shoIdOnly =
   (field: string) =>
   (param: ShoParam): ShoWriteMapped =>
     shoIdFrom(param, field);
+
+export const shoResolvedProductId = (param: ShoParam): ShoWriteMapped =>
+  shoIsRef(param) && param.status === "resolved"
+    ? shoIdFrom(param, "productId")
+    : "unsupported_param";
 
 export function shoVariantId(param: ShoParam): ShoWriteMapped {
   if (
