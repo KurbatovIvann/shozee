@@ -78,6 +78,52 @@ export const SHO_CATALOG_WRITE_PARSES: Readonly<Record<string, unknown>> =
       domain: "customers",
       verb: "remove",
     },
+    "d79-price-list-case": {
+      text: "поло kappa темно-синє xl з опту прибери",
+      action: "pricing.removePriceListEntries",
+      kind: "write",
+      effect: "write",
+      confirm: "card",
+      params: {
+        product: {
+          text: "поло kappa",
+          status: "resolved",
+          id: "p-polo",
+          name: "Поло чоловіче Kappa",
+          match: "alias",
+        },
+        variant: {
+          text: "темно-синє xl",
+          status: "resolved",
+          id: "v-polo-navy-xl",
+          name: "Темно-синє XL",
+          match: "attrs",
+          attrs: [
+            {
+              text: "темно-синє",
+              variantIds: ["v-polo-navy-l", "v-polo-navy-xl"],
+            },
+            {
+              text: "xl",
+              variantIds: ["v-polo-navy-xl"],
+            },
+          ],
+        },
+        price_list: {
+          text: "опту",
+          status: "resolved",
+          id: "pl-wholesale",
+          name: "Опт",
+          match: "form",
+        },
+      },
+      needs: [],
+      ready: true,
+      refPrevious: {},
+      catalogued: false,
+      domain: "pricing",
+      verb: "remove",
+    },
     "d89-rename-group": {
       text: "перейменуй її на квітникарі",
       action: "customers.updateGroup",

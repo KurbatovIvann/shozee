@@ -1,9 +1,13 @@
 import { toProviderToolName } from "@showzy/ai";
 import {
   archiveProductContract,
+  archiveVariantContract,
   createProductContract,
+  createVariantContract,
   restoreProductContract,
+  restoreVariantContract,
   updateProductContract,
+  updateVariantContract,
 } from "@showzy/catalog/contract";
 import {
   shoCommandSchema,
@@ -18,14 +22,20 @@ import { createShoPlanner, type ShoActionPlan } from "../sho-plan.js";
 import { shoCatalogWriteParse } from "./__tests__/catalog-write-parses.js";
 import {
   SHO_ARCHIVE_PRODUCT,
+  SHO_ARCHIVE_VARIANT,
   SHO_CATALOG_WRITE_ACTIONS,
   SHO_CATALOG_WRITE_PLANNERS,
   SHO_CATALOG_WRITE_PLANNER_PARAMS,
   SHO_CREATE_PRODUCT,
+  SHO_CREATE_VARIANT,
   SHO_READ_AS_FOCUS_PRODUCT_NOTE,
   SHO_READ_AS_PRODUCT_UPDATE_NOTE,
+  SHO_READ_AS_VARIANT_UPDATE_NOTE,
   SHO_RESTORE_PRODUCT,
+  SHO_RESTORE_VARIANT,
+  SHO_UNKNOWN_VARIANT_ATTR_NOTE,
   SHO_UPDATE_PRODUCT,
+  SHO_UPDATE_VARIANT,
 } from "./catalog-writes.js";
 import { SHO_READ_ACTIONS } from "./reads.js";
 
@@ -87,6 +97,14 @@ const TOOL_INPUTS: Readonly<Record<string, (input: unknown) => boolean>> = {
     archiveProductContract.input.safeParse(input).success,
   [toProviderToolName(restoreProductContract.name)]: (input) =>
     restoreProductContract.input.safeParse(input).success,
+  [toProviderToolName(createVariantContract.name)]: (input) =>
+    createVariantContract.input.safeParse(input).success,
+  [toProviderToolName(updateVariantContract.name)]: (input) =>
+    updateVariantContract.input.safeParse(input).success,
+  [toProviderToolName(archiveVariantContract.name)]: (input) =>
+    archiveVariantContract.input.safeParse(input).success,
+  [toProviderToolName(restoreVariantContract.name)]: (input) =>
+    restoreVariantContract.input.safeParse(input).success,
 };
 
 function toolAccepts(toolName: string, input: unknown): boolean {
@@ -447,12 +465,16 @@ describe("the catalog write planners are registered as writes", () => {
     }
   });
 
-  it("names the four product writes and their catalogue params", () => {
+  it("names the eight catalog writes and their catalogue params", () => {
     expect(SHO_CATALOG_WRITE_PLANNER_PARAMS).toEqual({
       [SHO_CREATE_PRODUCT]: ["new_name", "price"],
       [SHO_UPDATE_PRODUCT]: ["product", "rename_to", "price"],
       [SHO_ARCHIVE_PRODUCT]: ["product"],
       [SHO_RESTORE_PRODUCT]: ["product"],
+      [SHO_CREATE_VARIANT]: ["product", "new_name", "price"],
+      [SHO_UPDATE_VARIANT]: ["variant", "product", "rename_to", "price"],
+      [SHO_ARCHIVE_VARIANT]: ["variant", "product"],
+      [SHO_RESTORE_VARIANT]: ["variant", "product"],
     });
   });
 
@@ -463,5 +485,332 @@ describe("the catalog write planners are registered as writes", () => {
         NOW,
       ),
     ).toEqual({ kind: "fallback", reason: "not_whitelisted" });
+  });
+});
+
+const OUR_VARIANT = "6b1d94a7-52c8-4f30-9ad6-18e7c45b0f29";
+
+const GOLD_VARIANT_CASE = "d79-price-list-case";
+
+const goldParent = (): Json => paramsOf(GOLD_VARIANT_CASE)["product"] as Json;
+
+const goldVariant = (): Json => paramsOf(GOLD_VARIANT_CASE)["variant"] as Json;
+
+const parentRef = (id: string): Json => ({ ...goldParent(), id });
+
+const variantRef = (id: string, patch: Json = {}): Json => ({
+  ...goldVariant(),
+  id,
+  ...patch,
+});
+
+const onTheVariant = (
+  action: string,
+  params: Json,
+  patch: Json = {},
+): ShoCommand => commandOf(GOLD_VARIANT_CASE, { action, params, ...patch });
+
+const ourVariant = (): Json => ({
+  variant: variantRef(OUR_VARIANT),
+  product: parentRef(OUR_PRODUCT),
+});
+
+describe("a variant write names the parent product the parse bound", () => {
+  it("creates a variant on the gold d79-price-list-case product: no gold parse creates one", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_CREATE_VARIANT, {
+          product: parentRef(OUR_PRODUCT),
+          new_name: suggestedCreate()["new_name"],
+          price: suggestedCreate()["price"],
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "catalog_createVariant",
+      reply: "Варіант створено.",
+      input: {
+        productId: OUR_PRODUCT,
+        name: "куртку шкіряну",
+        basePriceMinor: "120000",
+        currency: "UAH",
+      },
+    });
+  });
+
+  it("creates the variant without an override when no price was spoken", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_CREATE_VARIANT, {
+          product: parentRef(OUR_PRODUCT),
+          new_name: suggestedCreate()["new_name"],
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "catalog_createVariant",
+      reply: "Варіант створено.",
+      input: { productId: OUR_PRODUCT, name: "куртку шкіряну" },
+    });
+  });
+
+  it("creates a variant on the product the focus holds: no variant is scoped by it", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_CREATE_VARIANT, {
+          product: productRef(OUR_PRODUCT),
+          new_name: suggestedCreate()["new_name"],
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "catalog_createVariant",
+      reply: "Варіант створено.",
+      input: { productId: OUR_PRODUCT, name: "куртку шкіряну" },
+    });
+  });
+
+  it("asks rather than guess the parent of a created variant", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_CREATE_VARIANT, {
+          new_name: suggestedCreate()["new_name"],
+          price: suggestedCreate()["price"],
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "blocking_need" });
+  });
+
+  it("asks rather than guess the parent of an updated variant", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_UPDATE_VARIANT, {
+          variant: variantRef(OUR_VARIANT),
+          rename_to: paramsOf("d89-rename-group")["rename_to"],
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "blocking_need" });
+  });
+});
+
+describe("a variant update sends the variant and only the fields said", () => {
+  it("sends no price for a rename, so the stored override stands", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_UPDATE_VARIANT, {
+          ...ourVariant(),
+          rename_to: paramsOf("d89-rename-group")["rename_to"],
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "catalog_updateVariant",
+      reply: "Варіант оновлено.",
+      input: {
+        productId: OUR_PRODUCT,
+        variantId: OUR_VARIANT,
+        name: "квітникарі",
+      },
+    });
+  });
+
+  it("sends the override as the price and currency pair Шо parsed", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_UPDATE_VARIANT, {
+          ...ourVariant(),
+          price: suggestedCreate()["price"],
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "catalog_updateVariant",
+      reply: "Варіант оновлено.",
+      input: {
+        productId: OUR_PRODUCT,
+        variantId: OUR_VARIANT,
+        basePriceMinor: "120000",
+        currency: "UAH",
+      },
+    });
+  });
+
+  it("asks rather than plan an empty card when only the variant was named", () => {
+    expect(planOf(onTheVariant(SHO_UPDATE_VARIANT, ourVariant()))).toEqual({
+      kind: "fallback",
+      reason: "blocking_need",
+    });
+  });
+
+  it("refuses half an override pair rather than send a bare number", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_UPDATE_VARIANT, {
+          ...ourVariant(),
+          price: { text: "1200 гривень" },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("notes a D84 misread of a variant update read as an edit", () => {
+    expect(
+      notesOf(
+        planOf(
+          onTheVariant(
+            SHO_UPDATE_VARIANT,
+            {
+              ...ourVariant(),
+              rename_to: paramsOf("d89-rename-group")["rename_to"],
+            },
+            {
+              needs: [
+                {
+                  path: "action",
+                  reason: "read_as_update",
+                  blocking: false,
+                  span: { text: "темно-синє xl" },
+                },
+              ],
+            },
+          ),
+        ),
+      ),
+    ).toEqual([`${SHO_READ_AS_VARIANT_UPDATE_NOTE}: «темно-синє xl».`]);
+  });
+});
+
+describe("the archive and restore of a variant take the variant alone", () => {
+  const LIFECYCLE: Readonly<Record<string, readonly [string, string]>> = {
+    [SHO_ARCHIVE_VARIANT]: ["catalog_archiveVariant", "Варіант заархівовано."],
+    [SHO_RESTORE_VARIANT]: [
+      "catalog_restoreVariant",
+      "Варіант повернуто з архіву.",
+    ],
+  };
+
+  it("plans the variant id and drops the parent that located it", () => {
+    for (const [action, [toolName, reply]] of Object.entries(LIFECYCLE)) {
+      expect({
+        action,
+        plan: planOf(onTheVariant(action, ourVariant())),
+      }).toEqual({
+        action,
+        plan: {
+          kind: "call",
+          toolName,
+          reply,
+          input: { variantId: OUR_VARIANT },
+        },
+      });
+    }
+  });
+
+  it("refuses a parent the parse never bound", () => {
+    for (const action of Object.keys(LIFECYCLE)) {
+      expect({
+        action,
+        plan: planOf(
+          onTheVariant(action, {
+            variant: variantRef(OUR_VARIANT),
+            product: { text: "поло kappa", status: "unknown" },
+          }),
+        ),
+      }).toEqual({
+        action,
+        plan: { kind: "fallback", reason: "unsupported_param" },
+      });
+    }
+  });
+
+  it("notes an attr no variant of the product carries", () => {
+    expect(
+      notesOf(
+        planOf(
+          onTheVariant(SHO_ARCHIVE_VARIANT, ourVariant(), {
+            needs: [
+              {
+                path: "variant.attrs[1]",
+                reason: "unknown_attr",
+                blocking: false,
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toEqual([`${SHO_UNKNOWN_VARIANT_ATTR_NOTE}.`]);
+  });
+});
+
+describe("a variant write binds no variant the parse did not resolve", () => {
+  it("refuses the gold d79-price-list-case ids, which are no uuids", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_ARCHIVE_VARIANT, {
+          variant: goldVariant(),
+          product: goldParent(),
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses a foreign product id beside a resolved variant", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_ARCHIVE_VARIANT, {
+          variant: variantRef(OUR_VARIANT),
+          product: goldParent(),
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses a focus-held parent beside a variant the attrs resolved", () => {
+    for (const action of [
+      SHO_UPDATE_VARIANT,
+      SHO_ARCHIVE_VARIANT,
+      SHO_RESTORE_VARIANT,
+    ]) {
+      expect({
+        action,
+        plan: planOf(
+          onTheVariant(action, {
+            variant: variantRef(OUR_VARIANT),
+            product: productRef(OUR_PRODUCT),
+          }),
+        ),
+      }).toEqual({
+        action,
+        plan: { kind: "fallback", reason: "unsupported_param" },
+      });
+    }
+  });
+
+  it("never guesses between the variants the attrs name", () => {
+    for (const status of ["ambiguous", "unknown", "unspecified", "none"]) {
+      expect({
+        status,
+        plan: planOf(
+          onTheVariant(SHO_ARCHIVE_VARIANT, {
+            variant: variantRef(OUR_VARIANT, { status }),
+            product: parentRef(OUR_PRODUCT),
+          }),
+        ),
+      }).toEqual({
+        status,
+        plan: { kind: "fallback", reason: "unsupported_param" },
+      });
+    }
+  });
+
+  it("refuses the product as a stand-in for the variant", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_ARCHIVE_VARIANT, {
+          variant: parentRef(OUR_PRODUCT),
+          product: parentRef(OUR_PRODUCT),
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
   });
 });
