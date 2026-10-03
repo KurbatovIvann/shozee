@@ -17,7 +17,7 @@ import {
   type VoiceCaptureState,
 } from "./voice-capture-state";
 import { subscribeVoiceBackground } from "./voice-app-state";
-import { voiceFrameBytes, voiceFrameLevel } from "./voice-protocol";
+import { voiceFrameBytes } from "./voice-protocol";
 import {
   openVoiceSocket,
   type VoiceSocket,
@@ -31,13 +31,10 @@ export interface UseVoiceCaptureRequest {
   readonly createSocket?: VoiceWebSocketFactory | undefined;
 }
 
-export type VoiceLevelListener = (level: number) => void;
-
 export interface VoiceCapture extends VoiceCaptureState {
   readonly start: () => void;
   readonly stop: () => void;
   readonly reset: () => void;
-  readonly onLevel: (listener: VoiceLevelListener) => () => void;
 }
 
 export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
@@ -53,21 +50,6 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
   const deadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const releaseRef = useRef<() => void>(() => {});
   const stopRef = useRef<() => void>(() => {});
-  const levelListenersRef = useRef(new Set<VoiceLevelListener>());
-
-  const emitLevel = useCallback((level: number) => {
-    for (const listener of levelListenersRef.current) {
-      listener(level);
-    }
-  }, []);
-
-  const onLevel = useCallback((listener: VoiceLevelListener) => {
-    const listeners = levelListenersRef.current;
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-    };
-  }, []);
 
   const { stream } = useAudioStream({
     sampleRate: VOICE_SAMPLE_RATE_HZ,
@@ -85,7 +67,6 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
         return;
       }
       socket.send(frame);
-      emitLevel(voiceFrameLevel(frame));
     },
   });
 
@@ -108,12 +89,11 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
 
   const silence = useCallback(() => {
     clearDeadline();
-    emitLevel(0);
     stream.stop();
     setAudioModeAsync({ allowsRecording: false }).catch(() => {
       dispatch({ type: "failed", failure: "audio" });
     });
-  }, [clearDeadline, emitLevel, stream]);
+  }, [clearDeadline, stream]);
 
   const release = useCallback(() => {
     sessionRef.current += 1;
@@ -226,5 +206,5 @@ export function useVoiceCapture(request: UseVoiceCaptureRequest): VoiceCapture {
     };
   }, []);
 
-  return { ...state, start, stop, reset, onLevel };
+  return { ...state, start, stop, reset };
 }

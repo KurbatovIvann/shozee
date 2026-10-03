@@ -5,7 +5,6 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import type { AssistantVoiceCopy } from "../../../i18n/assistant";
 import { keyboardAppearance } from "../../../theme/tokens";
-import type { VoiceLevelListener } from "../voice/use-voice-capture";
 import {
   voiceComposerPlaceholder,
   voiceComposerValue,
@@ -29,7 +28,6 @@ export type AssistantComposerVoice = {
   readonly onToggle: () => void;
   readonly onRetry: () => void;
   readonly onSettings: () => void;
-  readonly onLevel: (listener: VoiceLevelListener) => () => void;
 };
 
 export function AssistantComposer(props: {
@@ -133,7 +131,6 @@ export function AssistantComposer(props: {
             label={dictating ? voice.copy.stop : voice.copy.start}
             disabled={!voice.canPress}
             onPress={voice.onToggle}
-            onLevel={voice.onLevel}
           />
         ) : null}
       </View>

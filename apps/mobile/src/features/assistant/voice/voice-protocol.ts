@@ -25,25 +25,6 @@ export function voiceFrameBytes(buffer: {
   return captured && whole ? buffer.data : null;
 }
 
-const VOICE_LEVEL_REFERENCE_RMS = 8192;
-
-export function voiceFrameLevel(data: ArrayBuffer): number {
-  const samples = new Int16Array(
-    data,
-    0,
-    Math.floor(data.byteLength / VOICE_BYTES_PER_SAMPLE),
-  );
-  if (samples.length === 0) {
-    return 0;
-  }
-  let squares = 0;
-  for (const sample of samples) {
-    squares += sample * sample;
-  }
-  const rms = Math.sqrt(squares / samples.length);
-  return Math.min(1, rms / VOICE_LEVEL_REFERENCE_RMS);
-}
-
 export function sliceVoiceFrames(
   data: ArrayBuffer,
   maxBytes: number = VOICE_MAX_FRAME_BYTES,

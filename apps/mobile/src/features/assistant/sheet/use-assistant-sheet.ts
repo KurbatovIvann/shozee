@@ -248,7 +248,6 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
         onToggle: dictation.toggle,
         onRetry: dictation.retry,
         onSettings: dictation.openSettings,
-        onLevel: dictation.onLevel,
       }
     : null;
 

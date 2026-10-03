@@ -333,11 +333,10 @@ describe("assistant mic composer (SHO-779)", () => {
     expect(composer).toContain("voice.onRetry");
   });
 
-  it("rings the mic from the captured level and stands still with reduced motion", () => {
-    expect(micButton).toContain("useReducedMotion");
-    expect(micButton).toContain("props.onLevel");
-    expect(micButton).toContain("useAnimatedStyle");
+  it("draws the mic states from theme tokens and reports them to a reader", () => {
     expect(micButton).toContain("accessibilityState");
+    expect(micButton).toContain("buttonActive");
+    expect(micButton).toContain("buttonOff");
     expect(micButton).not.toMatch(/#[0-9a-fA-F]{3}/);
   });
 
