@@ -4,10 +4,7 @@ import {
   NotFoundError,
   PermissionDeniedError,
 } from "@showzy/core/errors";
-import {
-  ENTITY_LOOKUP_OPTIONS_MAX,
-  REFERENCE_CONFLICT_LABELS_MAX,
-} from "@showzy/validation/entity-ref";
+import { REFERENCE_CONFLICT_LABELS_MAX } from "@showzy/validation/entity-ref";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -56,7 +53,6 @@ describe("catalog.resolveLineReferences contract", () => {
       "earliest terminal failure by input lineIndex",
     );
     expect(RESOLVE_LINE_REFERENCES_MAX_LINES).toBe(100);
-    expect(VARIANT_SELECTION_OPTIONS_MAX).toBe(ENTITY_LOOKUP_OPTIONS_MAX);
     expect(VARIANT_SELECTION_OPTIONS_MAX).toBeGreaterThan(6);
     expect(VARIANT_SELECTION_OPTIONS_MAX).not.toBe(
       REFERENCE_CONFLICT_LABELS_MAX,

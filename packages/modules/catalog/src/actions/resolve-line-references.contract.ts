@@ -7,10 +7,6 @@
  * rows (active or archived) is variable: the parent is not sellable.
  * Bounded DB queries — no per-line SELECT or ctx.call. Output order
  * matches input.
- *
- * Mechanical: `timeout: 5000` matches other catalog facts reads. Query
- * max 100. Product and variant picker cap `VARIANT_SELECTION_OPTIONS_MAX`
- * (20) is not `REFERENCE_CONFLICT_LABELS_MAX` (5). Company id is never input.
  */
 import { defineActionContract } from "@showzy/core/contract";
 import {

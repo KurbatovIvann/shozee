@@ -6,6 +6,7 @@ import {
   EntityLookupAmbiguousError,
   EntityLookupUnmatchedError,
   classifyEntityLookupMatch,
+  entityLookupPage,
   entityLookupPicker,
   entityLookupRefusal,
 } from "./entity-lookup.js";
@@ -114,6 +115,29 @@ describe("entityLookupPicker", () => {
   it("does not report truncation below the cap", () => {
     expect(entityLookupPicker([{ id: "1", label: "a" }])).toEqual({
       options: [{ id: "1", label: "a" }],
+      optionsTruncated: false,
+    });
+  });
+});
+
+describe("entityLookupPage", () => {
+  it("caps a pre-sorted list without reordering it", () => {
+    const many = Array.from(
+      { length: ENTITY_LOOKUP_OPTIONS_MAX + 1 },
+      (_, i) => ({
+        id: `id-${String(i).padStart(2, "0")}`,
+        label: `label-${String(i).padStart(2, "0")}`,
+      }),
+    ).toReversed();
+    const page = entityLookupPage(many);
+    expect(page.options).toHaveLength(ENTITY_LOOKUP_OPTIONS_MAX);
+    expect(page.options).toEqual(many.slice(0, ENTITY_LOOKUP_OPTIONS_MAX));
+    expect(page.optionsTruncated).toBe(true);
+  });
+
+  it("does not report truncation below the cap", () => {
+    expect(entityLookupPage([{ id: "1", label: "b" }])).toEqual({
+      options: [{ id: "1", label: "b" }],
       optionsTruncated: false,
     });
   });
