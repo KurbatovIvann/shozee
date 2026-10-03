@@ -534,6 +534,35 @@ export const SHO_ORDER_WRITE_PARSES: Readonly<Record<string, unknown>> =
       domain: "orders",
       verb: "status",
     },
+    "d89-delete-customer": {
+      text: "а тепер видали її будь ласка",
+      action: "customers.deleteCustomer",
+      kind: "high",
+      effect: "destructive",
+      confirm: "strong",
+      params: {
+        customer: {
+          text: "її",
+          status: "context",
+          id: "new-marta",
+          name: "Марта Ковальчук",
+          focus: 0,
+        },
+      },
+      needs: [
+        {
+          path: "action",
+          reason: "read_as_focus_type",
+          blocking: false,
+          span: { text: "її" },
+        },
+      ],
+      ready: true,
+      refPrevious: {},
+      catalogued: false,
+      domain: "orders",
+      verb: "cancel",
+    },
     "d90-closed-order": {
       text: "підтверджуй його зараз же",
       action: "orders.confirm",

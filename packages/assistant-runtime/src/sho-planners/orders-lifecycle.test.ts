@@ -18,6 +18,7 @@ import {
   SHO_ORDER_LIFECYCLE_ACTIONS,
   SHO_ORDER_LIFECYCLE_PLANNERS,
   SHO_ORDER_LIFECYCLE_PLANNER_PARAMS,
+  SHO_READ_AS_FOCUS_ORDER_NOTE,
   SHO_START_ORDER,
 } from "./orders-lifecycle.js";
 import { SHO_WRITE_ACTIONS } from "./orders-writes.js";
@@ -156,6 +157,38 @@ describe("«підтверди його» binds to the order the focus holds", (
   });
 });
 
+describe("a focus-type misread is carried to the card", () => {
+  const misread = (): ShoCommand =>
+    commandOf(focusedOn(OUR_ORDER), {
+      text: "видали її вже нарешті",
+      action: SHO_CANCEL_ORDER,
+      verb: "cancel",
+      needs: parseOf("d89-delete-customer")["needs"],
+    });
+
+  it("notes the span the delete-family misread hangs on", () => {
+    const plan = planOf(misread());
+    expect(plan.kind === "call" ? plan.notes : null).toEqual([
+      `${SHO_READ_AS_FOCUS_ORDER_NOTE}: «її».`,
+    ]);
+  });
+
+  it("keeps the note on the write the preview pauses", () => {
+    expect(whitelisted(resultOf(misread()), NOW)).toMatchObject({
+      kind: "call",
+      toolName: "orders_cancel",
+      input: { orderId: OUR_ORDER },
+      writes: true,
+      notes: [`${SHO_READ_AS_FOCUS_ORDER_NOTE}: «її».`],
+    });
+  });
+
+  it("carries no note when the parse reports no misread", () => {
+    const plan = planOf(commandOf(focusedOn(OUR_ORDER)));
+    expect(plan.kind === "call" ? plan.notes : "not a call").toBeUndefined();
+  });
+});
+
 describe("an order the focus does not hold is never written to", () => {
   it("refuses another company's order id against this turn's focus", () => {
     expect(
@@ -169,6 +202,24 @@ describe("an order the focus does not hold is never written to", () => {
     expect(
       shoFocusHolds(commandOf(focusedOn(OUR_ORDER)), [inFocus(OUR_ORDER)]),
     ).toBe(true);
+  });
+
+  it("refuses a resolved order ref, uuid or not: only focus binds a write", () => {
+    const parse = parseOf("d88-object-order");
+    expect(
+      planOf(
+        commandOf(parse, {
+          params: {
+            order_number: {
+              text: "його",
+              status: "resolved",
+              id: OUR_ORDER,
+              name: "№ 7001",
+            },
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
   });
 
   it("refuses a context reference the parse left without an id", () => {

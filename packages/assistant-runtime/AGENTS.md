@@ -143,11 +143,16 @@ registry is injected into `createAssistantRuntime`; this package never imports
   the parse already bound to a live focus entry (`status: "context"` with a
   uuid id, SHO-770) — which `createShoEngine` has already checked this turn's
   focus holds, so an order id from another company never reaches a planner.
-  Everything else is `unsupported_param` or `unresolved_reference`, which is
-  the LLM: the spoken digit span «131» (not a canonical `{prefix}-{tail}`
-  code), a canonical code (no uuid to send, and no planner may read first and
-  write second), and an order described by its `customer`, `period` or
-  `amount`. Resolving a spoken or canonical code to one order needs an order
+  `status: "context"` is required, not merely sufficient: a `resolved` ref
+  carrying a uuid is `unsupported_param`, because nothing but the focus binds
+  a lifecycle write. Everything else is the LLM too: the spoken digit span
+  «131» (not a canonical `{prefix}-{tail}` code), a canonical code (no uuid to
+  send, and no planner may read first and write second), and an order
+  described by its `customer`, `period` or `amount`. D89's non-blocking
+  `read_as_focus_type` becomes the card's note — the delete family maps a
+  focused `order` to `orders.cancel`, so «видали її» said over an order is a
+  cancel the person must see named before the tap. Resolving a spoken or
+  canonical code to one order needs an order
   reference on those four contracts — `orders` is not an owner module of
   SHO-742, so that stays an owner decision.
 - `sho-planners/write-kit.ts`, `sho-planners/customers-writes.ts` — the one
