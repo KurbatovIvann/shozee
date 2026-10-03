@@ -26,7 +26,12 @@ export async function updateStaffProduct(env: {
 
   const existing = (
     await db
-      .select({ id: products.id, name: products.name })
+      .select({
+        id: products.id,
+        name: products.name,
+        basePriceMinor: products.basePriceMinor,
+        currency: products.currency,
+      })
       .from(products)
       .where(
         and(
@@ -46,8 +51,11 @@ export async function updateStaffProduct(env: {
       .update(products)
       .set({
         name: keepOmitted(input.name, existing.name),
-        basePriceMinor: moneyFromCanonical(input.basePriceMinor),
-        currency: input.currency,
+        basePriceMinor:
+          input.basePriceMinor === undefined
+            ? existing.basePriceMinor
+            : moneyFromCanonical(input.basePriceMinor),
+        currency: keepOmitted(input.currency, existing.currency),
       })
       .where(
         and(

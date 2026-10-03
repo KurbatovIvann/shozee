@@ -44,6 +44,7 @@ import {
   type ConfirmationAlsoSecret,
   type ConfirmationSecret,
   type ResolveAnswer,
+  type ShoEngineFor,
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { ConflictError, CoreInvariantError } from "@showzy/core/errors";
@@ -248,6 +249,7 @@ function harness(options?: {
     readonly open: Promise<unknown>;
   };
   readonly ids?: Ids;
+  readonly sho?: ShoEngineFor;
 }): Harness {
   // The window the routes really run with, so a page here is a page on a phone.
   const deps = testDeps(assistantInteractions, {
@@ -377,6 +379,7 @@ function harness(options?: {
       return options?.tools ?? {};
     },
     resolveAnswer: options?.resolveAnswer ?? OK_RESOLVE,
+    ...(options?.sho === undefined ? {} : { sho: options.sho }),
     writtenRecordIdField: (action) =>
       WRITTEN_RECORD_ID_FIELDS.get(action) ?? null,
     prompt: () => ({ system: "you are a test" }),
@@ -2818,5 +2821,248 @@ describe("a send while a card is open answers it", () => {
     expect([first.status, retry.status]).toEqual([200, 200]);
     expect(((await retry.json()) as KitBody).status).toBe("ok");
     expect(queue.added).toEqual([]);
+  });
+});
+
+describe("a Шо ui answer while a card is open (SHO-776)", () => {
+  const OTHER_CONVERSATION = "66666666-6666-4666-8666-666666666666";
+  const ZORYANA = ["Зоряна Білик", "Зоряна Біленко"];
+
+  function shoPicking(seen?: { calls: number }): ShoEngineFor {
+    return () => ({
+      plan: () => {
+        if (seen !== undefined) {
+          seen.calls += 1;
+        }
+        return Promise.resolve({
+          kind: "fallback",
+          reason: "ui_answer",
+          command: {
+            text: "для Зоряни Білик",
+            action: "ui.pick",
+            kind: "ui",
+            effect: "ui",
+            confirm: "none",
+            params: { pick_text: { text: "Зоряни Білик" } },
+            needs: [],
+            ready: true,
+            catalogued: false,
+            confidence: {
+              action: 0.99,
+              margin: 0.8,
+              certainty: 0.9,
+              spans: 0.9,
+            },
+            refPrevious: {},
+          },
+        });
+      },
+    });
+  }
+
+  it("answers the open card through the same path a typed name takes", async () => {
+    const chosen = chosenEntity();
+    const { app, kit, queue, bind } = harness({
+      resolveAnswer: chosen.resolveAnswer,
+      sho: shoPicking(),
+    });
+    const pause = await openNamedPause(kit, bind, ZORYANA);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "для Зоряни Білик"),
+    );
+
+    expect(response.status).toBe(202);
+    expect(entityIdOf(chosen.seen.value)).toBe("entity-1");
+    expect(queue.added).toEqual([
+      { kind: "answer", conversationId: CONVERSATION, commandId: COMMAND },
+    ]);
+  });
+
+  it("sends the same phrase to the model when no card is open", async () => {
+    const seen = { calls: 0 };
+    const { app, queue } = harness({ sho: shoPicking(seen) });
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      chatBody("для Зоряни Білик"),
+    );
+
+    expect(response.status).toBe(202);
+    expect(queue.added).toEqual([
+      { kind: "chat", conversationId: CONVERSATION, commandId: COMMAND },
+    ]);
+    expect(seen.calls).toBe(1);
+  });
+
+  it("never reads the card when the answering revision is stale", async () => {
+    const seen = { calls: 0 };
+    const { app, kit, bind } = harness({ sho: shoPicking(seen) });
+    const pause = await openNamedPause(kit, bind, ZORYANA);
+
+    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...answeringBody(pause, "для Зоряни Білик"),
+      answering: {
+        interactionId: pause.interactionId,
+        revision: pause.revision + 1,
+      },
+    });
+
+    expect(response.status).toBe(409);
+    expect(seen.calls).toBe(0);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+  });
+
+  it("never answers a card that belongs to another conversation", async () => {
+    const seen = { calls: 0 };
+    const { app, kit, bind } = harness({ sho: shoPicking(seen) });
+    const pause = await openNamedPause(kit, bind, ZORYANA);
+
+    const response = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...answeringBody(pause, "для Зоряни Білик"),
+      conversationId: OTHER_CONVERSATION,
+    });
+
+    expect(response.status).toBe(409);
+    expect(seen.calls).toBe(0);
+    expect(
+      (await kit.peek({ conversationId: CONVERSATION, bind }))?.status,
+    ).toBe("open");
+  });
+});
+
+describe("the server matcher decides before Шо reads the card (SHO-776)", () => {
+  function shoConfirming(seen: { calls: number }): ShoEngineFor {
+    return () => ({
+      plan: () => {
+        seen.calls += 1;
+        return Promise.resolve({
+          kind: "fallback",
+          reason: "ui_answer",
+          command: {
+            text: "Так",
+            action: "ui.confirm",
+            kind: "ui",
+            effect: "ui",
+            confirm: "none",
+            params: {},
+            needs: [],
+            ready: true,
+            catalogued: false,
+            confidence: {
+              action: 0.99,
+              margin: 0.8,
+              certainty: 0.9,
+              spans: 0.9,
+            },
+            refPrevious: {},
+          },
+        });
+      },
+    });
+  }
+
+  it("declines on «ні» without asking the parser at all", async () => {
+    const seen = { calls: 0 };
+    const { app, kit, queue, bind } = harness({ sho: shoConfirming(seen) });
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "ні"),
+    );
+
+    expect(((await response.json()) as KitBody).status).toBe("abandoned");
+    expect(seen.calls).toBe(0);
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+    expect(queue.added).toEqual([]);
+  });
+
+  it("does not approve an open write from «Так, для Зоряни Білик»", async () => {
+    const seen = { calls: 0 };
+    const { app, kit, queue, bind } = harness({ sho: shoConfirming(seen) });
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "Так, для Зоряни Білик"),
+    );
+
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as KitBody;
+    expect(traceOf(body.window?.messages.at(-1)?.parts ?? [])).toMatchObject({
+      interactionId: pause.interactionId,
+      outcome: "superseded",
+    });
+    expect(queue.added).toEqual([
+      { kind: "chat", conversationId: CONVERSATION, commandId: COMMAND },
+    ]);
+  });
+});
+
+describe("a leftover command is no card answer (SHO-776)", () => {
+  function shoConfirmingWithLeftover(): ShoEngineFor {
+    return () => ({
+      plan: () =>
+        Promise.resolve({
+          kind: "fallback",
+          reason: "ui_answer",
+          command: {
+            text: "так і скасуй",
+            action: "ui.confirm",
+            kind: "ui",
+            effect: "ui",
+            confirm: "none",
+            params: {},
+            needs: [
+              {
+                path: "text",
+                reason: "unparsed",
+                blocking: false,
+                span: { text: "і скасуй" },
+              },
+            ],
+            ready: true,
+            catalogued: false,
+            confidence: {
+              action: 0.99,
+              margin: 0.8,
+              certainty: 0.9,
+              spans: 0.9,
+            },
+            refPrevious: {},
+          },
+        }),
+    });
+  }
+
+  it("does not approve an open write from «так і скасуй»", async () => {
+    const { app, kit, queue, bind } = harness({
+      sho: shoConfirmingWithLeftover(),
+    });
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так і скасуй"),
+    );
+
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as KitBody;
+    expect(traceOf(body.window?.messages.at(-1)?.parts ?? [])).toMatchObject({
+      interactionId: pause.interactionId,
+      outcome: "superseded",
+    });
+    expect(queue.added).toEqual([
+      { kind: "chat", conversationId: CONVERSATION, commandId: COMMAND },
+    ]);
   });
 });

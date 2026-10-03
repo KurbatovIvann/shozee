@@ -6,6 +6,7 @@ import {
 import {
   assistantInteractionFromPause,
   type AssistantChoiceOption,
+  type AssistantInteraction,
   type AssistantPause,
 } from "@showzy/validation/assistant-chat";
 
@@ -162,6 +163,24 @@ function matchChoice(
     : { kind: "supersede" };
 }
 
+export function assistantAffirmedAnswer(
+  interaction: AssistantInteraction,
+): AssistantPauseMatch {
+  if (interaction.kind === "choice") {
+    return { kind: "hint", hint: CHOICE_CONTROL_HINT };
+  }
+  return interaction.level === "strong"
+    ? { kind: "hint", hint: STRONG_HINT }
+    : { kind: "answer", answer: { approved: true } };
+}
+
+export function matchAssistantChoiceText(
+  options: readonly AssistantChoiceOption[],
+  text: string,
+): AssistantPauseMatch {
+  return matchChoice(options, text, foldNameWords(text));
+}
+
 export function matchAssistantPauseAnswer(
   pause: AssistantPause,
   text: string,
@@ -175,14 +194,11 @@ export function matchAssistantPauseAnswer(
     return { kind: "decline" };
   }
   if (interaction.kind === "confirmation") {
-    if (control === null) {
-      return { kind: "supersede" };
-    }
-    return interaction.level === "strong"
-      ? { kind: "hint", hint: STRONG_HINT }
-      : { kind: "answer", answer: { approved: true } };
+    return control === null
+      ? { kind: "supersede" }
+      : assistantAffirmedAnswer(interaction);
   }
   return control === "affirmative"
-    ? { kind: "hint", hint: CHOICE_CONTROL_HINT }
-    : matchChoice(interaction.options, text, foldNameWords(text));
+    ? assistantAffirmedAnswer(interaction)
+    : matchAssistantChoiceText(interaction.options, text);
 }

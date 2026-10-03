@@ -219,7 +219,7 @@ describe("«виставити рахунок» issues from the order the focus 
   });
 });
 
-describe("cancel, share and request-sign act on one held document", () => {
+describe("the cancel, share and request-sign mappers take an id alone", () => {
   const verbs: Readonly<Record<string, readonly [string, string, string]>> = {
     [SHO_CANCEL_DOCUMENT]: [
       "cancel",
@@ -238,7 +238,7 @@ describe("cancel, share and request-sign act on one held document", () => {
     ],
   };
 
-  it("plans each intent as the document id and nothing else", () => {
+  it("maps each intent to the document id and nothing else", () => {
     for (const [action, [verb, toolName, reply]] of Object.entries(verbs)) {
       expect(
         planOf(commandOf(onFocusDocument(action, verb, OUR_DOCUMENT))),
@@ -251,7 +251,7 @@ describe("cancel, share and request-sign act on one held document", () => {
     }
   });
 
-  it("pauses each one on the preview like every other Шо write", () => {
+  it("stamps each one a write, so a bound one would reach the preview", () => {
     for (const [action, [verb, toolName]] of Object.entries(verbs)) {
       expect(
         whitelisted(
@@ -262,7 +262,7 @@ describe("cancel, share and request-sign act on one held document", () => {
     }
   });
 
-  it("leaves the share link and its token to the action's own preview", () => {
+  it("maps a share to the id alone: the token is the preview's (SHO-788)", () => {
     const plan = whitelisted(
       resultOf(
         commandOf(onFocusDocument(SHO_SHARE_DOCUMENT, "send", OUR_DOCUMENT)),
@@ -319,7 +319,7 @@ describe("cancel, share and request-sign act on one held document", () => {
   });
 });
 
-describe("a document the focus does not hold is never written to", () => {
+describe("end to end, no document write ever binds today (SHO-869)", () => {
   it("refuses another company's document id against this turn's focus", () => {
     expect(
       shoFocusHolds(
@@ -335,7 +335,7 @@ describe("a document the focus does not hold is never written to", () => {
     ).toBe(false);
   });
 
-  it("holds no document at all, so even our own id stays the LLM's", () => {
+  it("holds no document at all, so our own id is refused the same way", () => {
     expect(
       shoFocusHolds(
         commandOf(onFocusDocument(SHO_CANCEL_DOCUMENT, "cancel", OUR_DOCUMENT)),

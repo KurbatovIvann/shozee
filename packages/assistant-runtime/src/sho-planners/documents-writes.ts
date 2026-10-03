@@ -8,6 +8,7 @@ import {
 } from "./kit.js";
 import { SHOZEE_DOCUMENT_TYPES } from "./reads.js";
 import {
+  shoIdOnly,
   shoSpokenText,
   shoWriteActions,
   shoWritePlanners,
@@ -40,16 +41,6 @@ const focusHeldId =
       : "unresolved_reference";
   };
 
-const resolvedId =
-  (field: string): ShoWriteParamMapper =>
-  (param) => {
-    const locator = shoRefLocator(param);
-    if (shoRefused(locator)) {
-      return locator;
-    }
-    return locator.by === "id" ? { [field]: locator.id } : "unsupported_param";
-  };
-
 const documentType: ShoWriteParamMapper = (param) => {
   const value = shoSpokenText(param);
   return value !== null && SHOZEE_DOCUMENT_TYPES.includes(value)
@@ -71,7 +62,7 @@ const SHO_DOCUMENT_WRITES: ShoWritePlans = {
     params: {
       order_number: focusHeldId("orderId"),
       document_type: documentType,
-      counterparty: resolvedId("counterpartyId"),
+      counterparty: shoIdOnly("counterpartyId"),
     },
     required: ["order_number", "document_type"],
   },

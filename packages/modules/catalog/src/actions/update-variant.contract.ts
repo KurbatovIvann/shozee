@@ -21,7 +21,7 @@ export const updateVariantInputSchema = z
   .strictObject({
     productId: z.uuid(),
     variantId: z.uuid(),
-    name: catalogNameSchema,
+    name: catalogNameSchema.optional(),
     basePriceMinor: nonNegativeMoneyWireSchema.nullable().optional(),
     currency: currencyCodeSchema.nullable().optional(),
   })
@@ -40,7 +40,7 @@ export const updateVariantOutputSchema = variantViewSchema;
 export const updateVariantContract = defineActionContract({
   name: "catalog.updateVariant",
   description:
-    "Update the name and base-price override of a variant in the staff member's active company. Currency is UAH-only (MVP). The override pair is omitted to keep the stored override, null together to clear it, and set together to replace it. Missing, foreign-company, or product-mismatched variants fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
+    "Update the name and base-price override of a variant in the staff member's active company. Name is required in the sense that it cannot be cleared: omit it to keep the stored name, and never send null. Currency is UAH-only (MVP). The override pair is omitted to keep the stored override, null together to clear it, and set together to replace it. Missing, foreign-company, or product-mismatched variants fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
   principal: "staff",
   transport: "client",
   input: updateVariantInputSchema,

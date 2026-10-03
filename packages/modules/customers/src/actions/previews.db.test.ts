@@ -20,6 +20,10 @@ import {
   customerGroups,
 } from "@showzy/db/schema/customers";
 import { priceLists } from "@showzy/db/schema/pricing";
+import {
+  PREVIEW_CHANGES_LABEL,
+  PREVIEW_NO_CHANGES,
+} from "@showzy/module-kit/preview-changes";
 import { count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
@@ -32,8 +36,6 @@ import {
   DELETE_COUNTERPARTY_NOTE,
   DELETE_CUSTOMER_NOTE,
   DELETE_GROUP_NOTE,
-  PREVIEW_CHANGES_LABEL,
-  PREVIEW_NO_CHANGES,
 } from "../services/preview-card.js";
 import { archiveCustomer } from "./archive-customer.js";
 import { createCounterparty } from "./create-counterparty.js";

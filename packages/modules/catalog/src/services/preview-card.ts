@@ -5,6 +5,7 @@ import { products, productVariants } from "@showzy/db/schema/catalog";
 import { moneyToCanonical } from "@showzy/module-kit/canonical";
 import { formatMoneyMinor } from "@showzy/module-kit/money-format";
 import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
+import { changeLines } from "@showzy/module-kit/preview-changes";
 import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
@@ -169,19 +170,23 @@ export function updateProductPreview(
     const stored = await loadProduct(env, companyId, input.productId);
     return {
       title: `Змінити товар: ${stored.name}`,
-      lines: [
+      lines: changeLines([
         ...(input.name === undefined
           ? []
           : [changeLine(CATALOG_NAME_LABEL, stored.name, input.name)]),
-        changeLine(
-          PRODUCT_PRICE_LABEL,
-          formatMoneyMinor(
-            moneyToCanonical(stored.basePriceMinor),
-            stored.currency,
-          ),
-          formatMoneyMinor(input.basePriceMinor, input.currency),
-        ),
-      ],
+        ...(input.basePriceMinor === undefined || input.currency === undefined
+          ? []
+          : [
+              changeLine(
+                PRODUCT_PRICE_LABEL,
+                formatMoneyMinor(
+                  moneyToCanonical(stored.basePriceMinor),
+                  stored.currency,
+                ),
+                formatMoneyMinor(input.basePriceMinor, input.currency),
+              ),
+            ]),
+      ]),
     };
   };
 }
@@ -217,12 +222,12 @@ export function updateVariantPreview(
       input.variantId,
       input.productId,
     );
-    const lines = [
-      { label: CATALOG_PRODUCT_LABEL, value: stored.productName },
-      changeLine(CATALOG_NAME_LABEL, stored.name, input.name),
-    ];
+    const changed: ActionPreviewLine[] = [];
+    if (input.name !== undefined) {
+      changed.push(changeLine(CATALOG_NAME_LABEL, stored.name, input.name));
+    }
     if (input.basePriceMinor !== undefined) {
-      lines.push(
+      changed.push(
         changeLine(
           VARIANT_PRICE_LABEL,
           storedOverridePrice(stored.basePriceMinor, stored.currency),
@@ -230,7 +235,13 @@ export function updateVariantPreview(
         ),
       );
     }
-    return { title: `Змінити варіант: ${stored.name}`, lines };
+    return {
+      title: `Змінити варіант: ${stored.name}`,
+      lines: [
+        { label: CATALOG_PRODUCT_LABEL, value: stored.productName },
+        ...changeLines(changed),
+      ],
+    };
   };
 }
 

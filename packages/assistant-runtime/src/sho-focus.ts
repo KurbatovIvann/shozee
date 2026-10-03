@@ -280,10 +280,9 @@ function recordsOf(
   command: ShoCommand,
   toolName: string,
   result: unknown,
+  paused: boolean,
 ): readonly ShoFocusRecord[] {
-  return stillPaused(result)
-    ? namedIn(command)
-    : shoTurnRecords(command, toolName, result);
+  return paused ? namedIn(command) : shoTurnRecords(command, toolName, result);
 }
 
 interface Touched {
@@ -309,14 +308,12 @@ function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
     if (!parsed.success || ran === null) {
       continue;
     }
+    const result = resultIn(history, index, ran.toolCallId);
+    const paused = stillPaused(result);
     touched.push({
       log: parsed.data,
       turns,
-      records: recordsOf(
-        parsed.data.command,
-        ran.toolName,
-        resultIn(history, index, ran.toolCallId),
-      ),
+      records: recordsOf(parsed.data.command, ran.toolName, result, paused),
     });
   }
   return touched;
@@ -355,4 +352,29 @@ export function shoPreviousFrom(
   }
   const { command, at } = newest.log;
   return shoWrites(command) ? undefined : { command, at };
+}
+
+export function shoOpenCardPrevious(
+  history: readonly ModelMessage[],
+): ShoPrevious | undefined {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index];
+    if (message === undefined) {
+      continue;
+    }
+    const ran = calledIn(message);
+    if (ran === null) {
+      continue;
+    }
+    const parsed = shoTurnLogSchema.safeParse(written(message));
+    if (
+      !parsed.success ||
+      !stillPaused(resultIn(history, index, ran.toolCallId))
+    ) {
+      return undefined;
+    }
+    const { command, at } = parsed.data;
+    return { command, at };
+  }
+  return undefined;
 }

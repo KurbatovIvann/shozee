@@ -21,19 +21,29 @@ import {
 } from "../wire.contract.js";
 import { productViewSchema } from "./product-view.contract.js";
 
-export const updateProductInputSchema = z.strictObject({
-  productId: z.uuid(),
-  name: catalogNameSchema.optional(),
-  basePriceMinor: nonNegativeMoneyWireSchema,
-  currency: currencyCodeSchema,
-});
+export const updateProductInputSchema = z
+  .strictObject({
+    productId: z.uuid(),
+    name: catalogNameSchema.optional(),
+    basePriceMinor: nonNegativeMoneyWireSchema.optional(),
+    currency: currencyCodeSchema.optional(),
+  })
+  .refine(
+    (product) =>
+      (product.basePriceMinor === undefined) ===
+      (product.currency === undefined),
+    {
+      message:
+        "Product base price and currency must be omitted or set together.",
+    },
+  );
 
 export const updateProductOutputSchema = productViewSchema;
 
 export const updateProductContract = defineActionContract({
   name: "catalog.updateProduct",
   description:
-    "Update the name and base price of a product in the staff member's active company. Name is required in the sense that it cannot be cleared: omit it to keep the stored name, and never send null. Currency is UAH-only (MVP). Missing products and products that belong to another company fail with the same not-found. Company id is never input. Variants are not changed. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
+    "Update the name and base price of a product in the staff member's active company. Name and the base-price pair are required in the sense that they cannot be cleared: omit a field to keep the stored value, and never send null. The base price and its currency are omitted together to keep the stored price and set together to replace it. Currency is UAH-only (MVP). Missing products and products that belong to another company fail with the same not-found. Company id is never input. Variants are not changed. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
   principal: "staff",
   transport: "client",
   input: updateProductInputSchema,

@@ -218,6 +218,19 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `read_as_customer_update` needs become the card's notes.
   `SHO_CUSTOMER_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
   config default stays empty.
+  The same table carries the customer lifecycle and the group planners
+  (SHO-859): `customers.archiveCustomer`, `customers.restoreCustomer`,
+  `customers.deleteCustomer` and `customers.deleteGroup` plan `{ id }` from
+  the one record the parse resolved, `customers.createGroup` /
+  `customers.updateGroup` take `new_name`/`rename_to`, `description` and a
+  resolved `price_list` as `priceListId`, and `customers.setGroup` — an
+  intent Shozee has no action for — plans `customers.updateCustomer`
+  `{ id, groupId }` for the one customer said, since a batch of customers is
+  one card over several writes and that is the LLM. The two destructive
+  intents are `kind: "high"` with `risk: "high"`, which is a confirmable
+  risk, so they pause on the same ADR-0050 preview as every other write and
+  carry their `read_as_focus_type` misread as a note on the card. The parity
+  test reads a planned write intent as `write` or `high` for that reason.
 - `sho-planners/documents-writes.ts` — the document write planners (SHO-861):
   `documents.createFromOrder`, `documents.cancel`, `documents.share` and
   `documents.requestSign` onto their own action tools, `writes: true`, so each
@@ -230,7 +243,8 @@ registry is injected into `createAssistantRuntime`; this package never imports
   type, so the focus never holds a document and `shoFocusHolds` refuses any
   context `document_ref`. A spoken document or order number is therefore
   `unsupported_param`, which is the LLM, until those actions take an
-  id-or-reference input as the lifecycle four did at SHO-853. `document_type`
+  id-or-reference input as the lifecycle four did at SHO-853 (SHO-869).
+  `document_type`
   maps to the two types Shozee issues and `counterparty` to a resolved uuid;
   `customer`, `period`, `status`, `amount`, `basis`, `channel`, `email` and
   `phone` are the LLM's — a `basis` span is a bare document number («57»),
@@ -340,6 +354,26 @@ registry is injected into `createAssistantRuntime`; this package never imports
   A turn writes under the token the accept stored rather than deriving one
   again, and the placeholder must still be the conversation's latest message —
   only the latest message can be written to.
+- `sho-card-answer.ts` — a send while a card is open (SHO-776, ADR-0049).
+  **The SHO-753 matcher decides first**: only its `supersede` — it could not
+  read the send — reaches Шо (`shoMayReadCard`), so an exact option, a
+  decline and a hint are never overridden by a parse. Then the route passes
+  the open pause in, the parse runs with that card as `previous`, and a
+  `ui.pick` or `ui.confirm` resolves against the card's **own** options
+  through `assistant-pause-match.ts` — one answer path, so a confirmation
+  still means what a typed «так» means and a strong preview still wants its
+  button. The gate is the **person's** utterance, not the segment the parse
+  kept of it: at most `SHO_CARD_ANSWER_WORDS` words, and no command carrying
+  a blocking need or words the parse did not read (`ignored`, and D81's
+  `unparsed` leftover, which is how «так і скасуй» stays three words and two
+  intentions), because a refinement merged into a leading «Так» would
+  otherwise confirm the write and drop the correction. Both halves of the
+  gate are inside `shoCardAnswerFor`, which takes the utterance. Selection
+  is by `action` alone — `ui.refine`'s intent kind is `read-modifier`, not
+  `ui`. `ui.refine` itself is **not** here: with `previous` passed, the
+  runtime rewrites a refinement into the card's own command, so there is
+  nothing to resolve against the options; those sends stay the matcher's.
+  Everything else is `null` and the matcher answers as before.
 - `sho-focus.ts` — `focus` and `previous`, derived from the stored
   conversation log on every parse and never taken from a client (SHO-770,
   D78/D88–D90). A Шо turn writes one entry — the command, the session and the
@@ -352,10 +386,15 @@ registry is injected into `createAssistantRuntime`; this package never imports
   is still `{status: "paused"}` wrote no record, so it holds no `created`
   entry and is never `previous`, whether the person answered that card later
   or walked away from it. The kit's resume puts the real result in the
-  paused one's place, so a confirmed write hands back its created id. Шо
-  never runs while a card is open (`shoChatTurn` is reached only with no open
-  pause), so the open card D93 wants is the route's fact to pass in, not
-  something this file re-derives (SHO-776). The walk is newest first, counts the person's commands since
+  paused one's place, so a confirmed write hands back its created id. That a
+  card is open is the route's fact, never this file's: the route hands the
+  pause to `sho-card-answer.ts`, and only then does `shoOpenCardPrevious`
+  name the command D93 wants — the history's **newest tool call**, and only
+  when it is a Шо turn whose stored result is still `{status: "paused"}`,
+  write or not. Anything else is no previous: a later LLM turn's own card is
+  not the abandoned Шо write's, and nothing here may offer it as one.
+  `shoPreviousFrom` is the no-card rule and still withholds a write
+  (SHO-776). The walk is newest first, counts the person's commands since
   each entry for `turns`, marks another session's entries `earlier`, keeps one
   entry per record and one marker per kind, and sends at most
   `SHO_MOST_FOCUS`.

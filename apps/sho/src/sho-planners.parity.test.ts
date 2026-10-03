@@ -88,13 +88,13 @@ describe("the read planners name only catalogue params", () => {
 });
 
 describe("the write planners name only catalogue params", () => {
-  it("knows every planned action as a write intent", () => {
+  it("knows every planned action as a write or destructive intent", () => {
     for (const action of Object.keys(WRITE_PLANNER_PARAMS)) {
       const kind = intentOf(action)?.kind ?? "none";
-      expect({
+      expect({ action, writes: WRITE_INTENT_KINDS.includes(kind) }).toEqual({
         action,
-        kind: WRITE_INTENT_KINDS.includes(kind) ? "writes" : kind,
-      }).toEqual({ action, kind: "writes" });
+        writes: true,
+      });
     }
   });
 

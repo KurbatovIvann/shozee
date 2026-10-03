@@ -2,6 +2,7 @@ import type { ShoCommand, ShoNeed, ShoParam } from "@showzy/sho-protocol";
 
 import {
   shoPlanFallback,
+  shoRefLocator,
   shoRefused,
   type ShoActionPlan,
   type ShoActionPlanner,
@@ -28,6 +29,19 @@ export interface ShoWritePlan {
 }
 
 export type ShoWritePlans = Readonly<Record<string, ShoWritePlan>>;
+
+export const shoIdFrom = (param: ShoParam, field: string): ShoWriteMapped => {
+  const locator = shoRefLocator(param);
+  if (shoRefused(locator)) {
+    return locator;
+  }
+  return locator.by === "id" ? { [field]: locator.id } : "unsupported_param";
+};
+
+export const shoIdOnly =
+  (field: string) =>
+  (param: ShoParam): ShoWriteMapped =>
+    shoIdFrom(param, field);
 
 const nonEmpty = (said: string | null): string | null => {
   const text = said?.trim() ?? "";

@@ -60,6 +60,19 @@ describe("catalog.updateVariant contract", () => {
     );
   });
 
+  it("omits the name to keep it and refuses to clear it with null", () => {
+    expect(
+      updateVariantInputSchema.safeParse({
+        productId: validUpdate.productId,
+        variantId: validUpdate.variantId,
+      }),
+    ).toMatchObject({ success: true });
+    expect(
+      updateVariantInputSchema.safeParse({ ...validUpdate, name: null })
+        .success,
+    ).toBe(false);
+  });
+
   it("rejects blank names, unpaired override currency, negative prices, and bad ids", () => {
     expect(
       updateVariantInputSchema.safeParse({

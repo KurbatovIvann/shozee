@@ -111,6 +111,39 @@ describe("catalog.updateProduct contract", () => {
     ).toBe(false);
   });
 
+  it("omits the base price and its currency together, and never half the pair", () => {
+    expect(
+      updateProductInputSchema.safeParse({
+        productId: validUpdate.productId,
+        name: "Cake",
+      }),
+    ).toMatchObject({ success: true });
+    expect(
+      updateProductInputSchema.safeParse({ productId: validUpdate.productId }),
+    ).toMatchObject({ success: true });
+    expect(
+      updateProductInputSchema.safeParse({
+        productId: validUpdate.productId,
+        basePriceMinor: "1500",
+      }).success,
+    ).toBe(false);
+    expect(
+      updateProductInputSchema.safeParse({
+        productId: validUpdate.productId,
+        currency: "UAH",
+      }).success,
+    ).toBe(false);
+    for (const cleared of [
+      { basePriceMinor: null, currency: null },
+      { basePriceMinor: null, currency: "UAH" },
+    ]) {
+      expect(
+        updateProductInputSchema.safeParse({ ...validUpdate, ...cleared })
+          .success,
+      ).toBe(false);
+    }
+  });
+
   it("rejects identifier fields — the input is strict", () => {
     for (const extra of [
       { companyId: "c" },

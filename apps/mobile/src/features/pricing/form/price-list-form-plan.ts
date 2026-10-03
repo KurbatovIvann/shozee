@@ -393,7 +393,10 @@ export function applyWriteSuccess(args: {
   switch (args.write.kind) {
     case "updatePriceList":
       priceListId = args.write.input.id;
-      baseline = { ...baseline, name: args.write.input.name };
+      baseline = {
+        ...baseline,
+        name: args.write.input.name ?? baseline.name,
+      };
       break;
     case "setDefault":
       priceListId = args.write.priceListId;
