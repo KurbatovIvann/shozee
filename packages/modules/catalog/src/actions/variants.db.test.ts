@@ -488,6 +488,59 @@ describe("catalog.updateVariant", () => {
     });
   });
 
+  it("keeps the stored name when the update names none, and replays once", async () => {
+    const created = await kit.invoke(createVariant, {
+      productId: fixtures.productA,
+      name: "Незмінна",
+      basePriceMinor: "700",
+      currency: "UAH",
+    });
+    const repriceInput = {
+      productId: created.productId,
+      variantId: created.variantId,
+      basePriceMinor: "900",
+      currency: "UAH",
+    };
+    const idempotencyKey = randomUUID();
+    const repriced = await kit.invoke(
+      updateVariant,
+      repriceInput,
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(repriced).toMatchObject({
+      name: "Незмінна",
+      basePriceMinor: "900",
+      currency: "UAH",
+    });
+
+    const replay = await kit.invoke(
+      updateVariant,
+      repriceInput,
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(replay).toEqual(repriced);
+    expect((await variantRow(created.variantId))?.name).toBe("Незмінна");
+  });
+
+  it("leaves a foreign variant untouched when the update names no name", async () => {
+    await expect(
+      kit.invoke(updateVariant, {
+        productId: fixtures.productB,
+        variantId: fixtures.variantB,
+        basePriceMinor: "9999",
+        currency: "UAH",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    expect(await variantRow(fixtures.variantB)).toMatchObject({
+      name: "Bravo variant",
+      basePriceMinor: 2100n,
+      companyId: kitIdentities.companies.b,
+    });
+  });
+
   it("denies staff without products:edit", async () => {
     await expect(
       kit.invoke(
@@ -546,12 +599,17 @@ describe("catalog.updateVariant", () => {
     expect(mismatchedRow?.productId).toBe(fixtures.productAOther);
   });
 
-  it("rejects blank names, unpaired override currency, and companyId", async () => {
+  it("rejects blank or null names, unpaired override currency, and companyId", async () => {
     const invalidInputs: unknown[] = [
       {
         productId: fixtures.productA,
         variantId: fixtures.variantA,
         name: "   ",
+      },
+      {
+        productId: fixtures.productA,
+        variantId: fixtures.variantA,
+        name: null,
       },
       {
         productId: fixtures.productA,

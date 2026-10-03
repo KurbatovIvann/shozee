@@ -12,6 +12,10 @@ import {
   type TestKit,
 } from "@showzy/core/testing";
 import { products, productVariants } from "@showzy/db/schema/catalog";
+import {
+  PREVIEW_CHANGES_LABEL,
+  PREVIEW_NO_CHANGES,
+} from "@showzy/module-kit/preview-changes";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
@@ -179,6 +183,16 @@ describe("catalog preview cards", () => {
     ]);
   });
 
+  it("cards no changes when the product update names nothing", async () => {
+    const preview = await previewOf(updateProduct, {
+      productId: fixtures.productA,
+    });
+    expect(preview.title).toBe("Змінити товар: Кава Арабіка");
+    expect(preview.lines).toEqual([
+      { label: PREVIEW_CHANGES_LABEL, value: PREVIEW_NO_CHANGES },
+    ]);
+  });
+
   it("names the parent product on the catalog.createVariant card", async () => {
     const preview = await previewOf(createVariant, {
       productId: fixtures.productA,
@@ -216,6 +230,17 @@ describe("catalog preview cards", () => {
     expect(preview.lines).toEqual([
       { label: "Товар", value: "Кава Арабіка" },
       { label: "Назва", value: "250 г → 250 грамів" },
+    ]);
+  });
+
+  it("cards the parent product and no changes when the variant update names nothing", async () => {
+    const preview = await previewOf(updateVariant, {
+      productId: fixtures.productA,
+      variantId: fixtures.variantInherits,
+    });
+    expect(preview.lines).toEqual([
+      { label: "Товар", value: "Кава Арабіка" },
+      { label: PREVIEW_CHANGES_LABEL, value: PREVIEW_NO_CHANGES },
     ]);
   });
 

@@ -67,6 +67,16 @@ describe("pricing.updatePriceList contract", () => {
     ).toBe(false);
   });
 
+  it("omits the name to keep it and refuses to clear it with null", () => {
+    expect(
+      updatePriceListInputSchema.safeParse({ id: validUpdate.id }),
+    ).toMatchObject({ success: true });
+    expect(
+      updatePriceListInputSchema.safeParse({ ...validUpdate, name: null })
+        .success,
+    ).toBe(false);
+  });
+
   it("rejects identifier fields and default/active flags — the input is name only", () => {
     for (const extra of [
       { companyId: "c" },

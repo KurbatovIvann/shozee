@@ -21,7 +21,7 @@ import { getPriceListOutputSchema } from "./get-price-list.contract.js";
 
 export const updatePriceListInputSchema = z.strictObject({
   id: z.uuid(),
-  name: priceListNameSchema,
+  name: priceListNameSchema.optional(),
 });
 
 export const updatePriceListOutputSchema = getPriceListOutputSchema;
@@ -29,7 +29,7 @@ export const updatePriceListOutputSchema = getPriceListOutputSchema;
 export const updatePriceListContract = defineActionContract({
   name: "pricing.updatePriceList",
   description:
-    "Update the name of a price list in the staff member's active company. Default and active flags are not accepted on this action. Missing lists and lists that belong to another company fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
+    "Update the name of a price list in the staff member's active company. Name is required in the sense that it cannot be cleared: omit it to keep the stored name, and never send null. Default and active flags are not accepted on this action. Missing lists and lists that belong to another company fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
   principal: "staff",
   transport: "client",
   input: updatePriceListInputSchema,

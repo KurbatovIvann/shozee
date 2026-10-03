@@ -15,6 +15,7 @@
     "./optional-nullable-uuid": "./src/optional-nullable-uuid.ts",
     "./parse-db-enum": "./src/parse-db-enum.ts",
     "./postgres-unique": "./src/postgres-unique.ts",
+    "./preview-changes": "./src/preview-changes.ts",
     "./preview-scope": "./src/preview-scope.ts",
     "./require": "./src/require.ts",
     "./revision": "./src/revision.ts",

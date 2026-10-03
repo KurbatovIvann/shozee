@@ -17,6 +17,10 @@ import { user } from "@showzy/db/schema/auth";
 import { products, productVariants } from "@showzy/db/schema/catalog";
 import { companyMembers } from "@showzy/db/schema/companies";
 import { priceListEntries, priceLists } from "@showzy/db/schema/pricing";
+import {
+  PREVIEW_CHANGES_LABEL,
+  PREVIEW_NO_CHANGES,
+} from "@showzy/module-kit/preview-changes";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
@@ -252,6 +256,16 @@ describe("pricing preview cards", () => {
     expect(preview.title).toBe("Змінити прайс-лист: Гуртовий прайс");
     expect(preview.lines).toEqual([
       { label: "Назва", value: "Гуртовий прайс → Гурт +" },
+    ]);
+  });
+
+  it("cards no changes when pricing.updatePriceList names no name", async () => {
+    const preview = await previewOf(updatePriceList, {
+      id: fixtures.listIdle,
+    });
+    expect(preview.title).toBe("Змінити прайс-лист: Гуртовий прайс");
+    expect(preview.lines).toEqual([
+      { label: PREVIEW_CHANGES_LABEL, value: PREVIEW_NO_CHANGES },
     ]);
   });
 
