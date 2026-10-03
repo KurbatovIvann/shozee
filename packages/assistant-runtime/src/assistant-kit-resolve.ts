@@ -212,10 +212,24 @@ const DROPPED_NOTE: Record<DroppedKind, (title: string) => string> = {
   unchecked: (title) => `Не вдалося перевірити: «${title}» — спробуйте ще раз`,
 };
 
+function clippedTitle(title: string, room: number): string {
+  if (title.length <= room) {
+    return title;
+  }
+  let kept = "";
+  for (const point of title) {
+    if (kept.length + point.length > room - 1) {
+      break;
+    }
+    kept += point;
+  }
+  return `${kept}…`;
+}
+
 function droppedNote(one: ConfirmationAlsoSecret, kind: DroppedKind): string {
   const write = DROPPED_NOTE[kind];
   const room = ASSISTANT_PREVIEW_TEXT_MAX - write("").length;
-  return write(one.preview.title.slice(0, room));
+  return write(clippedTitle(one.preview.title, room));
 }
 
 function dropCarried(

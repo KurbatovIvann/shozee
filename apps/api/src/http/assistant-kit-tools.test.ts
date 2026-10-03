@@ -1225,7 +1225,35 @@ describe("an action that needs a person's authorisation", () => {
     const note = preview.notes[0] ?? "";
     expect(note).toHaveLength(ASSISTANT_PREVIEW_TEXT_MAX);
     expect(note.startsWith("Вже виконано: «")).toBe(true);
-    expect(note.endsWith("»")).toBe(true);
+    expect(note.endsWith("…»")).toBe(true);
+  });
+
+  it("never splits a character when it clips a carried title", async () => {
+    const outcome = await answerWith(
+      {
+        runConfirmed: driftsOnFirst,
+        reSummarize: () => Promise.resolve({ id: CUSTOMER_A }),
+      },
+      [
+        {
+          ...SECOND_ALSO,
+          preview: {
+            title: "🥐".repeat(ASSISTANT_PREVIEW_TEXT_MAX),
+            lines: [],
+            notes: [],
+          },
+        },
+      ],
+    );
+
+    if (outcome.kind !== "pause") {
+      throw new Error("a drifted confirmation pauses");
+    }
+    const { preview } = assistantConfirmationPromptSchema.parse(outcome.prompt);
+    const note = preview.notes[0] ?? "";
+    expect(note.length).toBeLessThanOrEqual(ASSISTANT_PREVIEW_TEXT_MAX);
+    expect(note.endsWith("🥐…»")).toBe(true);
+    expect(note).not.toMatch(/[\uD800-\uDFFF]/u);
   });
 
   it("leaves the card's own notes alone when nothing was dropped", async () => {
