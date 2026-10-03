@@ -7,13 +7,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useReducer } from "react";
 
 import { useApiClient } from "../../../api/api-provider";
-import { describeWireError } from "../../../api/errors";
 import { useActiveCompany } from "../../../api/query-provider";
 import { useResolvedCompany } from "../../../company-resolution/resolved-company-provider";
 import { detectLocale } from "../../../i18n/locale";
 import { ordersCopy } from "../../../i18n/orders";
 import { getCustomerNameQueryOptions } from "../api/customer-name-query";
-import { resolveCustomerNameHydration } from "../shared/customer-name";
 import { canEditOrders, orderDetailActions } from "../shared/order-permissions";
 import {
   orderDetailCompleteLoading,
@@ -86,31 +84,16 @@ export function useOrderDetail(
     productIds,
     enabled: query.state.kind === "ready",
   });
-  const customerId = query.order?.customer.linkedCustomerId ?? null;
-  const customerQuery = useQuery(
+  const linkedCustomerId = query.order?.customer.linkedCustomerId ?? null;
+  const linkedCustomerQuery = useQuery(
     getCustomerNameQueryOptions({
       client: apiClient,
       companyId: activeCompanyId,
-      customerId,
+      customerId: linkedCustomerId,
       getActiveCompany: () => apiClient?.getActiveCompany() ?? null,
     }),
   );
-  const customerName = customerQuery.data?.name;
-  const customerStatus = customerQuery.status;
-  const customerNotFound =
-    customerQuery.isError &&
-    describeWireError(customerQuery.error)?.code === "NOT_FOUND";
-  const customerPhoneRaw = customerQuery.data?.phone ?? null;
-  const customer = useMemo(
-    () =>
-      resolveCustomerNameHydration({
-        customerId,
-        name: customerName,
-        status: customerStatus,
-        notFound: customerNotFound,
-      }),
-    [customerId, customerName, customerNotFound, customerStatus],
-  );
+  const livePhone = linkedCustomerQuery.data?.phone ?? null;
   const actions = useOrderDetailActions({
     orderId: query.orderId,
     copy: copy.detail,
@@ -124,10 +107,9 @@ export function useOrderDetail(
     return toOrderDetailView({
       order: query.order,
       copy,
-      customer,
-      customerPhone: customerPhoneRaw,
+      customerPhone: livePhone,
     });
-  }, [copy, customer, customerPhoneRaw, query.order]);
+  }, [copy, livePhone, query.order]);
   const order = useMemo(() => {
     if (snapshot === null) {
       return null;
@@ -179,7 +161,7 @@ export function useOrderDetail(
     headerSubtitle:
       query.state.kind === "ready"
         ? orderDetailHeaderSubtitle({
-            customer,
+            nameSnapshot: query.order?.customer.nameSnapshot ?? null,
             missingCustomer: copy.missingCustomer,
           })
         : "",

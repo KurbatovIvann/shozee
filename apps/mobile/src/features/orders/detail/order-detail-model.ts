@@ -9,10 +9,7 @@ import { formatMoneyMinor, groupDigits } from "../../../format/money";
 import type { OrdersCopy, OrdersDetailCopy } from "../../../i18n/orders";
 import type { GetOrderOutput } from "../api/order-detail-query";
 import type { OrderQueryLoadState } from "../shared/classify-order-load";
-import {
-  customerNameLabel,
-  type CustomerNameHydration,
-} from "../shared/customer-name";
+import { localizeCustomerNameSnapshot } from "../shared/customer-name";
 import {
   orderDetailActions,
   type OrderDetailActions,
@@ -199,7 +196,6 @@ export type OrderDetailViewModel = {
   readonly dueLabel: string;
   readonly lines: readonly OrderDetailLineView[];
   readonly customerName: string;
-  readonly customerNamePending: boolean;
   readonly customerPhone: string | null;
   readonly showPhoneIcon: boolean;
 };
@@ -207,7 +203,6 @@ export type OrderDetailViewModel = {
 export function toOrderDetailView(args: {
   readonly order: GetOrderOutput;
   readonly copy: OrdersCopy;
-  readonly customer: CustomerNameHydration;
   readonly customerPhone: string | null;
 }): OrderDetailViewModel {
   const customerPhone = customerPhoneIfPresent(args.customerPhone);
@@ -233,8 +228,10 @@ export function toOrderDetailView(args: {
         thumbnailFailed: false,
       };
     }),
-    customerName: customerNameLabel(args.customer, args.copy.missingCustomer),
-    customerNamePending: args.customer.kind === "pending",
+    customerName: localizeCustomerNameSnapshot(
+      args.order.customer.nameSnapshot,
+      args.copy.missingCustomer,
+    ),
     customerPhone,
     showPhoneIcon: orderDetailShowsPhoneIcon(customerPhone),
   };
@@ -251,16 +248,13 @@ export function orderDetailHeaderTitle(args: {
 }
 
 export function orderDetailHeaderSubtitle(args: {
-  readonly customer: CustomerNameHydration;
+  readonly nameSnapshot: string | null;
   readonly missingCustomer: string;
 }): string {
-  if (args.customer.kind === "ready") {
-    return args.customer.name;
+  if (args.nameSnapshot === null) {
+    return "";
   }
-  if (args.customer.kind === "missing") {
-    return args.missingCustomer;
-  }
-  return "";
+  return localizeCustomerNameSnapshot(args.nameSnapshot, args.missingCustomer);
 }
 
 export function orderDetailActionsForView(args: {

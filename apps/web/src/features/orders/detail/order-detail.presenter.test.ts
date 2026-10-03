@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ordersCopy } from "../../../i18n/orders";
 import type { GetOrderOutput } from "../api/get";
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "../shared/customer-name";
 import { orderDetailActions } from "../shared/order-permissions";
 import {
   catalogPrimaryImageFileId,
@@ -66,7 +67,6 @@ describe("order detail presenter (SHO-378)", () => {
     const view = toOrderDetailView({
       order: ORDER,
       copy,
-      customer: { kind: "ready", name: "Анна Мельник" },
       customerPhone: "  +380671112233  ",
     });
     expect(formatOrderNumber(view.orderNumber)).toBe("#KL-K7K3K4");
@@ -91,11 +91,39 @@ describe("order detail presenter (SHO-378)", () => {
     const view = toOrderDetailView({
       order: { ...ORDER, comment: "   " },
       copy,
-      customer: { kind: "missing" },
       customerPhone: "  ",
     });
     expect(view.comment).toBeNull();
     expect(view.showPhoneIcon).toBe(false);
+  });
+
+  it("names the customer from the order snapshot, not the linked record", () => {
+    const view = toOrderDetailView({
+      order: {
+        ...ORDER,
+        customer: {
+          nameSnapshot: "Анна Коваль",
+          linkedCustomerId: ORDER.customer.linkedCustomerId,
+        },
+      },
+      copy: ordersCopy("uk"),
+      customerPhone: "+380671112233",
+    });
+    expect(view.customerName).toBe("Анна Коваль");
+  });
+
+  it("localizes the unlinked snapshot sentinel", () => {
+    const view = toOrderDetailView({
+      order: {
+        ...ORDER,
+        customer: {
+          nameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+          linkedCustomerId: null,
+        },
+      },
+      copy: ordersCopy("uk"),
+      customerPhone: null,
+    });
     expect(view.customerName).toBe("Клієнт видалений");
   });
 
@@ -156,7 +184,6 @@ describe("line thumbnails", () => {
     const snapshot = toOrderDetailView({
       order: ORDER,
       copy: ordersCopy("uk"),
-      customer: { kind: "ready", name: "Анна Мельник" },
       customerPhone: null,
     });
     expect(snapshot.lines[0]?.productId).toBe(PRODUCT_ID);

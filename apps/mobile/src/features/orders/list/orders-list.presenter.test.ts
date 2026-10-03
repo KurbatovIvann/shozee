@@ -5,7 +5,6 @@ import type { OrderListItem } from "../api/order.queries";
 import { LIST_ORDERS_QUERY_MAX as capsQueryMax } from "../shared/order-caps";
 import {
   classifyOrdersList,
-  customerNameLabel,
   flattenOrderPages,
   formatOrderCreatedAt,
   groupOrderRows,
@@ -18,7 +17,6 @@ import {
   orderGroupHeaderLabel,
   orderListGroupEdge,
   orderStatusTone,
-  resolveCustomerNameHydration,
   stickyHeaderIndices,
   toggleOrderStatusFilter,
   toOrderRowView,
@@ -195,25 +193,6 @@ describe("localizeCustomerNameSnapshot", () => {
     expect(
       localizeCustomerNameSnapshot("Марія Ткаченко", copy.missingCustomer),
     ).toBe("Марія Ткаченко");
-  });
-});
-
-describe("resolveCustomerNameHydration / customerNameLabel", () => {
-  const fallback = "Клієнт видалений";
-
-  it("uses a ready name and treats null CRM as missing copy", () => {
-    expect(
-      customerNameLabel({ kind: "ready", name: "Марія Ткаченко" }, fallback),
-    ).toBe("Марія Ткаченко");
-    expect(customerNameLabel({ kind: "missing" }, fallback)).toBe(fallback);
-    expect(
-      resolveCustomerNameHydration({
-        customerId: null,
-        name: undefined,
-        status: "pending",
-        notFound: false,
-      }),
-    ).toEqual({ kind: "missing" });
   });
 });
 

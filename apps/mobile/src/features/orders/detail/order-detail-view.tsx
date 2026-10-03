@@ -225,13 +225,9 @@ function OrderDetailReady(props: { readonly model: OrderDetailModel }) {
               />
             </View>
             <View style={styles.customerBody}>
-              {order.customerNamePending ? (
-                <View style={styles.skeletonName} accessibilityElementsHidden />
-              ) : (
-                <Text numberOfLines={1} style={styles.customerName}>
-                  {order.customerName}
-                </Text>
-              )}
+              <Text numberOfLines={1} style={styles.customerName}>
+                {order.customerName}
+              </Text>
               {order.showPhoneIcon ? (
                 <View style={styles.phoneRow}>
                   <View style={styles.phoneIcon} accessibilityElementsHidden>
@@ -371,12 +367,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   phoneIcon: {
     marginTop: theme.spacing["2xs"],
-  },
-  skeletonName: {
-    height: theme.typography.base.lineHeight,
-    width: "55%",
-    borderRadius: theme.radii.sm,
-    backgroundColor: theme.colors.skeleton,
   },
   lineList: {
     gap: theme.spacing.sm,
