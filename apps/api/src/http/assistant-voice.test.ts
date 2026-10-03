@@ -1,4 +1,8 @@
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
+import {
+  createInMemoryRateLimitStore,
+  type RateLimitStore,
+} from "@showzy/core";
 import { NotFoundError, PermissionDeniedError } from "@showzy/core/errors";
 import {
   ASSISTANT_VOICE_PATH,
@@ -12,6 +16,7 @@ import type {
   VoiceRecognitionStream,
   VoiceRecognizer,
 } from "./assistant-voice-chirp.js";
+import { VOICE_SESSION_WINDOW_SEC } from "./assistant-voice-limit.js";
 import {
   createAssistantVoiceApp,
   voiceSocketEvents,
@@ -68,6 +73,23 @@ function countingSlots(available = 1): VoiceStreamSlots & {
   };
 }
 
+function countingStore(inner?: RateLimitStore): {
+  readonly store: RateLimitStore;
+  readonly consumed: () => number;
+} {
+  const delegate = inner ?? createInMemoryRateLimitStore();
+  let count = 0;
+  return {
+    store: {
+      consume: (request) => {
+        count += 1;
+        return delegate.consume(request);
+      },
+    },
+    consumed: () => count,
+  };
+}
+
 function silentLogger(): Logger {
   return pino({ level: "silent" });
 }
@@ -79,11 +101,16 @@ function runtime(options?: {
   readonly staffCompany?: (caller: {
     readonly companySelector: string;
   }) => Promise<string>;
+  readonly rateLimit?: AssistantVoiceRuntime["rateLimit"];
 }): AssistantVoiceRuntime {
   return {
     logger: silentLogger(),
     recognizer: options?.recognizer ?? trackingRecognizer(),
     slots: options?.slots ?? countingSlots(5),
+    rateLimit: options?.rateLimit ?? {
+      store: createInMemoryRateLimitStore(),
+      sessionsPerMinutePerUser: 20,
+    },
     trustedOrigins: [WEB_ORIGIN],
     staffCompany:
       options?.staffCompany ??
@@ -215,6 +242,11 @@ describe("assistant voice route", () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(429);
+    expect(second.headers.get("Retry-After")).toBe("15");
+    expect(await second.json()).toEqual({
+      error: { code: "RATE_LIMITED" },
+      retryAfterSec: 15,
+    });
     expect(slots.held.size).toBe(1);
   });
 
@@ -366,5 +398,247 @@ describe("assistant voice route", () => {
       maxTotalBytes: 480_000,
       maxSessionMs: 15_000,
     });
+  });
+});
+
+describe("assistant voice per-user session limit", () => {
+  it("refuses a handshake past the ceiling before any Chirp stream opens", async () => {
+    const recognizer = trackingRecognizer();
+    const slots = countingSlots(5);
+    const voice = createAssistantVoiceApp(
+      runtime({
+        recognizer,
+        slots,
+        rateLimit: {
+          store: createInMemoryRateLimitStore(),
+          sessionsPerMinutePerUser: 1,
+        },
+      }),
+    );
+
+    const first = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+    const second = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    expect(Number(second.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect(recognizer.streams).toHaveLength(0);
+    expect(slots.held.size).toBe(1);
+  });
+
+  it("admits every handshake up to the ceiling", async () => {
+    const voice = createAssistantVoiceApp(
+      runtime({
+        rateLimit: {
+          store: createInMemoryRateLimitStore(),
+          sessionsPerMinutePerUser: 3,
+        },
+      }),
+    );
+
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await handshake(voice, {
+        [COMPANY_SELECTOR_HEADER]: COMPANY,
+      });
+      statuses.push(response.status);
+    }
+
+    expect(statuses).toEqual([200, 200, 200]);
+  });
+
+  it("gives each user their own bucket", async () => {
+    const rateLimit = {
+      store: createInMemoryRateLimitStore(),
+      sessionsPerMinutePerUser: 1,
+    };
+    const mine = createAssistantVoiceApp(runtime({ rateLimit }));
+    const theirs = createAssistantVoiceApp(
+      runtime({
+        rateLimit,
+        session: { user: { id: "user-2" }, session: { id: "session-2" } },
+      }),
+    );
+
+    const first = await handshake(mine, { [COMPANY_SELECTOR_HEADER]: COMPANY });
+    const mineAgain = await handshake(mine, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+    const other = await handshake(theirs, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+
+    expect(first.status).toBe(200);
+    expect(mineAgain.status).toBe(429);
+    expect(other.status).toBe(200);
+  });
+
+  it("admits the caller again once the bucket refills", async () => {
+    let nowMs = 1_700_000_000_000;
+    const voice = createAssistantVoiceApp(
+      runtime({
+        rateLimit: {
+          store: createInMemoryRateLimitStore({ now: () => nowMs }),
+          sessionsPerMinutePerUser: 1,
+        },
+      }),
+    );
+
+    const first = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+    const refused = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+    nowMs += VOICE_SESSION_WINDOW_SEC * 1000;
+    const refilled = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+
+    expect(first.status).toBe(200);
+    expect(refused.status).toBe(429);
+    expect(refilled.status).toBe(200);
+  });
+
+  it("refuses the handshake when the bucket cannot be read", async () => {
+    const recognizer = trackingRecognizer();
+    const slots = countingSlots(5);
+    const voice = createAssistantVoiceApp(
+      runtime({
+        recognizer,
+        slots,
+        rateLimit: {
+          store: {
+            consume: () => Promise.reject(new Error("redis down")),
+          },
+          sessionsPerMinutePerUser: 5,
+        },
+      }),
+    );
+
+    const response = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe(
+      String(VOICE_SESSION_WINDOW_SEC),
+    );
+    expect(await response.json()).toEqual({
+      error: { code: "RATE_LIMIT_STORE" },
+      retryAfterSec: VOICE_SESSION_WINDOW_SEC,
+    });
+    expect(slots.held.size).toBe(0);
+    expect(recognizer.streams).toHaveLength(0);
+  });
+
+  it("still refuses with 429 when the slot cannot be released during an outage", async () => {
+    const recognizer = trackingRecognizer();
+    const releases: string[] = [];
+    const voice = createAssistantVoiceApp(
+      runtime({
+        recognizer,
+        slots: {
+          acquire: () => Promise.resolve(true),
+          release: (_userId, streamId) => {
+            releases.push(streamId);
+            return Promise.reject(new Error("redis down"));
+          },
+        },
+        rateLimit: {
+          store: {
+            consume: () => Promise.reject(new Error("redis down")),
+          },
+          sessionsPerMinutePerUser: 5,
+        },
+      }),
+    );
+
+    const response = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(response.status).toBe(429);
+    expect(releases).toHaveLength(1);
+    expect(recognizer.streams).toHaveLength(0);
+  });
+
+  it("spends no session when concurrency refuses the handshake", async () => {
+    const bucket = countingStore();
+    const slots = countingSlots(1);
+    const voice = createAssistantVoiceApp(
+      runtime({
+        slots,
+        rateLimit: { store: bucket.store, sessionsPerMinutePerUser: 5 },
+      }),
+    );
+
+    const first = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+    const second = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    expect(bucket.consumed()).toBe(1);
+  });
+
+  it("spends no session on a handshake the gate refuses", async () => {
+    const bucket = countingStore();
+    const rateLimit = { store: bucket.store, sessionsPerMinutePerUser: 5 };
+    const voice = createAssistantVoiceApp(runtime({ rateLimit }));
+    const signedOut = createAssistantVoiceApp(
+      runtime({ rateLimit, session: null }),
+    );
+
+    const untrustedOrigin = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+      origin: "https://evil.example.com",
+    });
+    const otherCompany = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: OTHER_COMPANY,
+    });
+    const noCompany = await handshake(voice, {});
+    const noSession = await handshake(signedOut, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+
+    expect([
+      untrustedOrigin.status,
+      otherCompany.status,
+      noCompany.status,
+      noSession.status,
+    ]).toEqual([403, 403, 400, 401]);
+    expect(bucket.consumed()).toBe(0);
+  });
+
+  it("admits every handshake when the ceiling is disabled", async () => {
+    const voice = createAssistantVoiceApp(
+      runtime({
+        rateLimit: {
+          store: {
+            consume: () => Promise.reject(new Error("never asked")),
+          },
+          sessionsPerMinutePerUser: 0,
+        },
+      }),
+    );
+
+    const first = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+    const second = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
   });
 });

@@ -168,6 +168,13 @@ tool result. Zod validation is necessary but never grants tenant access.
 - Outbound calls have timeouts, bounded retries with jitter, circuit/alert
   behavior, and correlation IDs. Retrying a side effect requires provider
   idempotency or reconciliation.
+- **Billed voice recognition (SHO-838):** the `WS /assistant/kit/voice`
+  handshake spends a per-user token bucket
+  (`VOICE_SESSIONS_PER_MINUTE_PER_USER`, fail-closed on a store outage)
+  after the concurrency slot and before any Chirp recognizer opens.
+  Requirement, not built: there is no company-wide or global ceiling yet, so
+  N staff multiply that bound and tenant Chirp spend is limited per user
+  only — the chat USD budget (`AI_DAILY_BUDGET_USD_*`) does not cover voice.
 - **Invocation `channel` (phase 0):** every HTTP transport invocation —
   oRPC at `/rpc` and OpenAPI REST aliases at `/api/v1` — is labeled
   `channel: "ui"`. `POST /assistant/kit/*` uses `channel: "ai"`. Webhooks

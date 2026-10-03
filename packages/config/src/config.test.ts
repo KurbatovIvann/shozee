@@ -589,6 +589,7 @@ describe("voice recognition credentials", () => {
     const config = loadServerConfig(validEnv());
 
     expect(config.voice).toEqual({
+      sessionsPerMinutePerUser: 6,
       googleCredentialsFile: undefined,
       googleProjectId: undefined,
       googleLocation: "eu",
@@ -613,10 +614,44 @@ describe("voice recognition credentials", () => {
     });
 
     expect(config.voice).toEqual({
+      sessionsPerMinutePerUser: 6,
       googleCredentialsFile: "/run/secrets/google-speech.json",
       googleProjectId: "showzy-voice",
       googleLocation: "us-central1",
     });
+  });
+
+  it("takes the per-user handshake ceiling from the environment", () => {
+    const config = loadServerConfig({
+      ...validEnv(),
+      VOICE_SESSIONS_PER_MINUTE_PER_USER: "3",
+    });
+
+    expect(config.voice.sessionsPerMinutePerUser).toBe(3);
+  });
+
+  it("accepts zero as the disabled handshake ceiling", () => {
+    const config = loadServerConfig({
+      ...validEnv(),
+      VOICE_SESSIONS_PER_MINUTE_PER_USER: "0",
+    });
+
+    expect(config.voice.sessionsPerMinutePerUser).toBe(0);
+  });
+
+  it("refuses a fractional or negative handshake ceiling", () => {
+    expect(() =>
+      loadServerConfig({
+        ...validEnv(),
+        VOICE_SESSIONS_PER_MINUTE_PER_USER: "2.5",
+      }),
+    ).toThrow(ConfigValidationError);
+    expect(() =>
+      loadServerConfig({
+        ...validEnv(),
+        VOICE_SESSIONS_PER_MINUTE_PER_USER: "-1",
+      }),
+    ).toThrow(ConfigValidationError);
   });
 });
 
