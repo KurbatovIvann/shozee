@@ -1,5 +1,4 @@
 import { toProviderToolName } from "@showzy/ai";
-import type { ShoParam, ShoRecordType } from "@showzy/sho-protocol";
 import {
   COUNTERPARTY_BANK_MFO_MAX,
   COUNTERPARTY_BANK_NAME_MAX,
@@ -21,7 +20,9 @@ import {
 import { shoIsRef, type ShoActionPlanners } from "./kit.js";
 import {
   shoIdFrom,
+  shoCreatedName,
   shoIdOnly,
+  shoRenamedName,
   shoSpanText,
   shoSpokenText,
   shoTypedText,
@@ -94,30 +95,10 @@ const SET_GROUP_NOTES: Readonly<Record<string, string>> = {
   ...FOCUS_GROUP_NOTES,
 };
 
-const clipped = (param: ShoParam, max: number): string | null =>
-  shoSpokenText(param)?.slice(0, max) ?? null;
-
 const soleCustomerId: ShoWriteParamMapper = (param) => {
   const only = Array.isArray(param) && param.length === 1 ? param[0] : null;
   return shoIsRef(only) ? shoIdFrom(only, "id") : "unsupported_param";
 };
-
-const created =
-  (type: ShoRecordType, max: number): ShoWriteParamMapper =>
-  (param, command) => {
-    const nominative =
-      command.creates?.type === type ? (command.creates.name ?? "").trim() : "";
-    const text =
-      nominative.length > 0 ? nominative.slice(0, max) : clipped(param, max);
-    return text === null ? "unsupported_param" : { name: text };
-  };
-
-const renamed =
-  (max: number): ShoWriteParamMapper =>
-  (param) => {
-    const text = clipped(param, max);
-    return text === null ? "unsupported_param" : { name: text };
-  };
 
 const contact =
   (field: string, max: number): ShoWriteParamMapper =>
@@ -144,13 +125,13 @@ const identifier =
       : { [field]: value };
   };
 
-const createdName = created("customer", CUSTOMER_NAME_MAX);
+const createdName = shoCreatedName("customer", CUSTOMER_NAME_MAX);
 
-const createdGroupName = created("group", GROUP_NAME_MAX);
+const createdGroupName = shoCreatedName("group", GROUP_NAME_MAX);
 
-const renamedTo = renamed(CUSTOMER_NAME_MAX);
+const renamedTo = shoRenamedName(CUSTOMER_NAME_MAX);
 
-const renamedGroupTo = renamed(GROUP_NAME_MAX);
+const renamedGroupTo = shoRenamedName(GROUP_NAME_MAX);
 
 const comment = clippedSpan("notes", CUSTOMER_NOTES_MAX);
 
@@ -162,9 +143,12 @@ const email = contact("email", CUSTOMER_EMAIL_MAX);
 
 const priceList = shoIdOnly("priceListId");
 
-const createdCounterpartyName = created("counterparty", COUNTERPARTY_NAME_MAX);
+const createdCounterpartyName = shoCreatedName(
+  "counterparty",
+  COUNTERPARTY_NAME_MAX,
+);
 
-const renamedCounterpartyTo = renamed(COUNTERPARTY_NAME_MAX);
+const renamedCounterpartyTo = shoRenamedName(COUNTERPARTY_NAME_MAX);
 
 const legalAddress = clippedSpan(
   "legalAddress",

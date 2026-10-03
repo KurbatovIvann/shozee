@@ -1,4 +1,9 @@
-import type { ShoCommand, ShoNeed, ShoParam } from "@showzy/sho-protocol";
+import type {
+  ShoCommand,
+  ShoNeed,
+  ShoParam,
+  ShoRecordType,
+} from "@showzy/sho-protocol";
 
 import {
   shoPlanFallback,
@@ -69,6 +74,26 @@ export function shoSpokenText(param: ShoParam): string | null {
     ? nonEmpty(param.value)
     : shoSpanText(param);
 }
+
+const clipped = (param: ShoParam, max: number): string | null =>
+  shoSpokenText(param)?.slice(0, max) ?? null;
+
+export const shoCreatedName =
+  (type: ShoRecordType, max: number): ShoWriteParamMapper =>
+  (param, command) => {
+    const nominative =
+      command.creates?.type === type ? (command.creates.name ?? "").trim() : "";
+    const text =
+      nominative.length > 0 ? nominative.slice(0, max) : clipped(param, max);
+    return text === null ? "unsupported_param" : { name: text };
+  };
+
+export const shoRenamedName =
+  (max: number): ShoWriteParamMapper =>
+  (param) => {
+    const text = clipped(param, max);
+    return text === null ? "unsupported_param" : { name: text };
+  };
 
 function noteOf(prefix: string, need: ShoNeed): string {
   const span = need.span?.text.trim() ?? "";

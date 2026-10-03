@@ -262,6 +262,26 @@ registry is injected into `createAssistantRuntime`; this package never imports
   never the «Підстава» sentence the action stores.
   `SHO_DOCUMENT_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
   config default stays empty.
+- `sho-planners/catalog-writes.ts` — the product write planners (SHO-855):
+  `catalog.createProduct`, `catalog.updateProduct`, `catalog.archiveProduct`
+  and `catalog.restoreProduct` onto their own action tools, `writes: true`,
+  so each pauses on the ADR-0050 preview. A `product` plans only as the id
+  the parse resolved or the focus bound (SHO-851), because the three actions
+  take a uuid `productId` and no query to raise a picker from; the
+  catalogue's own demo ids are no uuids, so nothing but a resolved record
+  binds. A price is the Шо money value, not its text: the parsed
+  `{ minor, currency }` becomes `basePriceMinor` plus `currency` together
+  (money.md), half a pair or a currency the catalog does not price in is
+  `unsupported_param`, and a price that was never spoken is never guessed —
+  `catalog.createProduct` requires one, so the catalogue's `card_asks`
+  create is a `blocking_need` and the LLM asks. An update sends the product
+  and only the fields said, so a rename carries no price and the stored one
+  stands (SHO-864/SHO-866: omitted means unchanged, half the pair is
+  `VALIDATION`). The intents name no `brand` or `unit`, and the catalog has
+  no column for either, so such a param is refused rather than dropped from
+  what the staff member said; the counting-unit rule has no quantity to read
+  here. `SHO_CATALOG_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`;
+  the config default stays empty.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never
