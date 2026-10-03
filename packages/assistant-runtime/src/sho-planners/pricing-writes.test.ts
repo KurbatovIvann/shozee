@@ -3,7 +3,11 @@ import {
   createPriceListContract,
   deactivatePriceListContract,
   deletePriceListContract,
+  REMOVE_PRICE_LIST_ENTRIES_MAX_ITEMS,
+  removePriceListEntriesContract,
+  SET_PRICE_LIST_ENTRIES_MAX_ITEMS,
   setDefaultPriceListContract,
+  setPriceListEntriesContract,
   updatePriceListContract,
 } from "@showzy/pricing/contract";
 import {
@@ -35,7 +39,9 @@ import {
   SHO_PRICING_WRITE_PLANNERS,
   SHO_PRICING_WRITE_PLANNER_PARAMS,
   SHO_READ_AS_FOCUS_PRICE_LIST_NOTE,
+  SHO_REMOVE_PRICE_LIST_ENTRIES,
   SHO_SET_DEFAULT_PRICE_LIST,
+  SHO_SET_PRICE_LIST_ENTRIES,
   SHO_UPDATE_PRICE_LIST,
 } from "./pricing-writes.js";
 import { SHO_READ_ACTIONS } from "./reads.js";
@@ -418,6 +424,397 @@ describe("a price list from the conversation binds only when focus holds it", ()
   });
 });
 
+const OUR_PRODUCT = "3f1c9d2a-4b85-4e70-9a13-6c25d8f04b71";
+
+const OUR_SECOND_PRODUCT = "8e74b0c6-19af-4d53-8b26-0f5a3c91d7e2";
+
+const OUR_VARIANT = "c25b7f10-6a38-4de9-91c4-72f8e5063ab4";
+
+const ANOTHER_COMPANYS_PRODUCT = "d90f3a47-5c21-48be-ae06-19b72c4f8d53";
+
+const SET_PARSE = parseOf("d79-fraction-words");
+
+const REMOVE_PARSE = parseOf("d79-price-list-case");
+
+const resolvedAs = (parse: Json, name: string, id: string): Json => ({
+  ...((parse["params"] as Json)[name] as Json),
+  id,
+});
+
+const saidPrice = (SET_PARSE["params"] as Json)["price"];
+
+const setSaid = (): Json => ({
+  price_list: resolvedAs(SET_PARSE, "price_list", OUR_PRICE_LIST),
+  product: resolvedAs(SET_PARSE, "product", OUR_PRODUCT),
+  variant: resolvedAs(SET_PARSE, "variant", OUR_VARIANT),
+  price: saidPrice,
+});
+
+const removeSaid = (): Json => ({
+  price_list: resolvedAs(REMOVE_PARSE, "price_list", OUR_PRICE_LIST),
+  product: resolvedAs(REMOVE_PARSE, "product", OUR_PRODUCT),
+  variant: resolvedAs(REMOVE_PARSE, "variant", OUR_VARIANT),
+});
+
+const setSaidOnly = (...names: readonly string[]): Json =>
+  Object.fromEntries(
+    Object.entries(setSaid()).filter(([name]) => names.includes(name)),
+  );
+
+const setCommand = (params: Json): ShoCommand =>
+  commandOf(SET_PARSE, { params });
+
+const removeCommand = (params: Json): ShoCommand =>
+  commandOf(REMOVE_PARSE, { params });
+
+const secondLine = (id: string, patch: Json = {}): Json => ({
+  ...resolvedAs(SET_PARSE, "product", id),
+  text: "бальзам",
+  name: "Бальзам для губ",
+  ...patch,
+});
+
+const productInFocus = (id: string): ShoFocusEntry => ({
+  type: "product",
+  id,
+  name: "Бальзам для губ",
+  how: "shown",
+  turns: 0,
+});
+
+describe("«в оптовий прайс лак есі за триста сорок» plans the entry write", () => {
+  it("plans d79-fraction-words as one entry with the variant and the money", () => {
+    expect(planOf(setCommand(setSaid()))).toEqual({
+      kind: "call",
+      toolName: "pricing_setPriceListEntries",
+      reply: "Ціни в прайс-листі оновлено.",
+      input: {
+        priceListId: OUR_PRICE_LIST,
+        entries: [
+          {
+            productId: OUR_PRODUCT,
+            variantId: OUR_VARIANT,
+            priceMinor: "34000",
+            currency: "UAH",
+          },
+        ],
+      },
+    });
+  });
+
+  it("plans two product lines at the price the staff member said once", () => {
+    expect(
+      planOf(
+        setCommand({
+          ...setSaidOnly("price_list", "product", "price"),
+          product: [
+            resolvedAs(SET_PARSE, "product", OUR_PRODUCT),
+            secondLine(OUR_SECOND_PRODUCT),
+          ],
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "pricing_setPriceListEntries",
+      reply: "Ціни в прайс-листі оновлено.",
+      input: {
+        priceListId: OUR_PRICE_LIST,
+        entries: [
+          { productId: OUR_PRODUCT, priceMinor: "34000", currency: "UAH" },
+          {
+            productId: OUR_SECOND_PRODUCT,
+            priceMinor: "34000",
+            currency: "UAH",
+          },
+        ],
+      },
+    });
+  });
+
+  it("falls the whole command back when one line names no product the parse knows", () => {
+    expect(
+      planOf(
+        setCommand({
+          ...setSaidOnly("price_list", "product", "price"),
+          product: [
+            resolvedAs(SET_PARSE, "product", OUR_PRODUCT),
+            { text: "бальзам", status: "unknown" },
+          ],
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unresolved_reference" });
+  });
+
+  it("refuses one variant spread over several product lines", () => {
+    expect(
+      planOf(
+        setCommand({
+          ...setSaid(),
+          product: [
+            resolvedAs(SET_PARSE, "product", OUR_PRODUCT),
+            secondLine(OUR_SECOND_PRODUCT),
+          ],
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses a variant scoped by a product the focus bound, not the index", () => {
+    expect(
+      planOf(
+        setCommand({
+          ...setSaid(),
+          product: {
+            ...resolvedAs(SET_PARSE, "product", OUR_PRODUCT),
+            status: "context",
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses more product lines than the action's batch takes", () => {
+    expect(
+      planOf(
+        setCommand({
+          ...setSaidOnly("price_list", "product", "price"),
+          product: Array.from(
+            { length: SET_PRICE_LIST_ENTRIES_MAX_ITEMS + 1 },
+            () => resolvedAs(SET_PARSE, "product", OUR_PRODUCT),
+          ),
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses a line list the parse left empty", () => {
+    expect(
+      planOf(
+        setCommand({ ...setSaidOnly("price_list", "price"), product: [] }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses half a price pair rather than guessing the currency", () => {
+    expect(
+      planOf(
+        setCommand({
+          ...setSaid(),
+          price: { text: "триста сорок", value: { minor: 34000 } },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses a price the price list cannot store", () => {
+    expect(
+      planOf(
+        setCommand({
+          ...setSaid(),
+          price: {
+            text: "триста сорок",
+            value: { minor: 34000, currency: "USD" },
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses the price text the runtime never turned into a value", () => {
+    expect(
+      planOf(setCommand({ ...setSaid(), price: { text: "триста сорок" } })),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses a variant the parse did not settle on one id", () => {
+    expect(
+      planOf(
+        setCommand({
+          ...setSaid(),
+          variant: {
+            ...((SET_PARSE["params"] as Json)["variant"] as Json),
+            status: "ambiguous",
+            id: undefined,
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("asks the model when the parse named no price list to write into", () => {
+    expect(
+      planOf(setCommand(setSaidOnly("product", "variant", "price"))),
+    ).toEqual({
+      kind: "fallback",
+      reason: "blocking_need",
+    });
+  });
+
+  it("stamps the write once, so the turn reaches the preview", () => {
+    expect(whitelisted(resultOf(setCommand(setSaid())), NOW)).toEqual({
+      kind: "call",
+      toolName: "pricing_setPriceListEntries",
+      reply: "Ціни в прайс-листі оновлено.",
+      input: {
+        priceListId: OUR_PRICE_LIST,
+        entries: [
+          {
+            productId: OUR_PRODUCT,
+            variantId: OUR_VARIANT,
+            priceMinor: "34000",
+            currency: "UAH",
+          },
+        ],
+      },
+      writes: true,
+    });
+  });
+});
+
+describe("«поло kappa з опту прибери» plans the entry removal", () => {
+  it("plans d79-price-list-case as the product and variant keys alone", () => {
+    expect(planOf(removeCommand(removeSaid()))).toEqual({
+      kind: "call",
+      toolName: "pricing_removePriceListEntries",
+      reply: "Ціни з прайс-листа прибрано.",
+      input: {
+        priceListId: OUR_PRICE_LIST,
+        entries: [{ productId: OUR_PRODUCT, variantId: OUR_VARIANT }],
+      },
+    });
+  });
+
+  it("refuses a variant scoped by a product the focus bound, not the index", () => {
+    expect(
+      planOf(
+        removeCommand({
+          ...removeSaid(),
+          product: {
+            ...resolvedAs(REMOVE_PARSE, "product", OUR_PRODUCT),
+            status: "context",
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("takes a focus-held product on its own, with no variant to scope", () => {
+    expect(
+      planOf(
+        removeCommand({
+          price_list: resolvedAs(REMOVE_PARSE, "price_list", OUR_PRICE_LIST),
+          product: {
+            ...resolvedAs(REMOVE_PARSE, "product", OUR_PRODUCT),
+            status: "context",
+          },
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "pricing_removePriceListEntries",
+      reply: "Ціни з прайс-листа прибрано.",
+      input: {
+        priceListId: OUR_PRICE_LIST,
+        entries: [{ productId: OUR_PRODUCT }],
+      },
+    });
+  });
+
+  it("refuses more product lines than the action's batch takes", () => {
+    expect(
+      planOf(
+        removeCommand({
+          price_list: resolvedAs(REMOVE_PARSE, "price_list", OUR_PRICE_LIST),
+          product: Array.from(
+            { length: REMOVE_PRICE_LIST_ENTRIES_MAX_ITEMS + 1 },
+            () => resolvedAs(REMOVE_PARSE, "product", OUR_PRODUCT),
+          ),
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses a price said over a removal", () => {
+    expect(
+      planOf(removeCommand({ ...removeSaid(), price: saidPrice })),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("carries the misread of a focused price list onto the card", () => {
+    expect(
+      planOf(
+        commandOf(REMOVE_PARSE, {
+          params: removeSaid(),
+          needs: [
+            {
+              path: "action",
+              reason: "read_as_focus_type",
+              blocking: false,
+              span: { text: "прибери" },
+            },
+          ],
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "pricing_removePriceListEntries",
+      reply: "Ціни з прайс-листа прибрано.",
+      input: {
+        priceListId: OUR_PRICE_LIST,
+        entries: [{ productId: OUR_PRODUCT, variantId: OUR_VARIANT }],
+      },
+      notes: [`${SHO_READ_AS_FOCUS_PRICE_LIST_NOTE}: «прибери».`],
+    });
+  });
+});
+
+describe("a product line binds to the focus the turn actually holds", () => {
+  const withContextLine = (id: string): ShoCommand => {
+    return setCommand({
+      ...setSaidOnly("price_list", "product", "price"),
+      product: [
+        resolvedAs(SET_PARSE, "product", OUR_PRODUCT),
+        secondLine(id, { status: "context" }),
+      ],
+    });
+  };
+
+  it("refuses another company's product id inside the line list", () => {
+    expect(
+      shoFocusHolds(withContextLine(ANOTHER_COMPANYS_PRODUCT), [
+        productInFocus(OUR_SECOND_PRODUCT),
+      ]),
+    ).toBe(false);
+  });
+
+  it("holds a line the turn before put in focus", () => {
+    expect(
+      shoFocusHolds(withContextLine(OUR_SECOND_PRODUCT), [
+        productInFocus(OUR_SECOND_PRODUCT),
+      ]),
+    ).toBe(true);
+  });
+
+  it("plans the focus-held line as its id", () => {
+    expect(planOf(withContextLine(OUR_SECOND_PRODUCT))).toEqual({
+      kind: "call",
+      toolName: "pricing_setPriceListEntries",
+      reply: "Ціни в прайс-листі оновлено.",
+      input: {
+        priceListId: OUR_PRICE_LIST,
+        entries: [
+          { productId: OUR_PRODUCT, priceMinor: "34000", currency: "UAH" },
+          {
+            productId: OUR_SECOND_PRODUCT,
+            priceMinor: "34000",
+            currency: "UAH",
+          },
+        ],
+      },
+    });
+  });
+});
+
 describe("the pricing write planners stay inside the Шо write protocol", () => {
   it("declares writes on every pricing planner", () => {
     for (const action of SHO_PRICING_WRITE_ACTIONS) {
@@ -428,7 +825,7 @@ describe("the pricing write planners stay inside the Шо write protocol", () =>
     }
   });
 
-  it("names the seven pricing intents and their mapped params", () => {
+  it("names the nine pricing intents and their mapped params", () => {
     expect(SHO_PRICING_WRITE_ACTIONS).toEqual([
       SHO_CREATE_PRICE_LIST,
       SHO_UPDATE_PRICE_LIST,
@@ -436,6 +833,8 @@ describe("the pricing write planners stay inside the Шо write protocol", () =>
       SHO_DEACTIVATE_PRICE_LIST,
       SHO_SET_DEFAULT_PRICE_LIST,
       SHO_DELETE_PRICE_LIST,
+      SHO_SET_PRICE_LIST_ENTRIES,
+      SHO_REMOVE_PRICE_LIST_ENTRIES,
       SHO_CLEAR_DEFAULT_PRICE_LIST,
     ]);
     expect(SHO_PRICING_WRITE_PLANNER_PARAMS).toEqual({
@@ -445,6 +844,13 @@ describe("the pricing write planners stay inside the Шо write protocol", () =>
       [SHO_DEACTIVATE_PRICE_LIST]: ["price_list"],
       [SHO_SET_DEFAULT_PRICE_LIST]: ["price_list"],
       [SHO_DELETE_PRICE_LIST]: ["price_list"],
+      [SHO_SET_PRICE_LIST_ENTRIES]: [
+        "price_list",
+        "product",
+        "variant",
+        "price",
+      ],
+      [SHO_REMOVE_PRICE_LIST_ENTRIES]: ["price_list", "product", "variant"],
       [SHO_CLEAR_DEFAULT_PRICE_LIST]: [],
     });
   });
@@ -459,6 +865,8 @@ describe("the pricing write planners stay inside the Шо write protocol", () =>
           deactivatePriceListContract,
           setDefaultPriceListContract,
           deletePriceListContract,
+          setPriceListEntriesContract,
+          removePriceListEntriesContract,
         ].map((contract) => [
           contract.name,
           assistantPreviewLevel(contract.risk),
@@ -471,6 +879,8 @@ describe("the pricing write planners stay inside the Шо write protocol", () =>
       [SHO_DEACTIVATE_PRICE_LIST]: "card",
       [SHO_SET_DEFAULT_PRICE_LIST]: "card",
       [SHO_DELETE_PRICE_LIST]: "strong",
+      [SHO_SET_PRICE_LIST_ENTRIES]: "card",
+      [SHO_REMOVE_PRICE_LIST_ENTRIES]: "card",
     });
   });
 

@@ -16,9 +16,16 @@ export {
   listPriceListsContract,
   PRICE_LIST_NAME_MAX,
 } from "./actions/list-price-lists.contract.js";
-export { removePriceListEntriesContract } from "./actions/remove-price-list-entries.contract.js";
+export {
+  REMOVE_PRICE_LIST_ENTRIES_MAX_ITEMS,
+  removePriceListEntriesContract,
+} from "./actions/remove-price-list-entries.contract.js";
 export { resolveProductPricesContract } from "./actions/resolve-product-prices.contract.js";
 export { searchMatchesContract } from "./actions/search-matches.contract.js";
 export { setDefaultPriceListContract } from "./actions/set-default-price-list.contract.js";
-export { setPriceListEntriesContract } from "./actions/set-price-list-entries.contract.js";
+export {
+  SET_PRICE_LIST_ENTRIES_MAX_ITEMS,
+  setPriceListEntriesContract,
+} from "./actions/set-price-list-entries.contract.js";
 export { updatePriceListContract } from "./actions/update-price-list.contract.js";
+export { DEFAULT_PRICE_CURRENCY } from "./wire.contract.js";
