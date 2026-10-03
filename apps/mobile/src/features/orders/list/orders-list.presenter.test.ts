@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { ordersCopy } from "../../../i18n/orders";
 import type { OrderListItem } from "../api/order.queries";
+import {
+  localizeCustomerNameSnapshot,
+  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+} from "../shared/customer-name";
 import { LIST_ORDERS_QUERY_MAX as capsQueryMax } from "../shared/order-caps";
 import {
   classifyOrdersList,
@@ -12,7 +16,6 @@ import {
   isClosedOrderStatus,
   isOpenOrderStatus,
   listOrdersPageInput,
-  localizeCustomerNameSnapshot,
   normalizeOrdersSearch,
   orderGroupHeaderLabel,
   orderListGroupEdge,
@@ -22,7 +25,6 @@ import {
   toOrderRowView,
   LIST_ORDERS_QUERY_MAX,
   ORDER_STATUS_FILTERS,
-  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
   type OrderRowView,
 } from "./orders-list.presenter";
 
@@ -55,7 +57,6 @@ function row(overrides: Partial<OrderRowView> = {}): OrderRowView {
   return {
     id: ORDER_NEW,
     customerName: "Марія Ткаченко",
-    customerNamePending: false,
     status: "new",
     statusLabel: "Нове",
     statusTone: "action",
@@ -213,7 +214,6 @@ describe("toOrderRowView", () => {
       { locale: "uk", copy },
     );
     expect(view.customerName).toBe(copy.missingCustomer);
-    expect(view.customerNamePending).toBe(false);
     expect(view.status).toBe("canceled");
     expect(view.statusLabel).toBe("Скасовано");
     expect(view.statusTone).toBe("danger");
@@ -246,7 +246,6 @@ describe("toOrderRowView", () => {
       copy: ordersCopy("uk"),
     });
     expect(view.customerName).toBe("Марія Ткаченко");
-    expect(view.customerNamePending).toBe(false);
     expect(view.statusTone).toBe("action");
   });
 });

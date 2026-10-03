@@ -247,16 +247,6 @@ export function orderDetailHeaderTitle(args: {
   return formatOrderNumber(args.orderNumber);
 }
 
-export function orderDetailHeaderSubtitle(args: {
-  readonly nameSnapshot: string | null;
-  readonly missingCustomer: string;
-}): string {
-  if (args.nameSnapshot === null) {
-    return "";
-  }
-  return localizeCustomerNameSnapshot(args.nameSnapshot, args.missingCustomer);
-}
-
 export function orderDetailActionsForView(args: {
   readonly canEdit: boolean;
   readonly status: OrderLifecycleStatus;

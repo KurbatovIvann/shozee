@@ -7,10 +7,7 @@ import type { ListRowGroupEdge } from "../../../components/ui/list-row-chrome";
 import { formatMoneyMinor } from "../../../format/money";
 import { interpolate, type Locale } from "../../../i18n/locale";
 import type { OrdersCopy } from "../../../i18n/orders";
-import {
-  localizeCustomerNameSnapshot,
-  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
-} from "../shared/customer-name";
+import { localizeCustomerNameSnapshot } from "../shared/customer-name";
 import { itemCountLabel } from "../shared/item-count";
 import { LIST_ORDERS_QUERY_MAX } from "../shared/order-caps";
 import { formatOrderCreatedAt } from "../shared/order-created-at";
@@ -29,7 +26,6 @@ import type {
 
 export { LIST_ORDERS_QUERY_MAX, formatOrderCreatedAt };
 
-export { localizeCustomerNameSnapshot, UNLINKED_CUSTOMER_NAME_SNAPSHOT };
 export { orderStatusTone, type OrderStatusTone };
 export { isClosedOrderStatus, isOpenOrderStatus };
 export type { OrderStatusFilter, ListOrdersPageInput };
@@ -94,7 +90,6 @@ export function hasActiveStatusFilter(
 export type OrderRowView = {
   readonly id: string;
   readonly customerName: string;
-  readonly customerNamePending: boolean;
   readonly status: OrderStatusFilter;
   readonly statusLabel: string;
   readonly statusTone: OrderStatusTone;
@@ -115,7 +110,6 @@ export function toOrderRowView(
       item.customer.nameSnapshot,
       args.copy.missingCustomer,
     ),
-    customerNamePending: false,
     status: item.status,
     statusLabel: args.copy.statuses[item.status],
     statusTone: orderStatusTone(item.status),

@@ -13,7 +13,6 @@ import {
   orderDetailActionsForView,
   orderDetailCompleteLoading,
   orderDetailConfirmLoading,
-  orderDetailHeaderSubtitle,
   orderDetailHeaderTitle,
   orderDetailShowsPhoneIcon,
   orderDetailStartLoading,
@@ -216,29 +215,6 @@ describe("orderDetailHeaderTitle", () => {
         fallbackTitle: "Замовлення",
       }),
     ).not.toBe(ORDER_ID);
-  });
-});
-
-describe("orderDetailHeaderSubtitle", () => {
-  it("uses the order name snapshot, or the missing-customer copy", () => {
-    expect(
-      orderDetailHeaderSubtitle({
-        nameSnapshot: "Олена Коваль",
-        missingCustomer: "Клієнт видалений",
-      }),
-    ).toBe("Олена Коваль");
-    expect(
-      orderDetailHeaderSubtitle({
-        nameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
-        missingCustomer: "Клієнт видалений",
-      }),
-    ).toBe("Клієнт видалений");
-    expect(
-      orderDetailHeaderSubtitle({
-        nameSnapshot: null,
-        missingCustomer: "Клієнт видалений",
-      }),
-    ).toBe("");
   });
 });
 

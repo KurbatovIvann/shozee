@@ -6,10 +6,7 @@ import { interpolate, type Locale } from "../../../i18n/locale";
 import type { OrdersCopy } from "../../../i18n/orders";
 import { countPluralForm } from "../../../i18n/plural";
 import type { OrderListItem } from "../api/list";
-import {
-  localizeCustomerNameSnapshot,
-  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
-} from "../shared/customer-name";
+import { localizeCustomerNameSnapshot } from "../shared/customer-name";
 import { formatOrderMoney } from "../shared/format-order-money";
 import {
   isClosedOrderStatus,
@@ -18,8 +15,6 @@ import {
   type OrderLifecycleStatus,
   type OrderStatusTone,
 } from "../shared/order-status";
-
-export { localizeCustomerNameSnapshot, UNLINKED_CUSTOMER_NAME_SNAPSHOT };
 
 const UK_MONTHS = [
   "січ.",

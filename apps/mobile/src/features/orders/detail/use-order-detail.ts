@@ -16,7 +16,6 @@ import { canEditOrders, orderDetailActions } from "../shared/order-permissions";
 import {
   orderDetailCompleteLoading,
   orderDetailConfirmLoading,
-  orderDetailHeaderSubtitle,
   orderDetailHeaderTitle,
   orderDetailStartLoading,
   orderDetailWriteChrome,
@@ -159,12 +158,7 @@ export function useOrderDetail(
           })
         : copy.detail.title,
     headerSubtitle:
-      query.state.kind === "ready"
-        ? orderDetailHeaderSubtitle({
-            nameSnapshot: query.order?.customer.nameSnapshot ?? null,
-            missingCustomer: copy.missingCustomer,
-          })
-        : "",
+      query.state.kind === "ready" ? (order?.customerName ?? "") : "",
     goBack: actions.goBack,
     retry: query.retry,
     openActions: actions.openActions,

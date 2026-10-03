@@ -60,7 +60,6 @@ export function OrdersListView(model: OrdersListModel) {
           <OrderRow
             id={item.order.id}
             customerName={item.order.customerName}
-            customerNamePending={item.order.customerNamePending}
             statusLabel={item.order.statusLabel}
             statusTone={item.order.statusTone}
             metaLabel={item.order.metaLabel}
