@@ -332,7 +332,6 @@ describe("useVoiceCapture", () => {
     });
   });
 
-
   it("reports an audio session that will not close", async () => {
     const view = await listening();
     audio.audioModeFails = true;
