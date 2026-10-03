@@ -18,6 +18,7 @@ import {
 } from "@showzy/customers/contract";
 import { LIST_PRICE_LISTS_QUERY_MAX } from "@showzy/pricing/contract";
 import type { ShoCommand, ShoParam } from "@showzy/sho-protocol";
+import { ASSISTANT_SURFACE_REGISTRY } from "@showzy/validation/assistant-surfaces";
 import { LIST_COUNTERPARTIES_SEARCH_MAX } from "@showzy/validation/customers";
 import { ENTITY_REF_QUERY_MAX } from "@showzy/validation/entity-ref";
 import {
@@ -190,9 +191,15 @@ interface ReadPlan {
   readonly toolName: string;
   readonly reply: string;
   readonly params: ParamMappers;
+  readonly required?: readonly string[];
+  readonly oneOf?: readonly (readonly string[])[];
   readonly defaults?: Fields;
   readonly single?: true;
 }
+
+const SURFACED_TOOL_NAMES = new Set<string>(
+  ASSISTANT_SURFACE_REGISTRY.flatMap((surface) => [...surface.toolNames]),
+);
 
 const SHO_READS: Readonly<Record<string, ReadPlan>> = {
   "orders.list": {
@@ -229,6 +236,7 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
       phone: searchText("customerQuery", ENTITY_REF_QUERY_MAX),
       email: searchText("customerQuery", ENTITY_REF_QUERY_MAX),
     },
+    oneOf: [["customer", "phone", "email"]],
     single: true,
   },
   "customers.listCustomers": {
@@ -244,6 +252,7 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
     toolName: CATALOG_GET_PRODUCT_TOOL_NAME,
     reply: "Ось товар.",
     params: { product: entityRef("productId", "productQuery") },
+    required: ["product"],
     single: true,
   },
   "catalog.listProducts": {
@@ -263,6 +272,7 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
     toolName: toProviderToolName("customers.getGroup"),
     reply: "Ось група.",
     params: { group: refId("id") },
+    required: ["group"],
     single: true,
   },
   "customers.listCounterparties": {
@@ -277,6 +287,7 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
     toolName: toProviderToolName("customers.getCounterparty"),
     reply: "Ось контрагент.",
     params: { counterparty: refId("id") },
+    required: ["counterparty"],
     single: true,
   },
   "pricing.listPriceLists": {
@@ -288,6 +299,7 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
     toolName: toProviderToolName("pricing.getPriceList"),
     reply: "Ось прайс-лист.",
     params: { price_list: refId("id") },
+    required: ["price_list"],
     single: true,
   },
   "pricing.listPriceListEntries": {
@@ -297,17 +309,12 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
       price_list: refId("priceListId"),
       product: refId("productId"),
     },
+    required: ["price_list"],
   },
   "documents.list": {
     toolName: toProviderToolName("documents.list"),
     reply: "Ось документи.",
     params: { document_type: enumField("type", SHOZEE_DOCUMENT_TYPES) },
-  },
-  "documents.get": {
-    toolName: toProviderToolName("documents.get"),
-    reply: "Ось документ.",
-    params: { document_ref: refId("documentId") },
-    single: true,
   },
   "docGeneration.listLayouts": {
     toolName: toProviderToolName("docGeneration.listLayouts"),
@@ -321,11 +328,28 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
       search_text: searchText("query", SEARCH_QUERY_MAX),
       search_type: enumList("types", SEARCH_ENTITY_TYPES),
     },
+    required: ["search_text"],
   },
 };
 
 export const SHO_READ_ACTIONS: readonly string[] = Object.freeze(
   Object.keys(SHO_READS),
+);
+
+export const SHO_READ_TOOL_NAMES: Readonly<Record<string, string>> =
+  Object.freeze(
+    Object.fromEntries(
+      Object.entries(SHO_READS).map(([action, read]) => [
+        action,
+        read.toolName,
+      ]),
+    ),
+  );
+
+export const SHO_SURFACED_READ_ACTIONS: readonly string[] = Object.freeze(
+  Object.entries(SHO_READS)
+    .filter(([, read]) => SURFACED_TOOL_NAMES.has(read.toolName))
+    .map(([action]) => action),
 );
 
 export const SHO_READ_PLANNER_PARAMS: Readonly<
@@ -365,31 +389,51 @@ function inputFor(
       input[field] = value;
     }
   }
+  const spoken = (name: string): boolean => Object.hasOwn(command.params, name);
+  if (
+    !(read.required ?? []).every(spoken) ||
+    !(read.oneOf ?? []).every((names) => names.some(spoken))
+  ) {
+    return "unsupported_param";
+  }
   return { ...read.defaults, ...input };
 }
 
-function plannerFor(read: ReadPlan): ShoActionPlanner {
+function plannerFor(
+  read: ReadPlan,
+  surfaced: ReadonlySet<string>,
+): ShoActionPlanner {
+  const hasSurface = surfaced.has(read.toolName);
   return {
     writes: false,
-    plan: (command, now): ShoActionPlan => {
+    plan: (command: ShoCommand, now: Date): ShoActionPlan => {
       const input = inputFor(read, command, now);
-      return refused(input)
-        ? shoPlanFallback(input)
-        : {
+      if (refused(input)) {
+        return shoPlanFallback(input);
+      }
+      return hasSurface
+        ? {
             kind: "call",
             toolName: read.toolName,
             input,
             reply: read.reply,
-          };
+          }
+        : shoPlanFallback("no_surface");
     },
   };
 }
 
-export const SHO_READ_PLANNERS: ShoActionPlanners = Object.freeze(
-  Object.fromEntries(
-    Object.entries(SHO_READS).map(([action, read]) => [
-      action,
-      plannerFor(read),
-    ]),
-  ),
-);
+export const shoReadPlanners = (
+  surfaced: ReadonlySet<string>,
+): ShoActionPlanners =>
+  Object.freeze(
+    Object.fromEntries(
+      Object.entries(SHO_READS).map(([action, read]) => [
+        action,
+        plannerFor(read, surfaced),
+      ]),
+    ),
+  );
+
+export const SHO_READ_PLANNERS: ShoActionPlanners =
+  shoReadPlanners(SURFACED_TOOL_NAMES);

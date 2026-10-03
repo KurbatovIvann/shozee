@@ -9,10 +9,14 @@ import { describe, expect, it } from "vitest";
 
 import { createShoPlanner, type ShoActionPlan } from "../sho-plan.js";
 
+import { shoReadParse } from "./__tests__/read-parses.js";
 import {
+  shoReadPlanners,
   SHO_READ_ACTIONS,
   SHO_READ_PLANNER_PARAMS,
   SHO_READ_PLANNERS,
+  SHO_READ_TOOL_NAMES,
+  SHO_SURFACED_READ_ACTIONS,
 } from "./reads.js";
 
 const NOW = new Date("2026-09-02T12:00:00.000Z");
@@ -75,6 +79,83 @@ const resolved = (id: string, text: string): ShoParam => ({
   status: "resolved",
   id,
 });
+
+const COMPANY_IDS: Readonly<Record<string, string>> = {
+  "g-institutions": GROUP_ID,
+  "k-nechyporuk": COUNTERPARTY_ID,
+  "pl-partner": PRICE_LIST_ID,
+  "new-autumn": PRICE_LIST_ID,
+};
+
+function reId(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => reId(entry));
+  }
+  if (typeof value !== "object" || value === null) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      key === "id" && typeof entry === "string"
+        ? (COMPANY_IDS[entry] ?? entry)
+        : reId(entry),
+    ]),
+  );
+}
+
+interface GoldParse {
+  readonly text: string;
+  readonly action: string;
+  readonly kind: string;
+  readonly effect: string;
+  readonly confirm: string;
+  readonly params?: Readonly<Record<string, ShoParam>>;
+}
+
+const goldOf = (caseId: string, asCompanyRecords = true): GoldParse => {
+  const parse = shoReadParse(caseId);
+  return (asCompanyRecords ? reId(parse) : parse) as GoldParse;
+};
+
+function gold(caseId: string): Said {
+  const parse = goldOf(caseId);
+  return {
+    text: parse.text,
+    action: parse.action,
+    kind: parse.kind,
+    effect: parse.effect,
+    confirm: parse.confirm,
+    params: parse.params ?? {},
+  };
+}
+
+function borrowed(
+  caseId: string,
+  action: string,
+  names: readonly string[],
+  asCompanyRecords = true,
+): Said {
+  const parse = goldOf(caseId, asCompanyRecords);
+  const said = parse.params ?? {};
+  return {
+    text: parse.text,
+    action,
+    params: Object.fromEntries(
+      names.map((name) => [name, said[name]]),
+    ) as Record<string, ShoParam>,
+  };
+}
+
+const everySurfaced = new Set(Object.values(SHO_READ_TOOL_NAMES));
+
+const planAsIfSurfaced = (said: Said): ShoActionPlan => {
+  const planner = shoReadPlanners(everySurfaced)[said.action];
+  if (planner === undefined) {
+    throw new Error(`no planner for ${said.action}`);
+  }
+  return planner.plan(commandOf(said), NOW);
+};
 
 describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
   it("plans «покажи замовлення за минулий тиждень» as a dated page", () => {
@@ -289,7 +370,7 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
 
   it("plans the product list with a spoken search", () => {
     expect(
-      planOf({
+      planAsIfSurfaced({
         text: "покажи товари торти",
         action: "catalog.listProducts",
         params: { search_text: { text: "торти" } },
@@ -304,7 +385,10 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
 
   it("plans the price lists with no filter", () => {
     expect(
-      planOf({ text: "покажи прайс-листи", action: "pricing.listPriceLists" }),
+      planAsIfSurfaced({
+        text: "покажи прайс-листи",
+        action: "pricing.listPriceLists",
+      }),
     ).toEqual({
       kind: "call",
       toolName: "pricing_list_price_lists",
@@ -314,7 +398,7 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
   });
 
   it("clips a long search to the façade maximum", () => {
-    const plan = planOf({
+    const plan = planAsIfSurfaced({
       text: "покажи товари",
       action: "catalog.listProducts",
       params: { search_text: { text: "я".repeat(500) } },
@@ -326,11 +410,68 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
   });
 });
 
-describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
-  it("plans d72-read-groups as the bare group list", () => {
+describe("SHO_READ_PLANNERS plans only a surfaced read", () => {
+  it("plans search from d72-stock-list's search text", () => {
     expect(
-      planOf({ text: "покажи групи", action: "customers.listGroups" }),
+      planOf(borrowed("d72-stock-list", "search.query", ["search_text"])),
     ).toEqual({
+      kind: "call",
+      toolName: "search_query",
+      input: { query: "болгарки" },
+      reply: "Ось що знайшлося.",
+    });
+  });
+
+  it("narrows search to one entity type Shozee searches", () => {
+    const said = borrowed("d72-stock-list", "search.query", ["search_text"]);
+    expect(
+      planOf({
+        ...said,
+        params: { ...said.params, search_type: { value: "product" } },
+      }),
+    ).toMatchObject({
+      toolName: "search_query",
+      input: { query: "болгарки", types: ["product"] },
+    });
+  });
+
+  const outcome = (plan: ShoActionPlan | undefined): string =>
+    plan === undefined
+      ? "none"
+      : plan.kind === "fallback"
+        ? plan.reason
+        : plan.kind;
+
+  it.each([...SHO_READ_ACTIONS])(
+    "%s plans a call only where its tool composes a surface",
+    (action) => {
+      const command = commandOf({ text: "покажи", action });
+      const open = shoReadPlanners(everySurfaced)[action]?.plan(command, NOW);
+      const live = SHO_READ_PLANNERS[action]?.plan(command, NOW);
+      const surfaced = SHO_SURFACED_READ_ACTIONS.includes(action);
+      expect({ action, live: outcome(live) }).toEqual({
+        action,
+        live: open?.kind === "call" && !surfaced ? "no_surface" : outcome(open),
+      });
+    },
+  );
+
+  it("keeps catalog.listProducts and pricing.listPriceLists unsurfaced", () => {
+    expect([...SHO_SURFACED_READ_ACTIONS]).toEqual([
+      "orders.list",
+      "orders.count",
+      "orders.get",
+      "customers.getCustomer",
+      "customers.listCustomers",
+      "catalog.getProduct",
+      "search.query",
+    ]);
+  });
+});
+
+describe("the SHO-854 planners map their params for the surface to come", () => {
+  it("plans d72-read-groups as the bare group list", () => {
+    expect(planAsIfSurfaced(gold("d72-read-groups"))).toEqual({
       kind: "call",
       toolName: "customers_list_groups",
       input: {},
@@ -340,19 +481,9 @@ describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
 
   it("plans the group card from d79-group-case's resolved group", () => {
     expect(
-      planOf({
-        text: "покажи групу установи",
-        action: "customers.getGroup",
-        params: {
-          group: {
-            text: "установи",
-            status: "resolved",
-            id: GROUP_ID,
-            name: "Установи",
-            match: "exact",
-          },
-        },
-      }),
+      planAsIfSurfaced(
+        borrowed("d79-group-case", "customers.getGroup", ["group"]),
+      ),
     ).toEqual({
       kind: "call",
       toolName: "customers_getGroup",
@@ -363,11 +494,11 @@ describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
 
   it("plans the counterparty list from d72-stock-list's search text", () => {
     expect(
-      planOf({
-        text: "покажи контрагентів болгарки",
-        action: "customers.listCounterparties",
-        params: { search_text: { text: "болгарки" } },
-      }),
+      planAsIfSurfaced(
+        borrowed("d72-stock-list", "customers.listCounterparties", [
+          "search_text",
+        ]),
+      ),
     ).toEqual({
       kind: "call",
       toolName: "customers_listCounterparties",
@@ -378,7 +509,7 @@ describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
 
   it("plans the counterparties of a resolved customer by id", () => {
     expect(
-      planOf({
+      planAsIfSurfaced({
         text: "покажи контрагентів цукерні",
         action: "customers.listCounterparties",
         params: { customer: resolved(CUSTOMER_ID, "цукерні") },
@@ -391,19 +522,11 @@ describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
 
   it("plans the counterparty card from d79-counterparty-rest's ref", () => {
     expect(
-      planOf({
-        text: "покажи контрагента фоп нечипорук галина",
-        action: "customers.getCounterparty",
-        params: {
-          counterparty: {
-            text: "фоп нечипорук галина",
-            status: "resolved",
-            id: COUNTERPARTY_ID,
-            name: "ФОП Нечипорук Галина",
-            match: "exact",
-          },
-        },
-      }),
+      planAsIfSurfaced(
+        borrowed("d79-counterparty-rest", "customers.getCounterparty", [
+          "counterparty",
+        ]),
+      ),
     ).toEqual({
       kind: "call",
       toolName: "customers_getCounterparty",
@@ -413,21 +536,7 @@ describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
   });
 
   it("plans d89-open-price-list from the focus-held price list", () => {
-    expect(
-      planOf({
-        text: "відкрий його ще раз",
-        action: "pricing.getPriceList",
-        params: {
-          price_list: {
-            text: "його",
-            status: "context",
-            id: PRICE_LIST_ID,
-            name: "Осінній",
-            focus: 0,
-          },
-        },
-      }),
-    ).toEqual({
+    expect(planAsIfSurfaced(gold("d89-open-price-list"))).toEqual({
       kind: "call",
       toolName: "pricing_getPriceList",
       input: { id: PRICE_LIST_ID },
@@ -436,21 +545,7 @@ describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
   });
 
   it("plans d79-price-list-noun as the entries of that list", () => {
-    expect(
-      planOf({
-        text: "що в нас у партнерському прайсі",
-        action: "pricing.listPriceListEntries",
-        params: {
-          price_list: {
-            text: "партнерському",
-            status: "resolved",
-            id: PRICE_LIST_ID,
-            name: "Партнерський",
-            match: "form",
-          },
-        },
-      }),
-    ).toEqual({
+    expect(planAsIfSurfaced(gold("d79-price-list-noun"))).toEqual({
       kind: "call",
       toolName: "pricing_listPriceListEntries",
       input: { priceListId: PRICE_LIST_ID },
@@ -459,12 +554,12 @@ describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
   });
 
   it("narrows the price-list entries to a resolved product", () => {
+    const said = gold("d79-price-list-noun");
     expect(
-      planOf({
-        text: "яка ціна американо в партнерському прайсі",
-        action: "pricing.listPriceListEntries",
+      planAsIfSurfaced({
+        ...said,
         params: {
-          price_list: resolved(PRICE_LIST_ID, "партнерському"),
+          ...said.params,
           product: resolved(PRODUCT_ID, "американо"),
         },
       }),
@@ -476,7 +571,7 @@ describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
 
   it("plans the document list with no filter", () => {
     expect(
-      planOf({ text: "покажи документи", action: "documents.list" }),
+      planAsIfSurfaced({ text: "покажи документи", action: "documents.list" }),
     ).toEqual({
       kind: "call",
       toolName: "documents_list",
@@ -487,7 +582,7 @@ describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
 
   it("plans the layouts of a document type Shozee issues", () => {
     expect(
-      planOf({
+      planAsIfSurfaced({
         text: "покажи шаблони рахунків",
         action: "docGeneration.listLayouts",
         params: { document_type: { value: "payment_invoice" } },
@@ -500,35 +595,54 @@ describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
     });
   });
 
-  it("plans search from d72-stock-list's search text", () => {
-    expect(
-      planOf({
-        text: "знайди болгарки",
-        action: "search.query",
-        params: { search_text: { text: "болгарки" } },
-      }),
-    ).toEqual({
-      kind: "call",
-      toolName: "search_query",
-      input: { query: "болгарки" },
-      reply: "Ось що знайшлося.",
+  it("refuses d78-unknown-price-list, which names no price list", () => {
+    expect(planAsIfSurfaced(gold("d78-unknown-price-list"))).toEqual({
+      kind: "fallback",
+      reason: "unresolved_reference",
     });
   });
 
-  it("narrows search to one entity type Shozee searches", () => {
+  it("never binds the catalogue's own demo id", () => {
     expect(
-      planOf({
-        text: "чи є у нас брауні",
-        action: "search.query",
-        params: {
-          search_text: { text: "брауні" },
-          search_type: { value: "product" },
-        },
-      }),
-    ).toMatchObject({
-      toolName: "search_query",
-      input: { query: "брауні", types: ["product"] },
+      planAsIfSurfaced(
+        borrowed("d79-group-case", "customers.getGroup", ["group"], false),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses d73-base-document's act, which Shozee does not list", () => {
+    expect(
+      planAsIfSurfaced(
+        borrowed("d73-base-document", "documents.list", ["document_type"]),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it.each([
+    ["customers.getGroup", "group"],
+    ["customers.getCounterparty", "counterparty"],
+    ["pricing.getPriceList", "price_list"],
+    ["pricing.listPriceListEntries", "price_list"],
+    ["search.query", "search_text"],
+    ["catalog.getProduct", "product"],
+  ])("refuses %s without its required %s", (action) => {
+    expect(planAsIfSurfaced({ text: "покажи", action })).toEqual({
+      kind: "fallback",
+      reason: "unsupported_param",
     });
+  });
+
+  it("refuses customers.getCustomer naming neither customer, phone nor email", () => {
+    expect(
+      planAsIfSurfaced({
+        text: "покажи клієнта",
+        action: "customers.getCustomer",
+      }),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("plans no documents.get: a spoken document number is never a uuid", () => {
+    expect(SHO_READ_ACTIONS).not.toContain("documents.get");
   });
 });
 
@@ -626,35 +740,6 @@ describe("SHO_READ_PLANNERS falls back to the model", () => {
       reason: "unsupported_param",
     },
     {
-      text: "покажи прайс гуртовий",
-      action: "pricing.getPriceList",
-      params: {
-        price_list: {
-          text: "гуртовий",
-          status: "unknown",
-          suggest: {
-            action: "pricing.createPriceList",
-            params: { new_name: { text: "гуртовий" } },
-          },
-        },
-      },
-      reason: "unresolved_reference",
-    },
-    {
-      text: "покажи групу установи",
-      action: "customers.getGroup",
-      params: {
-        group: {
-          text: "установи",
-          status: "resolved",
-          id: "g-institutions",
-          name: "Установи",
-          match: "exact",
-        },
-      },
-      reason: "unsupported_param",
-    },
-    {
       text: "покажи контрагента фоп нечипорук галина",
       action: "customers.getCounterparty",
       params: {
@@ -675,21 +760,9 @@ describe("SHO_READ_PLANNERS falls back to the model", () => {
       reason: "unresolved_reference",
     },
     {
-      text: "покажи акти",
-      action: "documents.list",
-      params: { document_type: { value: "act" } },
-      reason: "unsupported_param",
-    },
-    {
       text: "покажи непідписані документи",
       action: "documents.list",
       params: { signing_status: { value: "unsigned" } },
-      reason: "unsupported_param",
-    },
-    {
-      text: "покажи чек номер 2031",
-      action: "documents.get",
-      params: { document_ref: { text: "2031", value: 2031 } },
       reason: "unsupported_param",
     },
     {

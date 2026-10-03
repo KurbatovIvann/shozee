@@ -87,12 +87,28 @@ registry is injected into `createAssistantRuntime`; this package never imports
   reads Шо already parses — `customers.listGroups`, `customers.getGroup`,
   `customers.listCounterparties`, `customers.getCounterparty`,
   `pricing.getPriceList`, `pricing.listPriceListEntries`, `documents.list`,
-  `documents.get`, `docGeneration.listLayouts`, `search.query` — onto the
-  provider tool name of the action itself where no façade exists. Those
-  actions take ids, not names, so a `group`, `counterparty`, `price_list`,
-  `product`, `customer` or `document_ref` reference plans only as an id
+  `docGeneration.listLayouts`, `search.query` — onto the provider tool name
+  of the action itself where no façade exists.
+  **A read plans only when its tool composes an assistant surface.** The rule
+  is one membership test against `ASSISTANT_SURFACE_REGISTRY`'s own
+  `toolNames` — never a hand list — and an unsurfaced read is the
+  `no_surface` fallback, so Haiku narrates it instead of the turn settling
+  with a reply and no data. Today that leaves `catalog.listProducts`,
+  `pricing.listPriceLists` and all of SHO-854 but `search.query` to the LLM;
+  each becomes live the day its surface lands, with no planner change.
+  `SHO_SURFACED_READ_ACTIONS` is what that rule currently yields and the list
+  worth pasting into `SHO_ACTIONS`; `shoReadPlanners(surfaced)` is the same
+  factory with the registry injected, which is how the mapping of a read
+  waiting for its surface stays tested.
+  Those actions take ids, not names, so a `group`, `counterparty`,
+  `price_list`, `product` or `customer` reference plans only as an id
   locator and a spoken name is `unsupported_param`, which is the LLM:
-  there is no id-or-reference input to fall into. `document_type` maps only
+  there is no id-or-reference input to fall into. `documents.get` is not
+  registered at all — Шо parses a spoken document number, which is never the
+  uuid `documentId` the action takes, so the intent could never plan.
+  A `ReadPlan` declares `required` and `oneOf` like a write plan, so a parse
+  missing the id the action needs is `unsupported_param` here rather than a
+  `VALIDATION` round trip. `document_type` maps only
   to the two types Shozee issues (`payment_invoice`, `delivery_note`), and
   `search_type` only to a `SEARCH_ENTITY_TYPES` member, so the catalogue's
   `act`, `reconciliation_act`, `receipt`, `shipment` are the model's.
@@ -117,8 +133,13 @@ registry is injected into `createAssistantRuntime`; this package never imports
   piece: it is the only place allowed to import both `@showzy/sho` and the
   rest (ADR-0051), and it checks `SHO_READ_PLANNER_PARAMS` against the model
   bundle's intents and every bundle period token against the parser.
-  `SHO_READ_ACTIONS` is the list to paste into `SHO_ACTIONS` for dev; the
-  config default stays empty.
+  `SHO_READ_ACTIONS` is every registered read planner and
+  `SHO_SURFACED_READ_ACTIONS` the ones that plan today — the latter is the
+  list to paste into `SHO_ACTIONS` for dev; the config default stays empty.
+  The SHO-854 planner tests run on verbatim parses from
+  `packages/sho/test/conformance-v3` in `__tests__/read-parses.ts`, keyed by
+  the conformance case id, as the write planners' do; an intent with no gold
+  parse borrows the nearest case's param and names that case id.
 - `sho-planners/orders-writes.ts` — the order write planner (SHO-772):
   `orders.create` onto the `orders_create` façade, `writes: true`, so the
   plan pauses on the ADR-0050 preview and Шо executes nothing itself. It
