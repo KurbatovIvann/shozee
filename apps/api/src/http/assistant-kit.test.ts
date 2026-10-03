@@ -48,6 +48,10 @@ import {
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { ConflictError, CoreInvariantError } from "@showzy/core/errors";
+import {
+  ASSISTANT_PREVIEW_LIST_MAX,
+  assistantConfirmationPromptSchema,
+} from "@showzy/validation/assistant-chat";
 import pino, { type Logger } from "pino";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -3148,5 +3152,124 @@ describe("a leftover command is no card answer (SHO-776)", () => {
     expect(queue.added).toEqual([
       { kind: "chat", conversationId: CONVERSATION, commandId: COMMAND },
     ]);
+  });
+});
+
+describe("a Шо plan note crosses the picker it paused on (SHO-847)", () => {
+  const NOTE = "Прочитано як нове замовлення.";
+  const OWN_NOTE = "Оксана";
+
+  const shoCreating =
+    (notes: readonly string[] = [NOTE]): ShoEngineFor =>
+    () => ({
+      plan: () =>
+        Promise.resolve({
+          kind: "call",
+          writes: true,
+          toolName: "orders_create",
+          input: { label: "два збіги" },
+          reply: "Замовлення створено.",
+          notes,
+        }),
+    });
+
+  const previewPrompt = (notes: readonly string[]) => ({
+    summary: "Створити замовлення?",
+    preview: { title: "Нове замовлення", lines: [], notes },
+    also: [],
+    level: "card",
+  });
+
+  const previewSecret = {
+    actionName: CONFIRM_ACTION,
+    canonicalInput: { orderId: RECORD },
+    idempotencyKey: "key-sho",
+    challengeId: "challenge-sho",
+    also: [],
+  } satisfies ConfirmationSecret;
+
+  const PREVIEW_TOOLS: ToolSet = {
+    orders_create: {
+      description: "create one",
+      inputSchema: pausingInput,
+      execute: (): ToolOutcome => ({
+        kind: "pause",
+        interaction: "confirmation",
+        prompt: previewPrompt([OWN_NOTE]),
+        secret: previewSecret,
+      }),
+    },
+  };
+
+  const previewAfterPick =
+    (notes: readonly string[]): ResolveAnswer =>
+    () =>
+      Promise.resolve({
+        kind: "pause",
+        interaction: "confirmation",
+        prompt: previewPrompt(notes),
+        secret: previewSecret,
+      } satisfies ToolOutcome);
+
+  async function openPauseOf(response: Response) {
+    const open = ((await response.json()) as KitBody).window?.openPause;
+    if (open === null || open === undefined) {
+      throw new Error("expected an open question");
+    }
+    return open;
+  }
+
+  const notesOf = (prompt: unknown): readonly string[] =>
+    assistantConfirmationPromptSchema.parse(prompt).preview.notes;
+
+  async function pickerThenTap(resolveAnswer: ResolveAnswer) {
+    const { app } = harness({
+      sho: shoCreating(),
+      tools: PAUSING_TOOLS,
+      resolveAnswer,
+    });
+    const picker = await openPauseOf(
+      await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи для оксани")),
+    );
+    const tapped = await post(app, ASSISTANT_KIT_ANSWER_PATH, {
+      commandId: OTHER_COMMAND,
+      conversationId: CONVERSATION,
+      interactionId: picker.interactionId,
+      revision: picker.revision,
+      answer: { optionId: "opt-a" },
+    });
+    return { picker, next: await openPauseOf(tapped) };
+  }
+
+  it("shows the note on the preview the tap opens, and not on the picker", async () => {
+    const { picker, next } = await pickerThenTap(previewAfterPick([OWN_NOTE]));
+
+    expect(picker.kind).toBe("choice");
+    expect(JSON.stringify(picker.prompt)).not.toContain(NOTE);
+    expect(next.kind).toBe("confirmation");
+    expect(notesOf(next.prompt)).toEqual([NOTE, OWN_NOTE]);
+  });
+
+  it("keeps the carried note inside the list cap", async () => {
+    const full = Array.from({ length: ASSISTANT_PREVIEW_LIST_MAX }, (_, at) =>
+      String(at),
+    );
+
+    const { next } = await pickerThenTap(previewAfterPick(full));
+
+    const notes = notesOf(next.prompt);
+    expect(notes).toHaveLength(ASSISTANT_PREVIEW_LIST_MAX);
+    expect(notes[0]).toBe(NOTE);
+  });
+
+  it("shows the note once when the write pauses on the preview with no picker", async () => {
+    const { app } = harness({ sho: shoCreating(), tools: PREVIEW_TOOLS });
+
+    const asked = await openPauseOf(
+      await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи для оксани")),
+    );
+
+    expect(asked.kind).toBe("confirmation");
+    expect(notesOf(asked.prompt)).toEqual([NOTE, OWN_NOTE]);
   });
 });

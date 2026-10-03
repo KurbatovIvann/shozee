@@ -93,6 +93,31 @@ describe("an unsendable tool call id cannot be stored", () => {
     if (claimed.kind !== "claimed") return;
     expect(claimed.record.continuation.pausedToolCall.id).toBe("toolu_01");
   });
+
+  it("hands back the notes the continuation was opened with", async () => {
+    const { kit } = newKit();
+    const opened = await kit.open(
+      openInput({
+        continuation: { ...continuationOf(), promptNotes: ["carried"] },
+      }),
+    );
+    if (opened.kind !== "opened") throw new Error(opened.kind);
+
+    const claimed = await kit.claim({
+      conversationId: CONVERSATION,
+      bind: BIND,
+      interactionId: opened.pause.interactionId,
+      revision: 1,
+      answer: CHOSE_A,
+    });
+
+    expect(claimed.kind).toBe("claimed");
+    if (claimed.kind !== "claimed") return;
+    expect(claimed.record.continuation.promptNotes).toEqual(["carried"]);
+    expect(publicPauseSchema.parse(opened.pause)).not.toHaveProperty(
+      "promptNotes",
+    );
+  });
 });
 
 describe("the kind decides what is acceptable", () => {

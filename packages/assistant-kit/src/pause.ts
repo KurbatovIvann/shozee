@@ -36,6 +36,7 @@ export interface Continuation {
     readonly id: z.output<typeof providerToolCallIdSchema>;
     readonly name: string;
   };
+  readonly promptNotes?: readonly string[];
 }
 
 /**

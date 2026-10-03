@@ -297,6 +297,46 @@ describe("runShoTurn", () => {
     });
   });
 
+  it("carries the plan's notes in the continuation, for the pause after this one", async () => {
+    const picker = () =>
+      Promise.resolve({
+        kind: "pause",
+        interaction: "choice",
+        prompt: { subject: "оксани", options: [], optionsTruncated: false },
+        secret: { toolName: TOOL },
+      });
+    const outcome = await runShoTurn(turnWith(notedPlan, picker));
+
+    expect(outcome.kind).toBe("ask");
+    if (outcome.kind !== "ask") return;
+    expect(outcome.prompt).toEqual({
+      subject: "оксани",
+      options: [],
+      optionsTruncated: false,
+    });
+    expect(outcome.continuation.promptNotes).toEqual([
+      "Прочитано як нове замовлення.",
+    ]);
+  });
+
+  const unnotedPlan = calls({
+    kind: "call",
+    writes: true,
+    toolName: TOOL,
+    input: { customerQuery: "оксани" },
+    reply: "Замовлення створено.",
+  });
+
+  it("carries no notes when the plan had none", async () => {
+    const outcome = await runShoTurn(
+      turnWith(unnotedPlan, pauseWith(confirmationPrompt)),
+    );
+
+    expect(outcome.kind).toBe("ask");
+    if (outcome.kind !== "ask") return;
+    expect(outcome.continuation.promptNotes).toBeUndefined();
+  });
+
   it("keeps the plan's note when the preview's own list is already full", async () => {
     const full = Array.from({ length: ASSISTANT_PREVIEW_LIST_MAX }, (_, at) =>
       String(at),
