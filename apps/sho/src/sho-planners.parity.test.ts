@@ -1,5 +1,6 @@
 import { kyivCalendarDate, kyivNamedPeriodRange } from "@showzy/ai";
 import {
+  SHO_CUSTOMER_WRITE_PLANNER_PARAMS,
   SHO_READ_PLANNER_PARAMS,
   SHO_WRITE_PLANNER_PARAMS,
 } from "@showzy/assistant-runtime";
@@ -36,6 +37,11 @@ const UNREADABLE_TOKENS: readonly string[] = [
   "previous",
 ];
 
+const WRITE_PLANNER_PARAMS: Readonly<Record<string, readonly string[]>> = {
+  ...SHO_WRITE_PLANNER_PARAMS,
+  ...SHO_CUSTOMER_WRITE_PLANNER_PARAMS,
+};
+
 let bundle: Bundle;
 
 beforeAll(async () => {
@@ -69,7 +75,7 @@ describe("the read planners name only catalogue params", () => {
 
 describe("the write planners name only catalogue params", () => {
   it("knows every planned action as a write intent", () => {
-    for (const action of Object.keys(SHO_WRITE_PLANNER_PARAMS)) {
+    for (const action of Object.keys(WRITE_PLANNER_PARAMS)) {
       expect({ action, kind: intentOf(action)?.kind }).toEqual({
         action,
         kind: "write",
@@ -78,7 +84,7 @@ describe("the write planners name only catalogue params", () => {
   });
 
   it("maps only params the bundle gives that intent", () => {
-    for (const [action, names] of Object.entries(SHO_WRITE_PLANNER_PARAMS)) {
+    for (const [action, names] of Object.entries(WRITE_PLANNER_PARAMS)) {
       const known = Object.keys(intentOf(action)?.params ?? {});
       expect({
         action,
@@ -90,7 +96,7 @@ describe("the write planners name only catalogue params", () => {
   it("plans no action as both a read and a write", () => {
     const reads = Object.keys(SHO_READ_PLANNER_PARAMS);
     expect(
-      Object.keys(SHO_WRITE_PLANNER_PARAMS).filter((action) =>
+      Object.keys(WRITE_PLANNER_PARAMS).filter((action) =>
         reads.includes(action),
       ),
     ).toEqual([]);
