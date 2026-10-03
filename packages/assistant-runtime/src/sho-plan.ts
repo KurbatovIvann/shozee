@@ -15,6 +15,7 @@ import {
   type ShoActionPlanners,
   type ShoPlanFallbackReason,
 } from "./sho-planners/kit.js";
+import { SHO_COMPANY_WRITE_PLANNERS } from "./sho-planners/company-writes.js";
 import { SHO_CUSTOMER_WRITE_PLANNERS } from "./sho-planners/customers-writes.js";
 import { SHO_ORDER_LIFECYCLE_PLANNERS } from "./sho-planners/orders-lifecycle.js";
 import { SHO_WRITE_PLANNERS } from "./sho-planners/orders-writes.js";
@@ -42,6 +43,7 @@ export const SHO_ACTION_PLANNERS: ShoActionPlanners = Object.freeze({
   ...SHO_WRITE_PLANNERS,
   ...SHO_ORDER_LIFECYCLE_PLANNERS,
   ...SHO_CUSTOMER_WRITE_PLANNERS,
+  ...SHO_COMPANY_WRITE_PLANNERS,
 });
 
 export interface ShoPlannerDeps {

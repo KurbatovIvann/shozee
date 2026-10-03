@@ -218,6 +218,29 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `read_as_customer_update` needs become the card's notes.
   `SHO_CUSTOMER_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
   config default stays empty.
+- `sho-planners/company-writes.ts` — the invite and company-legal write
+  planners (SHO-862), `writes: true`, both pausing on the ADR-0050 preview.
+  Nothing an invite grants is ever defaulted: `invites.create` requires both
+  `is_reusable` — the boolean enum Шо typed, never a guess — and a canonical
+  `expires` (`days:N` / `date:MM-DD`), which `shoInviteExpiresAt` turns into
+  the action's absolute `expiresAt` through `kyivNamedPeriodRange`, so there
+  is no second Kyiv date map, and refuses anything outside the contract's own
+  one-hour-to-365-day window. The gold d79 parses carry an `expires` span
+  with no canonical value, so they fall to the LLM as they stand.
+  `max_uses` is not mapped: the contract couples it to `isReusable` with a
+  refine no plan table can express, and copying that refine here would be a
+  second derivation of it. A `group` or `price_list` plans only as a resolved
+  uuid and the invite's `phone` only from Шо's typed value; the company is
+  the verified one and never an input.
+  `companies.updateLegal` requires `company_type` and `legal_name`, because
+  the action requires both on every call and no planner may read-merge-write
+  a stale name. Everything else follows SHO-725: a field Шо did not parse is
+  never sent, so it keeps its stored value, and `bankEdrpou`, which Шо has no
+  param for, is always unchanged. ЄДРПОУ, IBAN, МФО, phone and e-mail come
+  only from Шо's typed value and are validated by the contract's own schemas;
+  `legal_name` and `address` are clipped spans. `bank_name` is not mapped —
+  Шо types a bank slug (`monobank`), not the name a document prints.
+  `SHO_COMPANY_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`.
   The same table carries the customer lifecycle and the group planners
   (SHO-859): `customers.archiveCustomer`, `customers.restoreCustomer`,
   `customers.deleteCustomer` and `customers.deleteGroup` plan `{ id }` from
