@@ -9,6 +9,7 @@ import { NotFoundError, PermissionDeniedError } from "@showzy/core/errors";
 import {
   ASSISTANT_VOICE_PATH,
   VOICE_CLOSE_CODE,
+  VOICE_MAX_SESSION_MS,
 } from "@showzy/validation/assistant-voice";
 import { Hono } from "hono";
 import type { WSEvents } from "hono/ws";
@@ -31,6 +32,18 @@ import {
   type VoiceSession,
   type VoiceSessionCaller,
 } from "./assistant-voice-session.js";
+
+const VOICE_SLOT_RETRY_AFTER_SEC = Math.ceil(VOICE_MAX_SESSION_MS / 1000);
+
+function rateLimited(
+  requestId: string,
+  code: string,
+  retryAfterSec: number,
+): Response {
+  const response = json(429, { error: { code }, retryAfterSec }, requestId);
+  response.headers.set("Retry-After", String(retryAfterSec));
+  return response;
+}
 
 export type VoiceStreamSlots = Pick<
   AssistantStreamSlots,
@@ -165,6 +178,14 @@ export function createAssistantVoiceApp(
       return c.body(null, 426);
     }
 
+    const streamId = randomUUID();
+    if (!(await runtime.slots.acquire(caller.userId, streamId))) {
+      return rateLimited(requestId, "RATE_LIMITED", VOICE_SLOT_RETRY_AFTER_SEC);
+    }
+    const releaseSlot = (): void => {
+      void runtime.slots.release(caller.userId, streamId);
+    };
+
     const admission = await admitVoiceSession({
       rateLimit: runtime.rateLimit,
       logger: runtime.logger,
@@ -172,34 +193,19 @@ export function createAssistantVoiceApp(
       userId: caller.userId,
     });
     if (!admission.admitted) {
+      releaseSlot();
       runtime.logger.info(
         {
           request_id: requestId,
           user_id: caller.userId,
           company_id: companyId,
+          reason: admission.reason,
           retry_after_sec: admission.retryAfterSec,
         },
-        "assistant voice refused a caller over the per-user session limit",
+        "assistant voice refused a caller before opening a recognizer",
       );
-      const response = json(
-        429,
-        {
-          error: { code: "RATE_LIMITED" },
-          retryAfterSec: admission.retryAfterSec,
-        },
-        requestId,
-      );
-      response.headers.set("Retry-After", String(admission.retryAfterSec));
-      return response;
+      return rateLimited(requestId, admission.code, admission.retryAfterSec);
     }
-
-    const streamId = randomUUID();
-    if (!(await runtime.slots.acquire(caller.userId, streamId))) {
-      return json(429, { error: { code: "RATE_LIMITED" } }, requestId);
-    }
-    const releaseSlot = (): void => {
-      void runtime.slots.release(caller.userId, streamId);
-    };
 
     try {
       return await nodeWebSocket.upgradeWebSocket(
