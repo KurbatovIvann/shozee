@@ -6,10 +6,7 @@ import type { QueryFailureKind } from "../../../api/errors";
 import type { OrdersCopy, OrdersDetailCopy } from "../../../i18n/orders";
 import type { GetOrderOutput } from "../api/get";
 import type { OrderQueryLoadState } from "../shared/classify-order-load";
-import {
-  customerNameLabel,
-  type CustomerNameHydration,
-} from "../shared/customer-name";
+import { localizeCustomerNameSnapshot } from "../shared/customer-name";
 import {
   formatOrderMoney,
   formatOrderQuantityMilli,
@@ -181,7 +178,6 @@ export type OrderDetailViewModel = {
 export function toOrderDetailView(args: {
   readonly order: GetOrderOutput;
   readonly copy: OrdersCopy;
-  readonly customer: CustomerNameHydration;
   readonly customerPhone: string | null;
 }): OrderDetailViewModel {
   const customerPhone = customerPhoneIfPresent(args.customerPhone);
@@ -207,7 +203,10 @@ export function toOrderDetailView(args: {
         thumbnailFailed: false,
       };
     }),
-    customerName: customerNameLabel(args.customer, args.copy.missingCustomer),
+    customerName: localizeCustomerNameSnapshot(
+      args.order.customer.nameSnapshot,
+      args.copy.missingCustomer,
+    ),
     customerPhone,
     showPhoneIcon: orderDetailShowsPhoneIcon(customerPhone),
   };

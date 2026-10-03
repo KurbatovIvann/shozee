@@ -6,6 +6,7 @@ import { interpolate, type Locale } from "../../../i18n/locale";
 import type { OrdersCopy } from "../../../i18n/orders";
 import { countPluralForm } from "../../../i18n/plural";
 import type { OrderListItem } from "../api/list";
+import { localizeCustomerNameSnapshot } from "../shared/customer-name";
 import { formatOrderMoney } from "../shared/format-order-money";
 import {
   isClosedOrderStatus,
@@ -14,9 +15,6 @@ import {
   type OrderLifecycleStatus,
   type OrderStatusTone,
 } from "../shared/order-status";
-
-/** Sentinel persisted on unlinked headers; presenters localize it. */
-export const UNLINKED_CUSTOMER_NAME_SNAPSHOT = "unlinked";
 
 const UK_MONTHS = [
   "січ.",
@@ -66,16 +64,6 @@ export function formatOrderCreatedAt(iso: string, locale: Locale): string {
     return "";
   }
   return `${String(day)} ${monthLabel} ${String(year)}`;
-}
-
-export function localizeCustomerNameSnapshot(
-  nameSnapshot: string,
-  fallback: string,
-): string {
-  if (nameSnapshot === UNLINKED_CUSTOMER_NAME_SNAPSHOT) {
-    return fallback;
-  }
-  return nameSnapshot;
 }
 
 function itemCountLabel(

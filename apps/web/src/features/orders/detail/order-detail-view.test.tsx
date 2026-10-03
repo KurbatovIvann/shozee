@@ -30,7 +30,6 @@ const ORDER: GetOrderOutput = {
 const VIEW = toOrderDetailView({
   order: ORDER,
   copy,
-  customer: { kind: "ready", name: ANNA_CUSTOMER.name },
   customerPhone: ANNA_CUSTOMER.phone,
 });
 

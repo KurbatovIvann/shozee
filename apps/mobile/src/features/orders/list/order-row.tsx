@@ -15,7 +15,6 @@ import type { OrderStatusTone } from "./orders-list.presenter";
 export const OrderRow = memo(function OrderRow(props: {
   readonly id: string;
   readonly customerName: string;
-  readonly customerNamePending: boolean;
   readonly statusLabel: string;
   readonly statusTone: OrderStatusTone;
   readonly metaLabel: string;
@@ -25,9 +24,7 @@ export const OrderRow = memo(function OrderRow(props: {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={
-        props.customerNamePending ? props.metaLabel : props.customerName
-      }
+      accessibilityLabel={props.customerName}
       onPress={() => {
         props.onPress(props.id);
       }}
@@ -35,16 +32,9 @@ export const OrderRow = memo(function OrderRow(props: {
     >
       <View style={styles.body}>
         <View style={styles.nameRow}>
-          {props.customerNamePending ? (
-            <View
-              style={[styles.skeletonLine, styles.skeletonName]}
-              accessibilityElementsHidden
-            />
-          ) : (
-            <Text numberOfLines={1} style={styles.name}>
-              {props.customerName}
-            </Text>
-          )}
+          <Text numberOfLines={1} style={styles.name}>
+            {props.customerName}
+          </Text>
           <StatusPill label={props.statusLabel} tone={props.statusTone} />
         </View>
         <Text numberOfLines={1} style={styles.meta}>

@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { useApiClient } from "../../../api/api-provider";
-import { describeQueryFailure, describeWireCode } from "../../../api/errors";
+import { describeQueryFailure } from "../../../api/errors";
 import { useActiveCompany } from "../../../api/query-provider";
 import { useListMine } from "../../companies/shared/list-mine";
 import { customerGetQueryOptions } from "../api/customer";
@@ -15,7 +15,6 @@ import {
   classifyOrderDetail,
   type OrderQueryLoadState,
 } from "../shared/classify-order-load";
-import { resolveCustomerNameHydration } from "../shared/customer-name";
 import {
   canEditOrders,
   canFetchFileDownloadUrls,
@@ -84,29 +83,15 @@ export function useOrderDetail(orderIdParam: string): OrderDetailModel {
     status: query.status,
     failureKind,
   });
-  const customerId = query.data?.customer.linkedCustomerId ?? null;
-  const customerQuery = useQuery(
+  const linkedCustomerId = query.data?.customer.linkedCustomerId ?? null;
+  const linkedCustomerQuery = useQuery(
     customerGetQueryOptions({
       client,
       companyId: activeCompanyId,
-      customerId,
+      customerId: linkedCustomerId,
     }),
   );
-  const customer = useMemo(
-    () =>
-      resolveCustomerNameHydration({
-        customerId,
-        name: customerQuery.data?.name,
-        status: customerQuery.status,
-        notFound: describeWireCode(customerQuery.error) === "NOT_FOUND",
-      }),
-    [
-      customerId,
-      customerQuery.data?.name,
-      customerQuery.error,
-      customerQuery.status,
-    ],
-  );
+  const livePhone = linkedCustomerQuery.data?.phone ?? null;
   const productIds = useMemo(
     () => uniqueOrderLineProductIds(query.data?.items ?? []),
     [query.data?.items],
@@ -123,10 +108,9 @@ export function useOrderDetail(orderIdParam: string): OrderDetailModel {
     return toOrderDetailView({
       order: query.data,
       copy,
-      customer,
-      customerPhone: customerQuery.data?.phone ?? null,
+      customerPhone: livePhone,
     });
-  }, [copy, customer, customerQuery.data?.phone, query.data]);
+  }, [copy, livePhone, query.data]);
   const order = useMemo(() => {
     if (snapshot === null) {
       return null;

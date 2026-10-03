@@ -7,11 +7,7 @@ import type { ListRowGroupEdge } from "../../../components/ui/list-row-chrome";
 import { formatMoneyMinor } from "../../../format/money";
 import { interpolate, type Locale } from "../../../i18n/locale";
 import type { OrdersCopy } from "../../../i18n/orders";
-import {
-  customerNameLabel,
-  resolveCustomerNameHydration,
-  type CustomerNameHydration,
-} from "../shared/customer-name";
+import { localizeCustomerNameSnapshot } from "../shared/customer-name";
 import { itemCountLabel } from "../shared/item-count";
 import { LIST_ORDERS_QUERY_MAX } from "../shared/order-caps";
 import { formatOrderCreatedAt } from "../shared/order-created-at";
@@ -30,17 +26,9 @@ import type {
 
 export { LIST_ORDERS_QUERY_MAX, formatOrderCreatedAt };
 
-export {
-  customerNameLabel,
-  resolveCustomerNameHydration,
-  type CustomerNameHydration,
-};
 export { orderStatusTone, type OrderStatusTone };
 export { isClosedOrderStatus, isOpenOrderStatus };
 export type { OrderStatusFilter, ListOrdersPageInput };
-
-/** Sentinel persisted on unlinked headers; presenters localize it. */
-export const UNLINKED_CUSTOMER_NAME_SNAPSHOT = "unlinked";
 
 export const ORDER_STATUS_FILTERS: readonly OrderStatusFilter[] =
   ORDER_LIFECYCLE_STATUSES;
@@ -99,20 +87,9 @@ export function hasActiveStatusFilter(
   return selected.length > 0;
 }
 
-export function localizeCustomerNameSnapshot(
-  nameSnapshot: string,
-  fallback: string,
-): string {
-  if (nameSnapshot === UNLINKED_CUSTOMER_NAME_SNAPSHOT) {
-    return fallback;
-  }
-  return nameSnapshot;
-}
-
 export type OrderRowView = {
   readonly id: string;
   readonly customerName: string;
-  readonly customerNamePending: boolean;
   readonly status: OrderStatusFilter;
   readonly statusLabel: string;
   readonly statusTone: OrderStatusTone;
@@ -133,7 +110,6 @@ export function toOrderRowView(
       item.customer.nameSnapshot,
       args.copy.missingCustomer,
     ),
-    customerNamePending: false,
     status: item.status,
     statusLabel: args.copy.statuses[item.status],
     statusTone: orderStatusTone(item.status),

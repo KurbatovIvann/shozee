@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import { ordersCopy } from "../../../i18n/orders";
 import type { OrderListItem } from "../api/list";
 import {
+  localizeCustomerNameSnapshot,
+  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+} from "../shared/customer-name";
+import {
   classifyOrdersList,
   formatOrderCreatedAt,
   groupOrderRows,
-  localizeCustomerNameSnapshot,
   toOrderRowView,
-  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
 } from "./orders-list.presenter";
 
 const COPY = ordersCopy("uk");

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ordersCopy } from "../../../i18n/orders";
 import type { GetOrderOutput } from "../api/order-detail-query";
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "../shared/customer-name";
 import { orderThumbnailView } from "../shared/order-thumbnails";
 import {
   catalogPrimaryImageFileId,
@@ -12,7 +13,6 @@ import {
   orderDetailActionsForView,
   orderDetailCompleteLoading,
   orderDetailConfirmLoading,
-  orderDetailHeaderSubtitle,
   orderDetailHeaderTitle,
   orderDetailShowsPhoneIcon,
   orderDetailStartLoading,
@@ -96,7 +96,6 @@ describe("toOrderDetailView", () => {
     const view = toOrderDetailView({
       order: order(),
       copy,
-      customer: { kind: "ready", name: "Марія Ткаченко" },
       customerPhone: " +380501112233 ",
     });
     expect(view.status).toBe("new");
@@ -117,8 +116,7 @@ describe("toOrderDetailView", () => {
         thumbnailFailed: false,
       },
     ]);
-    expect(view.customerName).toBe("Марія Ткаченко");
-    expect(view.customerNamePending).toBe(false);
+    expect(view.customerName).toBe("Олена Коваль");
     expect(view.customerPhone).toBe("+380501112233");
     expect(view.showPhoneIcon).toBe(true);
     expect(JSON.stringify(view)).not.toContain("SHZ-");
@@ -130,7 +128,6 @@ describe("toOrderDetailView", () => {
     const confirmed = toOrderDetailView({
       order: order({ status: "confirmed", comment: "   " }),
       copy,
-      customer: { kind: "ready", name: "Марія Ткаченко" },
       customerPhone: null,
     });
     expect(confirmed.statusLabel).toBe("Підтверджено");
@@ -142,7 +139,6 @@ describe("toOrderDetailView", () => {
     const inProgress = toOrderDetailView({
       order: order({ status: "in_progress", comment: null }),
       copy,
-      customer: { kind: "ready", name: "Марія Ткаченко" },
       customerPhone: null,
     });
     expect(inProgress.statusLabel).toBe("В роботі");
@@ -151,16 +147,21 @@ describe("toOrderDetailView", () => {
     const done = toOrderDetailView({
       order: order({ status: "done", comment: null }),
       copy,
-      customer: { kind: "ready", name: "Марія Ткаченко" },
       customerPhone: null,
     });
     expect(done.statusLabel).toBe("Виконано");
     expect(done.statusTone).toBe("success");
 
     const canceled = toOrderDetailView({
-      order: order({ status: "canceled", comment: null }),
+      order: order({
+        status: "canceled",
+        comment: null,
+        customer: {
+          nameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
+          linkedCustomerId: null,
+        },
+      }),
       copy,
-      customer: { kind: "missing" },
       customerPhone: "",
     });
     expect(canceled.statusLabel).toBe("Скасовано");
@@ -185,14 +186,11 @@ describe("toOrderDetailView", () => {
         ],
       }),
       copy,
-      customer: { kind: "pending" },
       customerPhone: null,
     });
     expect(view.lines[0]?.metaLabel).toBe("9,99\u00A0₴ \u00D7 1");
     expect(view.lines[0]?.grossLabel).toBe("1\u00A0₴");
     expect(view.dueLabel).toBe("1\u00A0₴");
-    expect(view.customerNamePending).toBe(true);
-    expect(view.customerName).toBe("");
   });
 });
 
@@ -217,29 +215,6 @@ describe("orderDetailHeaderTitle", () => {
         fallbackTitle: "Замовлення",
       }),
     ).not.toBe(ORDER_ID);
-  });
-});
-
-describe("orderDetailHeaderSubtitle", () => {
-  it("uses the customer name, or the missing-customer copy", () => {
-    expect(
-      orderDetailHeaderSubtitle({
-        customer: { kind: "ready", name: "Марія Ткаченко" },
-        missingCustomer: "Клієнт видалений",
-      }),
-    ).toBe("Марія Ткаченко");
-    expect(
-      orderDetailHeaderSubtitle({
-        customer: { kind: "missing" },
-        missingCustomer: "Клієнт видалений",
-      }),
-    ).toBe("Клієнт видалений");
-    expect(
-      orderDetailHeaderSubtitle({
-        customer: { kind: "pending" },
-        missingCustomer: "Клієнт видалений",
-      }),
-    ).toBe("");
   });
 });
 
@@ -276,7 +251,6 @@ describe("line thumbnails", () => {
     const snapshot = toOrderDetailView({
       order: order(),
       copy: ordersCopy("uk"),
-      customer: { kind: "ready", name: "Марія Ткаченко" },
       customerPhone: null,
     });
     expect(snapshot.lines[0]?.thumbnailFileId).toBeNull();
