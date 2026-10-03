@@ -9,9 +9,8 @@ import { NotFoundError, PermissionDeniedError } from "@showzy/core/errors";
 import {
   ASSISTANT_VOICE_PATH,
   VOICE_CLOSE_CODE,
-  VOICE_MAX_SESSION_MS,
 } from "@showzy/validation/assistant-voice";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { WSEvents } from "hono/ws";
 import type { Logger } from "pino";
 
@@ -25,6 +24,7 @@ import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
 import type { VoiceRecognizer } from "./assistant-voice-chirp.js";
 import {
   admitVoiceSession,
+  VOICE_SESSION_DENIAL_CODE,
   type VoiceSessionRateLimit,
 } from "./assistant-voice-limit.js";
 import {
@@ -33,17 +33,10 @@ import {
   type VoiceSessionCaller,
 } from "./assistant-voice-session.js";
 
-const VOICE_SLOT_RETRY_AFTER_SEC = Math.ceil(VOICE_MAX_SESSION_MS / 1000);
-
-function rateLimited(
-  requestId: string,
-  code: string,
-  retryAfterSec: number,
-): Response {
-  const response = json(429, { error: { code }, retryAfterSec }, requestId);
-  response.headers.set("Retry-After", String(retryAfterSec));
-  return response;
-}
+export type VoiceUpgrade = (
+  c: Context<AssistantKitAppEnv>,
+  events: WSEvents,
+) => Promise<Response>;
 
 export type VoiceStreamSlots = Pick<
   AssistantStreamSlots,
@@ -64,6 +57,14 @@ export interface AssistantVoiceApp {
   readonly app: Hono<AssistantKitAppEnv>;
   readonly injectWebSocket: NodeWebSocket["injectWebSocket"];
   close(): Promise<void>;
+}
+
+export function voiceRefusalEvents(denialCode: string): WSEvents {
+  return {
+    onOpen(_event, ws) {
+      ws.close(VOICE_CLOSE_CODE.refused, denialCode);
+    },
+  };
 }
 
 export function voiceSocketEvents(
@@ -133,10 +134,14 @@ export function voiceSocketEvents(
 
 export function createAssistantVoiceApp(
   runtime: AssistantVoiceRuntime,
+  upgrade?: VoiceUpgrade,
 ): AssistantVoiceApp {
   const app = new Hono<AssistantKitAppEnv>();
   const nodeWebSocket = createNodeWebSocket({ app });
   const trustedOrigins = new Set(runtime.trustedOrigins);
+  const upgradeSocket: VoiceUpgrade =
+    upgrade ??
+    ((context, events) => nodeWebSocket.upgradeWebSocket(context, events));
 
   app.get(ASSISTANT_VOICE_PATH, async (c) => {
     const requestId = resolveRequestId(c.req.header(REQUEST_ID_HEADER));
@@ -180,7 +185,19 @@ export function createAssistantVoiceApp(
 
     const streamId = randomUUID();
     if (!(await runtime.slots.acquire(caller.userId, streamId))) {
-      return rateLimited(requestId, "RATE_LIMITED", VOICE_SLOT_RETRY_AFTER_SEC);
+      runtime.logger.info(
+        {
+          request_id: requestId,
+          user_id: caller.userId,
+          company_id: companyId,
+          reason: "no_slot",
+        },
+        "assistant voice refused a caller before opening a recognizer",
+      );
+      return await upgradeSocket(
+        c,
+        voiceRefusalEvents(VOICE_SESSION_DENIAL_CODE.session_limit),
+      );
     }
     const releaseSlot = (): void => {
       runtime.slots.release(caller.userId, streamId).catch((error: unknown) => {
@@ -209,11 +226,11 @@ export function createAssistantVoiceApp(
         },
         "assistant voice refused a caller before opening a recognizer",
       );
-      return rateLimited(requestId, admission.code, admission.retryAfterSec);
+      return await upgradeSocket(c, voiceRefusalEvents(admission.code));
     }
 
     try {
-      return await nodeWebSocket.upgradeWebSocket(
+      return await upgradeSocket(
         c,
         voiceSocketEvents(
           runtime,

@@ -8,7 +8,7 @@ import {
   ASSISTANT_VOICE_PATH,
   VOICE_CLOSE_CODE,
 } from "@showzy/validation/assistant-voice";
-import { WSContext } from "hono/ws";
+import { WSContext, type WSEvents } from "hono/ws";
 import { pino, type Logger } from "pino";
 import { describe, expect, it } from "vitest";
 
@@ -19,9 +19,11 @@ import type {
 import { VOICE_SESSION_WINDOW_SEC } from "./assistant-voice-limit.js";
 import {
   createAssistantVoiceApp,
+  voiceRefusalEvents,
   voiceSocketEvents,
   type AssistantVoiceRuntime,
   type VoiceStreamSlots,
+  type VoiceUpgrade,
 } from "./assistant-voice.js";
 
 const USER = "user-1";
@@ -146,21 +148,49 @@ function fakeSocket(): {
   readonly ws: WSContext;
   readonly sent: string[];
   readonly closed: number[];
+  readonly reasons: string[];
 } {
   const sent: string[] = [];
   const closed: number[] = [];
+  const reasons: string[] = [];
   const ws = new WSContext({
     send: (data) => {
       if (typeof data === "string") {
         sent.push(data);
       }
     },
-    close: (code) => {
+    close: (code, reason) => {
       closed.push(code ?? 1000);
+      reasons.push(reason ?? "");
     },
     readyState: 1,
   });
-  return { ws, sent, closed };
+  return { ws, sent, closed, reasons };
+}
+
+function recordingUpgrade(): {
+  readonly upgrade: VoiceUpgrade;
+  readonly events: WSEvents[];
+} {
+  const events: WSEvents[] = [];
+  return {
+    events,
+    upgrade: (_c, handlers) => {
+      events.push(handlers);
+      return Promise.resolve(new Response());
+    },
+  };
+}
+
+function openSocket(
+  events: WSEvents | undefined,
+): ReturnType<typeof fakeSocket> {
+  if (events === undefined) {
+    throw new Error("the route upgraded no socket");
+  }
+  const socket = fakeSocket();
+  events.onOpen?.(new Event("open"), socket.ws);
+  return socket;
 }
 
 describe("assistant voice route", () => {
@@ -229,9 +259,30 @@ describe("assistant voice route", () => {
     expect(response.status).toBe(200);
   });
 
-  it("refuses a second socket once the caller holds every slot", async () => {
+  it("closes a second socket as refused once the caller holds every slot", async () => {
+    const recognizer = trackingRecognizer();
     const slots = countingSlots(1);
-    const voice = createAssistantVoiceApp(runtime({ slots }));
+    const upgrades = recordingUpgrade();
+    const voice = createAssistantVoiceApp(
+      runtime({ recognizer, slots }),
+      upgrades.upgrade,
+    );
+
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
+    const refused = openSocket(upgrades.events[1]);
+
+    expect(refused.closed).toEqual([VOICE_CLOSE_CODE.refused]);
+    expect(refused.reasons).toEqual(["RATE_LIMITED"]);
+    expect(refused.sent).toHaveLength(0);
+    expect(recognizer.streams).toHaveLength(0);
+    expect(slots.held.size).toBe(1);
+  });
+
+  it("answers a slot-busy handshake with the upgrade the adapter made", async () => {
+    const recognizer = trackingRecognizer();
+    const slots = countingSlots(1);
+    const voice = createAssistantVoiceApp(runtime({ recognizer, slots }));
 
     const first = await handshake(voice, {
       [COMPANY_SELECTOR_HEADER]: COMPANY,
@@ -241,13 +292,17 @@ describe("assistant voice route", () => {
     });
 
     expect(first.status).toBe(200);
-    expect(second.status).toBe(429);
-    expect(second.headers.get("Retry-After")).toBe("15");
-    expect(await second.json()).toEqual({
-      error: { code: "RATE_LIMITED" },
-      retryAfterSec: 15,
-    });
+    expect(second.status).toBe(200);
+    expect(recognizer.streams).toHaveLength(0);
     expect(slots.held.size).toBe(1);
+  });
+
+  it("closes a refused handshake without touching the recognizer", () => {
+    const socket = openSocket(voiceRefusalEvents("RATE_LIMIT_STORE"));
+
+    expect(socket.closed).toEqual([VOICE_CLOSE_CODE.refused]);
+    expect(socket.reasons).toEqual(["RATE_LIMIT_STORE"]);
+    expect(socket.sent).toHaveLength(0);
   });
 
   it("refuses a plain GET before it takes a slot", async () => {
@@ -405,6 +460,7 @@ describe("assistant voice per-user session limit", () => {
   it("refuses a handshake past the ceiling before any Chirp stream opens", async () => {
     const recognizer = trackingRecognizer();
     const slots = countingSlots(5);
+    const upgrades = recordingUpgrade();
     const voice = createAssistantVoiceApp(
       runtime({
         recognizer,
@@ -414,18 +470,15 @@ describe("assistant voice per-user session limit", () => {
           sessionsPerMinutePerUser: 1,
         },
       }),
+      upgrades.upgrade,
     );
 
-    const first = await handshake(voice, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
-    const second = await handshake(voice, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
+    const refused = openSocket(upgrades.events[1]);
 
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(429);
-    expect(Number(second.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect(refused.closed).toEqual([VOICE_CLOSE_CODE.refused]);
+    expect(refused.reasons).toEqual(["RATE_LIMITED"]);
     expect(recognizer.streams).toHaveLength(0);
     expect(slots.held.size).toBe(1);
   });
@@ -456,29 +509,30 @@ describe("assistant voice per-user session limit", () => {
       store: createInMemoryRateLimitStore(),
       sessionsPerMinutePerUser: 1,
     };
-    const mine = createAssistantVoiceApp(runtime({ rateLimit }));
+    const ours = recordingUpgrade();
+    const mine = createAssistantVoiceApp(runtime({ rateLimit }), ours.upgrade);
+    const theirUpgrades = recordingUpgrade();
     const theirs = createAssistantVoiceApp(
       runtime({
         rateLimit,
         session: { user: { id: "user-2" }, session: { id: "session-2" } },
       }),
+      theirUpgrades.upgrade,
     );
 
-    const first = await handshake(mine, { [COMPANY_SELECTOR_HEADER]: COMPANY });
-    const mineAgain = await handshake(mine, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
-    const other = await handshake(theirs, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
+    await handshake(mine, { [COMPANY_SELECTOR_HEADER]: COMPANY });
+    await handshake(mine, { [COMPANY_SELECTOR_HEADER]: COMPANY });
+    await handshake(theirs, { [COMPANY_SELECTOR_HEADER]: COMPANY });
 
-    expect(first.status).toBe(200);
-    expect(mineAgain.status).toBe(429);
-    expect(other.status).toBe(200);
+    expect(openSocket(ours.events[1]).closed).toEqual([
+      VOICE_CLOSE_CODE.refused,
+    ]);
+    expect(openSocket(theirUpgrades.events[0]).closed).toEqual([]);
   });
 
   it("admits the caller again once the bucket refills", async () => {
     let nowMs = 1_700_000_000_000;
+    const upgrades = recordingUpgrade();
     const voice = createAssistantVoiceApp(
       runtime({
         rateLimit: {
@@ -486,27 +540,24 @@ describe("assistant voice per-user session limit", () => {
           sessionsPerMinutePerUser: 1,
         },
       }),
+      upgrades.upgrade,
     );
 
-    const first = await handshake(voice, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
-    const refused = await handshake(voice, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
     nowMs += VOICE_SESSION_WINDOW_SEC * 1000;
-    const refilled = await handshake(voice, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
 
-    expect(first.status).toBe(200);
-    expect(refused.status).toBe(429);
-    expect(refilled.status).toBe(200);
+    expect(openSocket(upgrades.events[1]).closed).toEqual([
+      VOICE_CLOSE_CODE.refused,
+    ]);
+    expect(openSocket(upgrades.events[2]).closed).toEqual([]);
   });
 
   it("refuses the handshake when the bucket cannot be read", async () => {
     const recognizer = trackingRecognizer();
     const slots = countingSlots(5);
+    const upgrades = recordingUpgrade();
     const voice = createAssistantVoiceApp(
       runtime({
         recognizer,
@@ -518,27 +569,22 @@ describe("assistant voice per-user session limit", () => {
           sessionsPerMinutePerUser: 5,
         },
       }),
+      upgrades.upgrade,
     );
 
-    const response = await handshake(voice, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
+    const refused = openSocket(upgrades.events[0]);
 
-    expect(response.status).toBe(429);
-    expect(response.headers.get("Retry-After")).toBe(
-      String(VOICE_SESSION_WINDOW_SEC),
-    );
-    expect(await response.json()).toEqual({
-      error: { code: "RATE_LIMIT_STORE" },
-      retryAfterSec: VOICE_SESSION_WINDOW_SEC,
-    });
+    expect(refused.closed).toEqual([VOICE_CLOSE_CODE.refused]);
+    expect(refused.reasons).toEqual(["RATE_LIMIT_STORE"]);
     expect(slots.held.size).toBe(0);
     expect(recognizer.streams).toHaveLength(0);
   });
 
-  it("still refuses with 429 when the slot cannot be released during an outage", async () => {
+  it("still refuses when the slot cannot be released during an outage", async () => {
     const recognizer = trackingRecognizer();
     const releases: string[] = [];
+    const upgrades = recordingUpgrade();
     const voice = createAssistantVoiceApp(
       runtime({
         recognizer,
@@ -556,14 +602,14 @@ describe("assistant voice per-user session limit", () => {
           sessionsPerMinutePerUser: 5,
         },
       }),
+      upgrades.upgrade,
     );
 
-    const response = await handshake(voice, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
     await new Promise((resolve) => setImmediate(resolve));
+    const refused = openSocket(upgrades.events[0]);
 
-    expect(response.status).toBe(429);
+    expect(refused.closed).toEqual([VOICE_CLOSE_CODE.refused]);
     expect(releases).toHaveLength(1);
     expect(recognizer.streams).toHaveLength(0);
   });
@@ -571,22 +617,21 @@ describe("assistant voice per-user session limit", () => {
   it("spends no session when concurrency refuses the handshake", async () => {
     const bucket = countingStore();
     const slots = countingSlots(1);
+    const upgrades = recordingUpgrade();
     const voice = createAssistantVoiceApp(
       runtime({
         slots,
         rateLimit: { store: bucket.store, sessionsPerMinutePerUser: 5 },
       }),
+      upgrades.upgrade,
     );
 
-    const first = await handshake(voice, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
-    const second = await handshake(voice, {
-      [COMPANY_SELECTOR_HEADER]: COMPANY,
-    });
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
+    await handshake(voice, { [COMPANY_SELECTOR_HEADER]: COMPANY });
 
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(429);
+    expect(openSocket(upgrades.events[1]).closed).toEqual([
+      VOICE_CLOSE_CODE.refused,
+    ]);
     expect(bucket.consumed()).toBe(1);
   });
 

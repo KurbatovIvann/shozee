@@ -6,6 +6,7 @@ import {
   voiceAnnouncementKey,
   voiceComposerPlaceholder,
   voiceComposerValue,
+  voiceFailureMessage,
   voiceMicActive,
   voiceMicMode,
   voiceRemainingSeconds,
@@ -81,6 +82,28 @@ describe("voice composer field", () => {
     for (const mode of ["idle", "denied", "error"] as const) {
       expect(voiceComposerPlaceholder({ mode, ...PLACEHOLDERS })).toBe(
         PLACEHOLDERS.idle,
+      );
+    }
+  });
+});
+
+describe("voice failure message", () => {
+  const MESSAGES = { busy: "Зайнято", error: "Не вдалося" };
+
+  it("names a refused handshake busy and every other failure an error", () => {
+    expect(voiceFailureMessage({ failure: "busy", ...MESSAGES })).toBe(
+      MESSAGES.busy,
+    );
+    for (const failure of [
+      "network",
+      "protocol",
+      "recognizer",
+      "audio",
+      "format",
+      null,
+    ] as const) {
+      expect(voiceFailureMessage({ failure, ...MESSAGES })).toBe(
+        MESSAGES.error,
       );
     }
   });

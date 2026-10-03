@@ -5,7 +5,7 @@ export const VOICE_SESSION_WINDOW_SEC = 60;
 
 export type VoiceSessionDenialReason = "session_limit" | "rate_limit_store";
 
-const VOICE_SESSION_DENIAL_CODE: Readonly<
+export const VOICE_SESSION_DENIAL_CODE: Readonly<
   Record<VoiceSessionDenialReason, string>
 > = {
   session_limit: "RATE_LIMITED",
