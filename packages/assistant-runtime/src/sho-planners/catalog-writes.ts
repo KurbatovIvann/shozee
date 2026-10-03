@@ -31,12 +31,13 @@ export const SHO_READ_AS_PRODUCT_UPDATE_NOTE =
 export const SHO_READ_AS_FOCUS_PRODUCT_NOTE =
   "Прочитано як дію над товаром з розмови";
 
-const MISREAD_NOTES: Readonly<Record<string, string>> = {
-  read_as_update: SHO_READ_AS_PRODUCT_UPDATE_NOTE,
-};
-
 const FOCUS_NOTES: Readonly<Record<string, string>> = {
   read_as_focus_type: SHO_READ_AS_FOCUS_PRODUCT_NOTE,
+};
+
+const UPDATE_NOTES: Readonly<Record<string, string>> = {
+  ...FOCUS_NOTES,
+  read_as_update: SHO_READ_AS_PRODUCT_UPDATE_NOTE,
 };
 
 interface ShoMoney {
@@ -122,7 +123,6 @@ const SHO_CATALOG_WRITES: ShoWritePlans = {
       price: basePrice,
     },
     required: ["new_name", "price"],
-    notes: MISREAD_NOTES,
   },
   [SHO_UPDATE_PRODUCT]: {
     toolName: toProviderToolName(SHO_UPDATE_PRODUCT),
@@ -134,7 +134,7 @@ const SHO_CATALOG_WRITES: ShoWritePlans = {
     },
     required: ["product"],
     oneOf: [["rename_to", "price"]],
-    notes: { ...MISREAD_NOTES, ...FOCUS_NOTES },
+    notes: UPDATE_NOTES,
   },
   [SHO_ARCHIVE_PRODUCT]: onProduct(SHO_ARCHIVE_PRODUCT, "Товар заархівовано."),
   [SHO_RESTORE_PRODUCT]: onProduct(
