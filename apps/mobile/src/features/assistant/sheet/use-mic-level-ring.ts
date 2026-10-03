@@ -33,6 +33,9 @@ export function useMicLevelRing(input: {
       glow.set(withTiming(0, { duration: RING_REST_MS }));
       return;
     }
+    if (motion === "opacity") {
+      scale.set(withTiming(VOICE_RING_REST_SCALE, { duration: RING_REST_MS }));
+    }
     return onLevel((level) => {
       glow.set(withTiming(voiceRingOpacity(level), { duration: RING_RISE_MS }));
       if (motion === "opacity") {
