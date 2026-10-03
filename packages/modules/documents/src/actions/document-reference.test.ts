@@ -54,8 +54,7 @@ describe("the document reference input (SHO-869)", () => {
     ]) {
       expect(contract.description).toContain(DOCUMENT_REFERENCE_DESCRIPTION);
       expect(contract.errors).toContain("NOT_FOUND");
+      expect(contract.errors).toContain("CONFLICT");
     }
-    expect(cancelDocumentContract.errors).toContain("CONFLICT");
-    expect(requestSignContract.errors).toContain("CONFLICT");
   });
 });

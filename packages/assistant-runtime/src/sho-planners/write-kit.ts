@@ -108,6 +108,26 @@ export function shoSpanText(param: ShoParam): string | null {
     : nonEmpty(param.text);
 }
 
+export const shoReferenceParam =
+  (idField: string, numberField: string): ShoWriteParamMapper =>
+  (param) => {
+    if (!shoIsRef(param)) {
+      const spoken =
+        Array.isArray(param) || "status" in param ? null : shoSpanText(param);
+      return spoken === null ? "unsupported_param" : { [numberField]: spoken };
+    }
+    if (param.status !== "context") {
+      return "unsupported_param";
+    }
+    const locator = shoRefLocator(param);
+    if (shoRefused(locator)) {
+      return locator;
+    }
+    return locator.by === "id"
+      ? { [idField]: locator.id }
+      : "unresolved_reference";
+  };
+
 export function shoTypedText(param: ShoParam): string | null {
   if (Array.isArray(param) || !("value" in param)) {
     return null;
