@@ -5,10 +5,12 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import type { AssistantVoiceCopy } from "../../../i18n/assistant";
 import type { SubscribeVoiceLevel } from "../voice/use-voice-capture";
+import type { VoiceCaptureFailure } from "../voice/voice-capture-state";
 import { keyboardAppearance } from "../../../theme/tokens";
 import {
   voiceComposerPlaceholder,
   voiceComposerValue,
+  voiceFailureMessage,
   voiceMicActive,
   type VoiceMicMode,
 } from "../voice/voice-composer";
@@ -24,6 +26,7 @@ export type AssistantComposerVoice = {
   readonly partial: string;
   readonly countdown: string | null;
   readonly countdownLabel: string | null;
+  readonly failure: VoiceCaptureFailure | null;
   readonly canPress: boolean;
   readonly copy: AssistantVoiceCopy;
   readonly onLevel: SubscribeVoiceLevel;
@@ -72,7 +75,11 @@ export function AssistantComposer(props: {
       ) : null}
       {voice !== null && mode === "error" ? (
         <VoiceNotice
-          message={voice.copy.errorMessage}
+          message={voiceFailureMessage({
+            failure: voice.failure,
+            busy: voice.copy.busyMessage,
+            error: voice.copy.errorMessage,
+          })}
           actionLabel={voice.copy.retry}
           onAction={voice.onRetry}
         />

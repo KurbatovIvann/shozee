@@ -27,6 +27,7 @@ export const VOICE_CLOSE_CODE = {
   done: 1000,
   badFrame: 4400,
   overloaded: 4429,
+  refused: 4430,
   recognizerFailed: 4500,
 } as const;
 

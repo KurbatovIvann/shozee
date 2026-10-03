@@ -123,6 +123,7 @@ export type AssistantVoiceCopy = {
   readonly deniedMessage: string;
   readonly deniedAction: string;
   readonly errorMessage: string;
+  readonly busyMessage: string;
   readonly retry: string;
   readonly spoken: string;
   readonly announceListening: string;
@@ -300,6 +301,7 @@ const assistantEn: AssistantCopy = {
     deniedMessage: "Microphone access is off.",
     deniedAction: "Open settings",
     errorMessage: "Dictation did not work.",
+    busyMessage: "Dictation is busy right now. Try again shortly.",
     retry: "Try again",
     spoken: "Spoken",
     announceListening: "Listening",
@@ -426,6 +428,7 @@ const assistantUk: AssistantCopy = {
     deniedMessage: "Доступ до мікрофона вимкнено.",
     deniedAction: "Відкрити налаштування",
     errorMessage: "Не вдалося розпізнати.",
+    busyMessage: "Диктування зараз зайняте. Спробуй за мить.",
     retry: "Спробувати ще",
     spoken: "Сказано голосом",
     announceListening: "Слухаю",

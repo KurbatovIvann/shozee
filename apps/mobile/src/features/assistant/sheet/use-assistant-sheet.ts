@@ -243,6 +243,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
             : interpolate(copy.voice.remaining, {
                 seconds: String(dictation.remaining),
               }),
+        failure: dictation.failure,
         canPress: dictation.canPress,
         copy: copy.voice,
         onLevel: dictation.onLevel,

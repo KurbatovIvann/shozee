@@ -76,6 +76,7 @@ export function nativeVoiceWebSocket(
 
 const CLOSE_FAILURE: Readonly<Record<number, VoiceSocketFailure>> = {
   [VOICE_CLOSE_CODE.overloaded]: "busy",
+  [VOICE_CLOSE_CODE.refused]: "busy",
   [VOICE_CLOSE_CODE.badFrame]: "protocol",
   [VOICE_CLOSE_CODE.recognizerFailed]: "recognizer",
 };

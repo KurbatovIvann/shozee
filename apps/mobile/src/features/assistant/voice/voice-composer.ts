@@ -1,4 +1,7 @@
-import type { VoiceCaptureStatus } from "./voice-capture-state";
+import type {
+  VoiceCaptureFailure,
+  VoiceCaptureStatus,
+} from "./voice-capture-state";
 
 export type VoiceMicMode =
   "idle" | "pending" | "listening" | "recognizing" | "denied" | "error";
@@ -81,6 +84,14 @@ export function voiceComposerPlaceholder(input: {
   return input.mode === "pending" || input.mode === "listening"
     ? input.listening
     : input.idle;
+}
+
+export function voiceFailureMessage(input: {
+  readonly failure: VoiceCaptureFailure | null;
+  readonly busy: string;
+  readonly error: string;
+}): string {
+  return input.failure === "busy" ? input.busy : input.error;
 }
 
 export function voiceRemainingSeconds(

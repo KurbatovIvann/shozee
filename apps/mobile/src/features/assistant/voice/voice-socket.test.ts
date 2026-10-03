@@ -220,6 +220,7 @@ describe("openVoiceSocket", () => {
   it("maps the typed close codes to causes", () => {
     expect(voiceFailureFromCloseCode(VOICE_CLOSE_CODE.done)).toBe("network");
     expect(voiceFailureFromCloseCode(VOICE_CLOSE_CODE.overloaded)).toBe("busy");
+    expect(voiceFailureFromCloseCode(VOICE_CLOSE_CODE.refused)).toBe("busy");
     expect(voiceFailureFromCloseCode(VOICE_CLOSE_CODE.badFrame)).toBe(
       "protocol",
     );
@@ -236,6 +237,24 @@ describe("openVoiceSocket", () => {
 
     expect(run.failures).toEqual(["busy"]);
     expect(run.finals).toHaveLength(0);
+  });
+
+  it("turns a refused handshake into busy, not a lost network", () => {
+    const run = harness();
+
+    run.wire.listener.onClose(VOICE_CLOSE_CODE.refused);
+
+    expect(run.failures).toEqual(["busy"]);
+    expect(run.finals).toHaveLength(0);
+  });
+
+  it("keeps a lost connection a network failure", () => {
+    const run = harness();
+
+    run.wire.listener.onError();
+    run.wire.listener.onClose(1006);
+
+    expect(run.failures).toEqual(["network"]);
   });
 
   it("treats a close with no transcript as a lost session, however clean", () => {
