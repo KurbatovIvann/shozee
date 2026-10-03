@@ -27,6 +27,7 @@ import {
   assistantTurnMessageId,
   matchAssistantPauseAnswer,
   readAssistantChatWindow,
+  shoMayReadCard,
   type AssistantChatWindowWithTurn,
 } from "@showzy/assistant-runtime";
 import type { Context } from "hono";
@@ -56,7 +57,7 @@ import {
   type AssistantKitRuntime,
   type Caller,
 } from "./assistant-kit-http.js";
-import { shoChatTurn } from "./assistant-kit-sho.js";
+import { shoCardAnswerTurn, shoChatTurn } from "./assistant-kit-sho.js";
 
 export async function readChatOpenCard(
   c: Context<AssistantKitAppEnv>,
@@ -220,8 +221,8 @@ export async function handleAssistantKitChat(
 
   const card = requireOpenCardRead(c);
   const open = card === null ? null : card.pause;
-  const matched = card === null ? null : card.verdict;
-  if (matched !== null && matched.kind === "stale") {
+  const read = card === null ? null : card.verdict;
+  if (read !== null && read.kind === "stale") {
     if (await runtime.commands.spent(finishing)) {
       return await settled();
     }
@@ -234,6 +235,24 @@ export async function handleAssistantKitChat(
       requestId,
     );
   }
+  const bySho =
+    open === null ||
+    body.answering === undefined ||
+    read === null ||
+    !shoMayReadCard(read)
+      ? null
+      : await shoCardAnswerTurn({
+          runtime,
+          caller,
+          verifiedCompanyId: requireVerifiedCompany(c),
+          history,
+          scope,
+          pause: open,
+          requestId,
+          clientIp: c.get("clientIp"),
+          text: body.text,
+        });
+  const matched = bySho ?? read;
   if (open !== null && matched !== null && matched.kind !== "supersede") {
     if (matched.kind === "answer") {
       return await handleAssistantKitAnswer(c, runtime, {

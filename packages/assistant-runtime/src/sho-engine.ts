@@ -68,7 +68,7 @@ const fallback = (
 ): ShoPlan => ({ kind: "fallback", reason });
 
 const told = (plan: ShoPlan, command: ShoCommand | undefined): ShoPlan =>
-  plan.kind === "call" && command !== undefined ? { ...plan, command } : plan;
+  command === undefined ? plan : { ...plan, command };
 
 export function createShoEngine(deps: ShoEngineDeps): ShoEngineFor {
   const deadlineMs = deps.deadlineMs ?? SHO_DEFAULT_TIMEOUT_MS;
@@ -104,11 +104,14 @@ export function createShoEngine(deps: ShoEngineDeps): ShoEngineFor {
       if (parsed.outcome !== "ok") {
         return fallback("unreadable");
       }
-      const command = parsed.value.result.commands[0];
+      const result = parsed.value.result;
+      const command = result.commands[0];
       if (command !== undefined && !shoFocusHolds(command, request.focus)) {
         return fallback("unresolved_reference");
       }
-      return told(deps.plan(parsed.value.result, request.now), command);
+      const only =
+        result.commands.length === 1 && !result.tooMany ? command : undefined;
+      return told(deps.plan(result, request.now), only);
     },
   });
 }

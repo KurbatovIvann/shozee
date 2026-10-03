@@ -59,7 +59,11 @@ export type ShoPlan =
       readonly kind: "call";
       readonly command?: ShoCommand;
     } & ShoToolCall)
-  | { readonly kind: "fallback"; readonly reason: ShoTurnFallbackReason };
+  | {
+      readonly kind: "fallback";
+      readonly reason: ShoTurnFallbackReason;
+      readonly command?: ShoCommand;
+    };
 
 export interface ShoTurnRequest {
   readonly text: string;
