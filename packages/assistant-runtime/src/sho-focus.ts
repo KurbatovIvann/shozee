@@ -12,6 +12,7 @@ import {
   type ShoFocusEntry,
   type ShoPrevious,
   type ShoRecordType,
+  type ShoRef,
 } from "@showzy/sho-protocol";
 import { z } from "zod";
 
@@ -35,14 +36,18 @@ export const shoTurnLogSchema = z.object({
 export type ShoFocusRecord = z.infer<typeof shoFocusRecordSchema>;
 export type ShoTurnLog = z.infer<typeof shoTurnLogSchema>;
 
-const FOCUS_PARAM_TYPES: Readonly<Record<string, ShoRecordType>> = {
+export const SHO_FOCUS_PARAM_TYPES: Readonly<Record<string, ShoRecordType>> = {
   customer: "customer",
   group: "group",
   order_number: "order",
   product: "product",
   price_list: "price_list",
   counterparty: "counterparty",
+  customers: "customer",
 };
+
+const focusKey = (type: ShoRecordType, id: string): string =>
+  `${type}\u0000${id}`;
 
 type Json = Readonly<Record<string, unknown>>;
 
@@ -81,12 +86,11 @@ function rowsOf(
 
 function namedIn(command: ShoCommand): readonly ShoFocusRecord[] {
   const named: ShoFocusRecord[] = [];
-  for (const [path, param] of Object.entries(command.params)) {
-    const type = FOCUS_PARAM_TYPES[path];
-    if (type === undefined || !shoIsRef(param) || param.status !== "resolved") {
+  for (const { slot, direct, ref } of shoCommandRefs(command)) {
+    const type = SHO_FOCUS_PARAM_TYPES[slot];
+    if (!direct || type === undefined || ref.status !== "resolved") {
       continue;
     }
-    const ref = param;
     const id = ref.id;
     if (typeof id !== "string" || id.length === 0) {
       continue;
@@ -158,14 +162,56 @@ export function shoTurnRecords(
   return [...ran, ...namedIn(command)].slice(0, SHO_MOST_FOCUS);
 }
 
+interface Referred {
+  readonly slot: string;
+  readonly direct: boolean;
+  readonly ref: ShoRef;
+}
+
+function refsInto(
+  slot: string,
+  direct: boolean,
+  value: unknown,
+  into: Referred[],
+): void {
+  if (shoIsRef(value)) {
+    into.push({ slot, direct, ref: value });
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      refsInto(slot, false, entry, into);
+    }
+    return;
+  }
+  if (!isJson(value)) {
+    return;
+  }
+  for (const [field, inner] of Object.entries(value)) {
+    refsInto(field, false, inner, into);
+  }
+}
+
+function shoCommandRefs(command: ShoCommand): readonly Referred[] {
+  const refs: Referred[] = [];
+  for (const [path, param] of Object.entries(command.params)) {
+    refsInto(path, true, param, refs);
+  }
+  return refs;
+}
+
 export function shoFocusHolds(
   command: ShoCommand,
   focus: readonly ShoFocusEntry[],
 ): boolean {
-  const held = new Set(focus.map((entry) => entry.id));
-  for (const param of Object.values(command.params)) {
-    const id = shoIsRef(param) && param.status === "context" ? param.id : null;
-    if (typeof id === "string" && id.length > 0 && !held.has(id)) {
+  const heldAs = new Set(focus.map((entry) => focusKey(entry.type, entry.id)));
+  for (const { slot, ref } of shoCommandRefs(command)) {
+    const id = ref.id;
+    if (ref.status !== "context" || typeof id !== "string" || id.length === 0) {
+      continue;
+    }
+    const expected = SHO_FOCUS_PARAM_TYPES[slot];
+    if (expected === undefined || !heldAs.has(focusKey(expected, id))) {
       return false;
     }
   }
@@ -286,7 +332,7 @@ export function shoFocusFrom(
     const earlier =
       log.sessionId === sessionId ? {} : { earlier: true as const };
     for (const record of records) {
-      const key = `${record.type}\u0000${record.id}`;
+      const key = focusKey(record.type, record.id);
       if (held.has(key)) {
         continue;
       }

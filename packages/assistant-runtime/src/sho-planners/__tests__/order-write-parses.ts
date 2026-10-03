@@ -492,6 +492,67 @@ export const SHO_ORDER_WRITE_PARSES: Readonly<Record<string, unknown>> =
       domain: "orders",
       verb: "create",
     },
+    "d92-focus-update-as-create": {
+      text: "і відразу замовлення йому на три кабелі usb-c",
+      action: "orders.create",
+      kind: "write",
+      effect: "write",
+      confirm: "card",
+      params: {
+        items: [
+          {
+            product: {
+              text: "кабелі usb-c",
+              status: "resolved",
+              id: "p-cable",
+              name: "Кабель USB-C",
+              match: "form",
+            },
+            attrs: [],
+            variant: {
+              status: "unspecified",
+              candidates: [
+                { id: "v-cable-12", name: "1,2 м", productId: "p-cable" },
+                { id: "v-cable-2", name: "2 м", productId: "p-cable" },
+              ],
+            },
+            quantity: {
+              text: "три",
+              said: ["три"],
+              value: 3,
+              unit: null,
+              unitText: null,
+            },
+          },
+        ],
+        customer: {
+          text: "йому",
+          status: "context",
+          id: "new-orest",
+          name: "Орест Ярема",
+          focus: 0,
+        },
+      },
+      needs: [
+        {
+          path: "items[0].variant",
+          reason: "variant_required",
+          blocking: true,
+        },
+        {
+          path: "action",
+          reason: "read_as_create",
+          blocking: false,
+          span: { text: "йому" },
+        },
+      ],
+      ready: false,
+      refPrevious: {},
+      catalogued: false,
+      domain: "orders",
+      verb: "update",
+      creates: { type: "order", name: null },
+    },
     "d95-noun-alone-confirm": {
       text: "підтверди клієнту",
       action: "orders.confirm",
