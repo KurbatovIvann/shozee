@@ -1,6 +1,7 @@
 import type { ActionCtx } from "@showzy/core";
 import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
 import { productVariants } from "@showzy/db/schema/catalog";
+import { keepOmitted } from "@showzy/module-kit/keep-omitted";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -31,7 +32,7 @@ export async function updateStaffVariant(env: {
 
   const existing = (
     await db
-      .select({ id: productVariants.id })
+      .select({ id: productVariants.id, name: productVariants.name })
       .from(productVariants)
       .where(
         and(
@@ -50,7 +51,7 @@ export async function updateStaffVariant(env: {
   const updated = (
     await db
       .update(productVariants)
-      .set({ name: input.name, ...price })
+      .set({ name: keepOmitted(input.name, existing.name), ...price })
       .where(
         and(
           eq(productVariants.companyId, ctx.companyId),

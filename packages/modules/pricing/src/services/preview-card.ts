@@ -5,6 +5,7 @@ import { NotFoundError } from "@showzy/core/errors";
 import { priceListEntries, priceLists } from "@showzy/db/schema/pricing";
 import { moneyToCanonical } from "@showzy/module-kit/canonical";
 import { formatMoneyMinor } from "@showzy/module-kit/money-format";
+import { changeLines } from "@showzy/module-kit/preview-changes";
 import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import { and, eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
@@ -12,6 +13,7 @@ import type { z } from "zod";
 import type { createPriceListInputSchema } from "../actions/create-price-list.contract.js";
 import type { removePriceListEntriesInputSchema } from "../actions/remove-price-list-entries.contract.js";
 import type { setPriceListEntriesInputSchema } from "../actions/set-price-list-entries.contract.js";
+import type { updatePriceListInputSchema } from "../actions/update-price-list.contract.js";
 import {
   comparePriceListEntryKeys,
   entryKey,
@@ -24,6 +26,7 @@ type Contract = { readonly name: string };
 type CreateFields = z.output<typeof createPriceListInputSchema>;
 type SetEntriesFields = z.output<typeof setPriceListEntriesInputSchema>;
 type RemoveEntriesFields = z.output<typeof removePriceListEntriesInputSchema>;
+type UpdateFields = z.output<typeof updatePriceListInputSchema>;
 type StoredEntry = { readonly priceMinor: bigint; readonly currency: string };
 
 export const PRICE_LIST_NAME_LABEL = "Назва";
@@ -222,16 +225,18 @@ export function createPriceListPreview(
 
 export function updatePriceListPreview(
   contract: Contract,
-): (
-  input: { readonly id: string; readonly name: string },
-  env: PreviewEnv,
-) => Promise<ActionPreview> {
+): (input: UpdateFields, env: PreviewEnv) => Promise<ActionPreview> {
   return async (input, env) => {
     const companyId = previewCompanyScope(env.companyId, contract);
     const stored = await loadPriceList(env, companyId, input.id);
+    const name = input.name;
     return {
       title: `Змінити прайс-лист: ${stored.name}`,
-      lines: [changeLine(PRICE_LIST_NAME_LABEL, stored.name, input.name)],
+      lines: changeLines(
+        name === undefined
+          ? []
+          : [changeLine(PRICE_LIST_NAME_LABEL, stored.name, name)],
+      ),
     };
   };
 }

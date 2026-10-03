@@ -467,7 +467,7 @@ export function applyWriteSuccess(args: {
     baseline = {
       ...baseline,
       name: write.input.name ?? baseline.name,
-      priceMinor: write.input.basePriceMinor,
+      priceMinor: write.input.basePriceMinor ?? baseline.priceMinor,
     };
   } else if (args.write.kind === "createVariant") {
     const write = args.write;
@@ -504,7 +504,7 @@ export function applyWriteSuccess(args: {
         variant.key === write.key
           ? {
               ...variant,
-              name: write.input.name,
+              name: write.input.name ?? variant.name,
               priceMinor: write.input.basePriceMinor ?? null,
             }
           : variant,

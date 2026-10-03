@@ -1,6 +1,7 @@
 import type { ActionCtx } from "@showzy/core";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { priceLists } from "@showzy/db/schema/pricing";
+import { keepOmitted } from "@showzy/module-kit/keep-omitted";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -8,7 +9,7 @@ import type { updatePriceListInputSchema } from "../actions/update-price-list.co
 import { countPriceListEntries } from "./count-price-list-entries.js";
 import {
   priceListViewColumns,
-  requireLockedPriceListId,
+  requireLockedPriceList,
 } from "./locked-price-list.js";
 import { toPriceListView, type PriceListView } from "./price-list-view.js";
 import { requireWritable } from "./writable.js";
@@ -23,12 +24,12 @@ export async function updateStaffPriceList(env: {
   const { ctx, input } = env;
   const db = requireWritable(ctx.db);
 
-  await requireLockedPriceListId(db, ctx.companyId, input.id);
+  const locked = await requireLockedPriceList(db, ctx.companyId, input.id);
 
   const updated = (
     await db
       .update(priceLists)
-      .set({ name: input.name })
+      .set({ name: keepOmitted(input.name, locked.name) })
       .where(
         and(
           eq(priceLists.companyId, ctx.companyId),

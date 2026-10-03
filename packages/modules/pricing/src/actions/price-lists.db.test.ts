@@ -368,6 +368,41 @@ describe("pricing.updatePriceList", () => {
     });
   });
 
+  it("keeps the stored name when the update names none, and replays once", async () => {
+    const before = await listRow(fixtures.listUpdateA);
+    const idempotencyKey = randomUUID();
+    const unchanged = await kit.invoke(
+      updatePriceList,
+      { id: fixtures.listUpdateA },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(unchanged).toMatchObject({
+      id: fixtures.listUpdateA,
+      name: before?.name,
+    });
+
+    const replay = await kit.invoke(
+      updatePriceList,
+      { id: fixtures.listUpdateA },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(replay).toEqual(unchanged);
+    expect((await listRow(fixtures.listUpdateA))?.name).toBe(before?.name);
+  });
+
+  it("leaves a foreign list untouched when the update names no name", async () => {
+    await expect(
+      kit.invoke(updatePriceList, { id: fixtures.listUpdateB }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    expect(await listRow(fixtures.listUpdateB)).toMatchObject({
+      name: "Update Bravo",
+      companyId: kitIdentities.companies.b,
+    });
+  });
+
   it("denies staff without pricing:manage", async () => {
     await expect(
       kit.invoke(
@@ -414,9 +449,10 @@ describe("pricing.updatePriceList", () => {
     expect(foreignRow?.companyId).toBe(kitIdentities.companies.b);
   });
 
-  it("rejects blank names, over-max names, companyId, and default/active flags", async () => {
+  it("rejects blank or null names, over-max names, companyId, and default/active flags", async () => {
     const invalidInputs: unknown[] = [
       { id: fixtures.listUpdateA, name: "   " },
+      { id: fixtures.listUpdateA, name: null },
       {
         id: fixtures.listUpdateA,
         name: "x".repeat(PRICE_LIST_NAME_MAX + 1),
