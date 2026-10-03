@@ -30,6 +30,20 @@ export type SharedAssistantCustomersListCopy = {
   readonly clipped: string;
 };
 
+export type SharedAssistantProductsListCopy = {
+  readonly listEmptyTitle: string;
+  readonly listEmptyDescription: string;
+  readonly openList: string;
+  readonly clipped: string;
+};
+
+export type SharedAssistantPriceListsCopy = {
+  readonly listEmptyTitle: string;
+  readonly listEmptyDescription: string;
+  readonly openList: string;
+  readonly clipped: string;
+};
+
 export type SharedAssistantAggregateCopy = {
   readonly totals: string;
   readonly countColumn: string;
@@ -62,6 +76,8 @@ export type SharedAssistantSearchResultsCopy = {
 export type SharedAssistantCopy = {
   readonly ordersList: SharedAssistantOrdersListCopy;
   readonly customersList: SharedAssistantCustomersListCopy;
+  readonly productsList: SharedAssistantProductsListCopy;
+  readonly priceLists: SharedAssistantPriceListsCopy;
   readonly aggregate: SharedAssistantAggregateCopy;
   readonly searchResults: SharedAssistantSearchResultsCopy;
 };
@@ -211,6 +227,18 @@ const en: SharedAssistantCopy = {
     openList: "Open customers",
     clipped: "The list was clipped. Open customers to see everything.",
   },
+  productsList: {
+    listEmptyTitle: "No products",
+    listEmptyDescription: "No products match this request.",
+    openList: "Open products",
+    clipped: "The list was clipped. Open products to see everything.",
+  },
+  priceLists: {
+    listEmptyTitle: "No price lists",
+    listEmptyDescription: "No price lists match this request.",
+    openList: "Open price lists",
+    clipped: "The list was clipped. Open price lists to see everything.",
+  },
   aggregate: {
     totals: "Total",
     countColumn: "Qty",
@@ -254,6 +282,18 @@ const uk: SharedAssistantCopy = {
     listEmptyDescription: "За цим запитом клієнтів немає.",
     openList: "Відкрити клієнтів",
     clipped: "Список обрізано. Відкрий клієнтів, щоб побачити все.",
+  },
+  productsList: {
+    listEmptyTitle: "Немає товарів",
+    listEmptyDescription: "За цим запитом товарів немає.",
+    openList: "Відкрити товари",
+    clipped: "Список обрізано. Відкрий товари, щоб побачити все.",
+  },
+  priceLists: {
+    listEmptyTitle: "Немає прайс-листів",
+    listEmptyDescription: "За цим запитом прайс-листів немає.",
+    openList: "Відкрити прайс-листи",
+    clipped: "Список обрізано. Відкрий прайс-листи, щоб побачити все.",
   },
   aggregate: {
     totals: "Разом",

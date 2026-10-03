@@ -25,6 +25,10 @@ export const ASSISTANT_ORDERS_LIST_SCREEN_HREF = "/orders";
 /** Customers tab. Same string as mobile `ASSISTANT_CUSTOMERS_LIST_HREF`. */
 export const ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF = "/customers";
 
+export const ASSISTANT_PRODUCTS_LIST_SCREEN_HREF = "/products";
+
+export const ASSISTANT_PRICE_LISTS_SCREEN_HREF = "/price-lists";
+
 export function resolveAssistantSurfaceDestination(
   declaration: AssistantSurfaceDestinationDeclaration,
   screenHref: string,
