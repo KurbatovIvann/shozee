@@ -25,6 +25,16 @@ import {
 } from "./sho-focus.js";
 
 import {
+  shoEscalationOf,
+  shoGapsOf,
+  shoStuckOnRepeatedGap,
+  shoStuckOnRepeatedText,
+  type ShoEscalation,
+  type ShoGap,
+  type ShoTrapKind,
+} from "./sho-gaps.js";
+
+import {
   emptyStaffAssistantBudgetHold,
   type StaffAssistantBudgetHold,
 } from "./assistant-budget-guard.js";
@@ -37,6 +47,7 @@ import {
 export const SHO_TOOL_CALL_PREFIX = "sho-";
 
 export type ShoTurnFallbackReason =
+  | "stuck"
   | "engine_failed"
   | "tools_unreadable"
   | "tool_unavailable"
@@ -94,6 +105,7 @@ export interface ShoTurnAsk {
 export interface ShoTurnFallback {
   readonly kind: "fallback";
   readonly reason: ShoTurnFallbackReason;
+  readonly escalation: ShoEscalation;
 }
 
 export type ShoTurnOutcome = ShoTurnSettled | ShoTurnAsk | ShoTurnFallback;
@@ -123,8 +135,23 @@ export function shoToolCallId(
   return `${SHO_TOOL_CALL_PREFIX}${String(seq)}-${sendable(toolName)}-${sendable(commandId)}`;
 }
 
-function failed(reason: ShoTurnFallbackReason): ShoTurnFallback {
-  return { kind: "fallback", reason };
+function fellBackOn(
+  input: ShoTurnInput,
+  reason: ShoTurnFallbackReason,
+  gaps?: readonly ShoGap[],
+  trap?: ShoTrapKind,
+): ShoTurnFallback {
+  return {
+    kind: "fallback",
+    reason,
+    escalation: shoEscalationOf({
+      reason,
+      sessionId: input.sessionId,
+      now: input.now,
+      ...(gaps === undefined ? {} : { gaps }),
+      ...(trap === undefined ? {} : { trap }),
+    }),
+  };
 }
 
 function promptWithNotes(prompt: unknown, notes: readonly string[]): unknown {
@@ -178,6 +205,21 @@ function conversationThrough(
 }
 
 export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
+  const failed = (
+    reason: ShoTurnFallbackReason,
+    gaps?: readonly ShoGap[],
+    trap?: ShoTrapKind,
+  ): ShoTurnFallback => fellBackOn(input, reason, gaps, trap);
+
+  const repeated = shoStuckOnRepeatedText({
+    history: input.history,
+    sessionId: input.sessionId,
+    text: input.text,
+  });
+  if (repeated !== null) {
+    return failed("stuck", repeated.gaps, repeated.trap);
+  }
+
   const focus = shoFocusFrom(input.history, input.sessionId);
   const previous = shoPreviousFrom(input.history);
   let plan: ShoPlan;
@@ -191,15 +233,24 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
   } catch {
     return failed("engine_failed");
   }
+  const parsed = plan.command;
+  const gaps = parsed === undefined ? [] : shoGapsOf(parsed);
   if (plan.kind === "fallback") {
-    return failed(plan.reason);
+    return failed(plan.reason, gaps);
   }
-  const planned = plan.command;
+  const asking = shoStuckOnRepeatedGap({
+    history: input.history,
+    sessionId: input.sessionId,
+    gaps,
+  });
+  if (asking !== null) {
+    return failed("stuck", asking.gaps, asking.trap);
+  }
   const log: ShoTurnLog | null =
-    planned === undefined
+    parsed === undefined
       ? null
       : {
-          command: planned,
+          command: parsed,
           sessionId: input.sessionId,
           at: input.now.toISOString(),
         };

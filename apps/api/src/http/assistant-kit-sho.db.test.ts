@@ -13,6 +13,7 @@ import {
   type AssistantKitCommandRef,
   type AssistantKitFor,
   type ShoEngineFor,
+  type ShoEscalation,
   type ShoPlan,
   type ShoVerifiedMember,
 } from "@showzy/assistant-runtime";
@@ -209,6 +210,7 @@ const boris = who(kitIdentities.users.boris, kitIdentities.companies.b);
 
 interface TurnRun {
   readonly response: Response | null;
+  readonly escalation: ShoEscalation | undefined;
   readonly commandId: string;
   readonly kit: AssistantKitFor;
   readonly scope: { conversationId: string; bind: string };
@@ -238,7 +240,7 @@ async function runTurn(options: {
     bind: options.caller.bind,
   };
   const paused = kitWithMemoryPauses(pipeline, caller);
-  const response = await shoChatTurn({
+  const outcome = await shoChatTurn({
     runtime,
     caller: options.caller,
     verifiedCompanyId:
@@ -259,7 +261,13 @@ async function runTurn(options: {
     clientIp: "127.0.0.1",
     text: "покажи клієнтів",
   });
-  return { response, commandId, kit: paused, scope };
+  return {
+    response: outcome.kind === "answered" ? outcome.response : null,
+    escalation: outcome.kind === "escalate" ? outcome.escalation : undefined,
+    commandId,
+    kit: paused,
+    scope,
+  };
 }
 
 async function turnRow(commandId: string) {
