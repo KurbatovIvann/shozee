@@ -55,6 +55,32 @@ describe("shoContextSchema products", () => {
     ).toBe(false);
   });
 
+  it("rejects a contact or a legal identifier on every context list", () => {
+    const refused = {
+      phones: ["+380501112233"],
+      emails: ["olya@example.com"],
+      phone: "+380501112233",
+      email: "olya@example.com",
+      edrpou: "14360570",
+      iban: "UA213223130000026007233566001",
+      legalAddress: "Київ, вул. Хрещатик 1",
+      bankName: "ПриватБанк",
+      bankMfo: "305299",
+    };
+
+    for (const list of SHO_CONTEXT_LIST_NAMES) {
+      for (const [field, value] of Object.entries(refused)) {
+        expect(
+          parse({
+            ...base,
+            [list]: [{ id: "x1", name: "Оля", [field]: value }],
+          }).success,
+          `${list}.${field}`,
+        ).toBe(false);
+      }
+    }
+  });
+
   it("rejects a product field the runtime does not accept", () => {
     expect(
       parse({ ...base, products: [{ id: "p1", name: "Фарба", sku: "A-1" }] })
