@@ -6,6 +6,10 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  assertWalkSkipsLintProbes,
+  TRANSIENT_LINT_PROBE_DIR,
+} from "@showzy/tooling/lint-probe";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -151,6 +155,12 @@ describe("resolvePanelStateFromMatches", () => {
   });
 });
 
+describe("src walk and transient lint probes (SHO-863)", () => {
+  it("never reads a file the boundary suite writes and deletes", () => {
+    assertWalkSkipsLintProbes((root) => walkTsFiles(root, []));
+  });
+});
+
 describe("sidebarNavSection", () => {
   it("collapses customer sub-tabs into the customers row", () => {
     expect(sidebarNavSection("customer-groups")).toBe("customers");
@@ -159,8 +169,6 @@ describe("sidebarNavSection", () => {
     expect(sidebarNavSection("documents")).toBe("documents");
   });
 });
-
-const TRANSIENT_LINT_PROBE_DIR = "__boundary-probe__";
 
 function walkTsFiles(dir: string, acc: string[]): string[] {
   for (const name of readdirSync(dir)) {

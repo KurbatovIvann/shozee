@@ -1,17 +1,12 @@
 /// <reference types="node" />
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  assertWalkSkipsLintProbes,
+  TRANSIENT_LINT_PROBE_DIR,
+} from "@showzy/tooling/lint-probe";
 import {
   ASSISTANT_SURFACE_REGISTRY,
   CUSTOMER_ENTITY_PROMPT_LINE,
@@ -87,8 +82,6 @@ const PROMPT_LINE_CONSTANTS = [
   "CUSTOMERS_LIST_PROMPT_LINE",
   "SEARCH_RESULTS_PROMPT_LINE",
 ] as const;
-
-const TRANSIENT_LINT_PROBE_DIR = "__boundary-probe__";
 
 const SKIP_DIR = new Set([
   "node_modules",
@@ -196,20 +189,7 @@ describe("promptLine definitions (SHO-457)", () => {
 
 describe("repo walk and transient lint probes (SHO-863)", () => {
   it("never reads a file the web boundary suite writes and deletes", () => {
-    const root = mkdtempSync(join(tmpdir(), "showzy-walk-"));
-    try {
-      mkdirSync(join(root, "nested", TRANSIENT_LINT_PROBE_DIR), {
-        recursive: true,
-      });
-      writeFileSync(
-        join(root, "nested", TRANSIENT_LINT_PROBE_DIR, "probe.ts"),
-        "export const PROBE_ONLY = 1;\n",
-      );
-      writeFileSync(join(root, "nested", "kept.ts"), "export const Y = 1;\n");
-      expect(walkTs(root)).toEqual([join(root, "nested", "kept.ts")]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    assertWalkSkipsLintProbes(walkTs);
   });
 });
 

@@ -7,7 +7,11 @@
   "exports": {
     "./tsconfig/base.json": "./tsconfig/base.json",
     "./prettier": "./prettier/index.mjs",
-    "./eslint": "./eslint/base.mjs"
+    "./eslint": "./eslint/base.mjs",
+    "./lint-probe": {
+      "types": "./eslint/lint-probe.d.mts",
+      "default": "./eslint/lint-probe.mjs"
+    }
   },
   "scripts": {
     "lint": "eslint .",

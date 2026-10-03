@@ -2,13 +2,16 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  assertWalkSkipsLintProbes,
+  TRANSIENT_LINT_PROBE_DIR,
+} from "@showzy/tooling/lint-probe";
 import { describe, expect, it } from "vitest";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "../../..");
 
 const SOURCE_ROOTS = ["packages", "apps"];
-const TRANSIENT_LINT_PROBE_DIR = "__boundary-probe__";
 const SKIPPED_DIRECTORIES = new Set([
   "node_modules",
   "dist",
@@ -60,6 +63,16 @@ function readRepoSources(): { path: string; text: string }[] {
 }
 
 const sources = readRepoSources();
+
+describe("repo walk and transient lint probes (SHO-863)", () => {
+  it("never reads a file the web boundary suite writes and deletes", () => {
+    assertWalkSkipsLintProbes((root) => {
+      const files: string[] = [];
+      collectSources(root, files);
+      return files;
+    });
+  });
+});
 
 describe("one entity-lookup target", () => {
   it("finds the repository sources to guard", () => {

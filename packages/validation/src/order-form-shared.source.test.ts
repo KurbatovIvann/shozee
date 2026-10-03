@@ -3,6 +3,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  assertWalkSkipsLintProbes,
+  TRANSIENT_LINT_PROBE_DIR,
+} from "@showzy/tooling/lint-probe";
 import { describe, expect, it } from "vitest";
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -13,8 +17,6 @@ const WEB_FORM = "apps/web/src/features/orders/form";
 
 const CLASSIFY_DECL =
   /(?:export\s+)?function\s+classifyProductSellability\b|(?:export\s+)?const\s+classifyProductSellability\s*=/;
-
-const TRANSIENT_LINT_PROBE_DIR = "__boundary-probe__";
 
 function walkTs(directory: string): string[] {
   const files: string[] = [];
@@ -57,6 +59,12 @@ function consumes(
     (file) => file.text.includes(symbol) && file.text.includes(fromClause),
   );
 }
+
+describe("repo walk and transient lint probes (SHO-863)", () => {
+  it("never reads a file the web boundary suite writes and deletes", () => {
+    assertWalkSkipsLintProbes(walkTs);
+  });
+});
 
 describe("SHO-423 shared order-form domain (source guard)", () => {
   it("does not restore the removed app-local invariant or schema files", () => {
