@@ -219,6 +219,19 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `read_as_customer_update` needs become the card's notes.
   `SHO_CUSTOMER_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
   config default stays empty.
+  The same table carries the customer lifecycle and the group planners
+  (SHO-859): `customers.archiveCustomer`, `customers.restoreCustomer`,
+  `customers.deleteCustomer` and `customers.deleteGroup` plan `{ id }` from
+  the one record the parse resolved, `customers.createGroup` /
+  `customers.updateGroup` take `new_name`/`rename_to`, `description` and a
+  resolved `price_list` as `priceListId`, and `customers.setGroup` — an
+  intent Shozee has no action for — plans `customers.updateCustomer`
+  `{ id, groupId }` for the one customer said, since a batch of customers is
+  one card over several writes and that is the LLM. The two destructive
+  intents are `kind: "high"` with `risk: "high"`, which is a confirmable
+  risk, so they pause on the same ADR-0050 preview as every other write and
+  carry their `read_as_focus_type` misread as a note on the card. The parity
+  test reads a planned write intent as `write` or `high` for that reason.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never

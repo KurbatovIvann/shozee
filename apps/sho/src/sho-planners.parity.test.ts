@@ -46,6 +46,8 @@ const UNREADABLE_TOKENS: readonly string[] = [
   "previous",
 ];
 
+const WRITE_INTENT_KINDS: readonly string[] = ["write", "high"];
+
 const WRITE_PLANNER_PARAMS: Readonly<Record<string, readonly string[]>> = {
   ...SHO_WRITE_PLANNER_PARAMS,
   ...SHO_ORDER_LIFECYCLE_PLANNER_PARAMS,
@@ -84,11 +86,12 @@ describe("the read planners name only catalogue params", () => {
 });
 
 describe("the write planners name only catalogue params", () => {
-  it("knows every planned action as a write intent", () => {
+  it("knows every planned action as a write or destructive intent", () => {
     for (const action of Object.keys(WRITE_PLANNER_PARAMS)) {
-      expect({ action, kind: intentOf(action)?.kind }).toEqual({
+      const kind = intentOf(action)?.kind ?? "none";
+      expect({ action, writes: WRITE_INTENT_KINDS.includes(kind) }).toEqual({
         action,
-        kind: "write",
+        writes: true,
       });
     }
   });

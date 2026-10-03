@@ -1,6 +1,13 @@
+import { toProviderToolName } from "@showzy/ai";
 import {
+  archiveCustomerContract,
   createCustomerContract,
+  createGroupContract,
+  deleteCustomerContract,
+  deleteGroupContract,
+  restoreCustomerContract,
   updateCustomerContract,
+  updateGroupContract,
 } from "@showzy/customers/contract";
 import {
   shoCommandSchema,
@@ -13,11 +20,15 @@ import { describe, expect, it } from "vitest";
 import { createShoPlanner, type ShoActionPlan } from "../sho-plan.js";
 
 import { shoCustomerWriteParse } from "./__tests__/customer-write-parses.js";
+import { shoOrderWriteParse } from "./__tests__/order-write-parses.js";
+import { shoReadParse } from "./__tests__/read-parses.js";
 import {
   SHO_CUSTOMER_WRITE_ACTIONS,
   SHO_CUSTOMER_WRITE_PLANNERS,
   SHO_CUSTOMER_WRITE_PLANNER_PARAMS,
   SHO_READ_AS_CUSTOMER_UPDATE_NOTE,
+  SHO_READ_AS_FOCUS_CUSTOMER_NOTE,
+  SHO_READ_AS_FOCUS_GROUP_NOTE,
   SHO_READ_AS_UPDATE_NOTE,
 } from "./customers-writes.js";
 import { SHO_WRITE_ACTIONS } from "./orders-writes.js";
@@ -36,6 +47,15 @@ const COMPANY_IDS: Readonly<Record<string, string>> = {
   "c-honchar": "6d2f0a71-4c83-4e19-9a7b-2f58d31c6e40",
   "c-savchuk": "b18c7e52-30d9-4a66-8f21-5c90e4a7b3d6",
   "g-salons": "2a47f5c8-91b0-4d3e-8c62-7e01b9d45f38",
+  "c-lytvyn": "7f3b1d64-28ea-4c05-9b17-6d84a2f0c591",
+  "c-hrechko": "51ac9e37-6b42-4f80-8d23-0e795b1c4a68",
+  "g-regular": "cf062b19-74d5-4a38-9e61-83b027d5fa14",
+  "g-institutions": "4e5d8b02-1c93-4786-a0f5-29b641e73c8d",
+  "new-wedding": "9b7e4a15-03cf-42d6-8714-5ad62c90e38b",
+  "new-florists": "a3184c76-5e2b-49f0-b86d-71c40f9325ae",
+  "new-zlata": "0d26f948-8a71-4b53-91ce-3f807264ad15",
+  "new-marta": "6c91a78d-42e0-4f15-bd37-08e5349b716f",
+  "pl-partner": "d7420f63-95b8-41ca-8e07-16b3d8205c49",
 };
 
 type Json = Record<string, unknown>;
@@ -91,14 +111,31 @@ function resultOf(command: ShoCommand): ShoResult {
   });
 }
 
-function actionAccepts(action: string, input: unknown): boolean {
-  if (action === createCustomerContract.name) {
-    return createCustomerContract.input.safeParse(input).success;
+const TOOL_INPUTS: Readonly<Record<string, (input: unknown) => boolean>> = {
+  [toProviderToolName(createCustomerContract.name)]: (input) =>
+    createCustomerContract.input.safeParse(input).success,
+  [toProviderToolName(updateCustomerContract.name)]: (input) =>
+    updateCustomerContract.input.safeParse(input).success,
+  [toProviderToolName(archiveCustomerContract.name)]: (input) =>
+    archiveCustomerContract.input.safeParse(input).success,
+  [toProviderToolName(restoreCustomerContract.name)]: (input) =>
+    restoreCustomerContract.input.safeParse(input).success,
+  [toProviderToolName(deleteCustomerContract.name)]: (input) =>
+    deleteCustomerContract.input.safeParse(input).success,
+  [toProviderToolName(createGroupContract.name)]: (input) =>
+    createGroupContract.input.safeParse(input).success,
+  [toProviderToolName(updateGroupContract.name)]: (input) =>
+    updateGroupContract.input.safeParse(input).success,
+  [toProviderToolName(deleteGroupContract.name)]: (input) =>
+    deleteGroupContract.input.safeParse(input).success,
+};
+
+function toolAccepts(toolName: string, input: unknown): boolean {
+  const accepts = TOOL_INPUTS[toolName];
+  if (accepts === undefined) {
+    throw new Error(`no action input schema for ${toolName}`);
   }
-  if (action === updateCustomerContract.name) {
-    return updateCustomerContract.input.safeParse(input).success;
-  }
-  throw new Error(`no action input schema for ${action}`);
+  return accepts(input);
 }
 
 function planOf(command: ShoCommand): ShoActionPlan {
@@ -110,7 +147,7 @@ function planOf(command: ShoCommand): ShoActionPlan {
   if (plan.kind === "call") {
     expect({
       action: command.action,
-      accepted: actionAccepts(command.action, plan.input),
+      accepted: toolAccepts(plan.toolName, plan.input),
     }).toEqual({ action: command.action, accepted: true });
   }
   return plan;
@@ -410,5 +447,227 @@ describe("the D84 and D85 misreads are carried to the card", () => {
     expect(
       notesOf(planOf(withNeed("read_as_update", true, "гончар"))),
     ).toBeUndefined();
+  });
+});
+
+const verbatim = (parse: unknown): ShoCommand =>
+  shoCommandSchema.parse({
+    confidence: OVER_THE_FLOOR,
+    ...(reId(JSON.parse(JSON.stringify(parse)) as Json) as Json),
+  });
+
+const archiving = (): ShoCommand =>
+  asCompanyRecords("d90-closed-restore", {
+    action: "customers.archiveCustomer",
+    verb: "remove",
+    params: { customer: reId(paramsOf("d90-closed-restore")["customer"]) },
+  });
+
+describe("SHO_CUSTOMER_WRITE_PLANNERS maps the conformance lifecycle parses", () => {
+  it("plans d90-closed-restore as that customer's restore", () => {
+    expect(planOf(asCompanyRecords("d90-closed-restore"))).toEqual({
+      kind: "call",
+      toolName: "customers_restoreCustomer",
+      reply: "Клієнта повернуто з архіву.",
+      input: { id: COMPANY_IDS["c-savchuk"] },
+    });
+  });
+
+  it("archives d90-closed-restore's customer: no gold archive parse resolves one", () => {
+    expect(planOf(archiving())).toEqual({
+      kind: "call",
+      toolName: "customers_archiveCustomer",
+      reply: "Клієнта заархівовано.",
+      input: { id: COMPANY_IDS["c-savchuk"] },
+    });
+  });
+
+  it("sends the gold d89-no-archive-asks archive to the LLM: it names no record", () => {
+    expect(
+      whitelisted(resultOf(asCompanyRecords("d89-no-archive-asks")), NOW),
+    ).toEqual({ kind: "fallback", reason: "needs_reference" });
+  });
+
+  it("plans d89-delete-customer as that delete, with the misread noted", () => {
+    expect(planOf(verbatim(shoOrderWriteParse("d89-delete-customer")))).toEqual(
+      {
+        kind: "call",
+        toolName: "customers_deleteCustomer",
+        reply: "Клієнта видалено.",
+        input: { id: COMPANY_IDS["new-marta"] },
+        notes: [`${SHO_READ_AS_FOCUS_CUSTOMER_NOTE}: «її».`],
+      },
+    );
+  });
+
+  it("sends d90-type-verb-offer to the LLM while the reference is unchecked", () => {
+    expect(
+      whitelisted(resultOf(asCompanyRecords("d90-type-verb-offer")), NOW),
+    ).toEqual({ kind: "fallback", reason: "needs_reference" });
+  });
+
+  it("maps no param beyond the record for a lifecycle write", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d90-closed-restore", {
+          params: {
+            customer: reId(paramsOf("d90-closed-restore")["customer"]),
+            comment: paramsOf("d95-named-update")["comment"],
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+});
+
+describe("SHO_CUSTOMER_WRITE_PLANNERS maps the conformance group parses", () => {
+  it("plans d93-customer-group-kept as the group create", () => {
+    expect(planOf(commandOf("d93-customer-group-kept"))).toEqual({
+      kind: "call",
+      toolName: "customers_createGroup",
+      reply: "Групу створено.",
+      input: { name: "гуртівня" },
+    });
+  });
+
+  it("plans the d79-group-update price list onto a created group", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d93-customer-group-kept", {
+          params: {
+            new_name: paramsOf("d93-customer-group-kept")["new_name"],
+            price_list: reId(paramsOf("d79-group-update")["price_list"]),
+          },
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_createGroup",
+      reply: "Групу створено.",
+      input: { name: "гуртівня", priceListId: COMPANY_IDS["pl-partner"] },
+    });
+  });
+
+  it("sends d93-product-group to the LLM: a group of goods is no customer group", () => {
+    expect(whitelisted(resultOf(commandOf("d93-product-group")), NOW)).toEqual({
+      kind: "fallback",
+      reason: "unsupported_action",
+    });
+  });
+
+  it("plans d89-rename-group as that group's rename, with the misread noted", () => {
+    expect(planOf(asCompanyRecords("d89-rename-group"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateGroup",
+      reply: "Групу оновлено.",
+      input: { id: COMPANY_IDS["new-florists"], name: "квітникарі" },
+      notes: [`${SHO_READ_AS_FOCUS_GROUP_NOTE}: «її».`],
+    });
+  });
+
+  it("plans d79-group-update as the group's price list and nothing else", () => {
+    expect(planOf(asCompanyRecords("d79-group-update"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateGroup",
+      reply: "Групу оновлено.",
+      input: {
+        id: COMPANY_IDS["g-salons"],
+        priceListId: COMPANY_IDS["pl-partner"],
+      },
+    });
+  });
+
+  it("asks rather than plan an empty card when the parse names only the group", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d79-group-update", {
+          params: { group: reId(paramsOf("d79-group-update")["group"]) },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "blocking_need" });
+  });
+
+  it("plans d88-this-group-screen as that group's delete", () => {
+    expect(planOf(asCompanyRecords("d88-this-group-screen"))).toEqual({
+      kind: "call",
+      toolName: "customers_deleteGroup",
+      reply: "Групу видалено.",
+      input: { id: COMPANY_IDS["new-wedding"] },
+    });
+  });
+});
+
+describe("customers.setGroup plans one customers.updateCustomer", () => {
+  it("plans d88-there-group as {id, groupId} on the focused group", () => {
+    expect(planOf(asCompanyRecords("d88-there-group"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateCustomer",
+      reply: "Клієнта оновлено.",
+      input: {
+        id: COMPANY_IDS["c-lytvyn"],
+        groupId: COMPANY_IDS["new-wedding"],
+      },
+    });
+  });
+
+  it("plans d89-screen-when-chat-silent onto the group on screen", () => {
+    expect(planOf(asCompanyRecords("d89-screen-when-chat-silent"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateCustomer",
+      reply: "Клієнта оновлено.",
+      input: {
+        id: COMPANY_IDS["c-lytvyn"],
+        groupId: COMPANY_IDS["g-regular"],
+      },
+    });
+  });
+
+  it("sends the d79-group-case batch to the LLM: one card is not one write", () => {
+    expect(planOf(verbatim(shoReadParse("d79-group-case")))).toEqual({
+      kind: "fallback",
+      reason: "unsupported_param",
+    });
+  });
+
+  it("asks when the parse names customers and no group", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d88-there-group", {
+          params: { customers: reId(paramsOf("d88-there-group")["customers"]) },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "blocking_need" });
+  });
+
+  it("guesses no group from d78-unknown-group's text the list does not know", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d88-there-group", {
+          params: {
+            customers: reId(paramsOf("d88-there-group")["customers"]),
+            group: paramsOf("d78-unknown-group")["group"],
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unresolved_reference" });
+  });
+});
+
+describe("a lifecycle or group write binds no record the parse did not resolve", () => {
+  const AS_SAID: readonly string[] = [
+    "d90-closed-restore",
+    "d90-type-verb-offer",
+    "d88-this-group-screen",
+    "d89-rename-group",
+    "d88-there-group",
+  ];
+
+  it("refuses the catalogue's own record ids, which are no uuids", () => {
+    for (const caseId of AS_SAID) {
+      expect({ caseId, plan: planOf(commandOf(caseId)) }).toEqual({
+        caseId,
+        plan: { kind: "fallback", reason: "unsupported_param" },
+      });
+    }
   });
 });
