@@ -32,6 +32,8 @@ import {
   DELETE_COUNTERPARTY_NOTE,
   DELETE_CUSTOMER_NOTE,
   DELETE_GROUP_NOTE,
+  PREVIEW_CHANGES_LABEL,
+  PREVIEW_NO_CHANGES,
 } from "../services/preview-card.js";
 import { archiveCustomer } from "./archive-customer.js";
 import { createCounterparty } from "./create-counterparty.js";
@@ -277,6 +279,14 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
     ]);
   });
 
+  it("cards a customer update that names nothing as no changes", async () => {
+    const preview = await previewOf(updateCustomer, { id: fixtures.customerA });
+    expect(preview.title).toBe("Змінити клієнта: Анна Коваль");
+    expect(preview.lines).toEqual([
+      { label: PREVIEW_CHANGES_LABEL, value: PREVIEW_NO_CHANGES },
+    ]);
+  });
+
   it("shows no name line when the update names no name", async () => {
     const preview = await previewOf(updateCustomer, {
       id: fixtures.customerA,
@@ -356,6 +366,14 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
     ]);
   });
 
+  it("cards a group update that names nothing as no changes", async () => {
+    const preview = await previewOf(updateGroup, { id: fixtures.groupA });
+    expect(preview.title).toBe("Змінити групу клієнтів: Оптовики");
+    expect(preview.lines).toEqual([
+      { label: PREVIEW_CHANGES_LABEL, value: PREVIEW_NO_CHANGES },
+    ]);
+  });
+
   it("shows no name line when the group update names no name", async () => {
     const preview = await previewOf(updateGroup, {
       id: fixtures.groupA,
@@ -412,6 +430,16 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
         value: "UA111111111111111111111111111 → UA222222222222222222222222222",
       },
       { label: "Клієнт", value: "Анна Коваль → очистити" },
+    ]);
+  });
+
+  it("cards a counterparty update that names nothing as no changes", async () => {
+    const preview = await previewOf(updateCounterparty, {
+      id: fixtures.partyA,
+    });
+    expect(preview.title).toBe("Змінити контрагента: ТОВ Анна");
+    expect(preview.lines).toEqual([
+      { label: PREVIEW_CHANGES_LABEL, value: PREVIEW_NO_CHANGES },
     ]);
   });
 
