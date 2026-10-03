@@ -41,9 +41,6 @@ const CREATED: Readonly<Record<string, StaffAssistantRecordShape>> = {
   "pricing.createPriceList": view("price_list"),
 };
 
-export const STAFF_ASSISTANT_CREATE_ACTIONS: readonly string[] =
-  Object.keys(CREATED);
-
 export const STAFF_ASSISTANT_RECORD_SHAPES: Readonly<
   Record<string, StaffAssistantRecordShape>
 > = {

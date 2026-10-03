@@ -234,19 +234,15 @@ function recordsOf(
   command: ShoCommand,
   toolName: string,
   result: unknown,
-  paused: boolean,
-  open: boolean,
 ): readonly ShoFocusRecord[] {
-  if (!paused) {
-    return shoTurnRecords(command, toolName, result);
-  }
-  return open ? shoTurnRecords(command, toolName, undefined) : namedIn(command);
+  return stillPaused(result)
+    ? namedIn(command)
+    : shoTurnRecords(command, toolName, result);
 }
 
 interface Touched {
   readonly log: ShoTurnLog;
   readonly records: readonly ShoFocusRecord[];
-  readonly open: boolean;
   readonly turns: number;
 }
 
@@ -267,19 +263,13 @@ function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
     if (!parsed.success || ran === null) {
       continue;
     }
-    const result = resultIn(history, index, ran.toolCallId);
-    const paused = stillPaused(result);
-    const open = paused && turns === 0;
     touched.push({
       log: parsed.data,
-      open,
       turns,
       records: recordsOf(
         parsed.data.command,
         ran.toolName,
-        result,
-        paused,
-        open,
+        resultIn(history, index, ran.toolCallId),
       ),
     });
   }
@@ -318,5 +308,5 @@ export function shoPreviousFrom(
     return undefined;
   }
   const { command, at } = newest.log;
-  return !newest.open && shoWrites(command) ? undefined : { command, at };
+  return shoWrites(command) ? undefined : { command, at };
 }

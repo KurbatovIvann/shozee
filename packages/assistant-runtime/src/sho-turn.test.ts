@@ -9,7 +9,10 @@ import {
 } from "@showzy/validation/assistant-chat";
 import { describe, expect, it, vi } from "vitest";
 
-import { assistantInteractions } from "./assistant-interactions.js";
+import {
+  assistantInteractions,
+  type assistantInteractionTypes,
+} from "./assistant-interactions.js";
 import { shoFocusFrom, shoPreviousFrom } from "./sho-focus.js";
 
 import {
@@ -395,12 +398,14 @@ describe("runShoTurn over the stored log", () => {
   const openCard = async (): Promise<readonly ModelMessage[]> =>
     (await askCard()).continuation.messages;
 
-  const answered = async (
+  const scope = { conversationId: CONVERSATION, bind: BIND };
+
+  const cardFor = async (
+    kit: ReturnType<
+      typeof createAssistantKit<typeof assistantInteractionTypes>
+    >,
     ask: ShoTurnAsk,
-    result: unknown,
-  ): Promise<readonly ModelMessage[]> => {
-    const kit = createAssistantKit(testDeps(assistantInteractions));
-    const scope = { conversationId: CONVERSATION, bind: BIND };
+  ): Promise<string> => {
     const opened = await kit.open({
       ...scope,
       kind: "confirmation",
@@ -422,10 +427,19 @@ describe("runShoTurn over the stored log", () => {
     if (opened.kind !== "opened") {
       throw new Error("expected an open card");
     }
+    return opened.pause.interactionId;
+  };
+
+  const answered = async (
+    ask: ShoTurnAsk,
+    result: unknown,
+  ): Promise<readonly ModelMessage[]> => {
+    const kit = createAssistantKit(testDeps(assistantInteractions));
+    const interactionId = await cardFor(kit, ask);
     const claimed = await kit.claim({
       ...scope,
-      interactionId: opened.pause.interactionId,
-      revision: opened.pause.revision,
+      interactionId,
+      revision: 1,
       answer: { approved: true },
     });
     if (claimed.kind !== "claimed") {
@@ -434,16 +448,20 @@ describe("runShoTurn over the stored log", () => {
     return kit.resume(claimed, result).messages;
   };
 
-  it("holds the open card's command and no id while the person has not answered", async () => {
+  const walkedAwayFrom = async (ask: ShoTurnAsk): Promise<void> => {
+    const kit = createAssistantKit(testDeps(assistantInteractions));
+    const interactionId = await cardFor(kit, ask);
+    const dropped = await kit.abandon({ ...scope, interactionId });
+    if (dropped.kind !== "cancelled") {
+      throw new Error("expected the card to be dropped");
+    }
+  };
+
+  it("holds nothing of a write the person has not answered", async () => {
     const paused = await openCard();
 
-    expect(shoFocusFrom(paused, SESSION)).toEqual([
-      { type: "customer", id: "", name: "Катя", how: "created", turns: 0 },
-    ]);
-    expect(shoPreviousFrom(paused)).toEqual({
-      command: createKate,
-      at: NOW.toISOString(),
-    });
+    expect(shoFocusFrom(paused, SESSION)).toEqual([]);
+    expect(shoPreviousFrom(paused)).toBeUndefined();
   });
 
   it("takes the created id and drops previous once the write settles", async () => {
@@ -489,6 +507,23 @@ describe("runShoTurn over the stored log", () => {
         ],
       },
     ]);
+  });
+
+  it("asks with nothing from a card the person walked away from", async () => {
+    const ask = await askCard();
+    await walkedAwayFrom(ask);
+    const { engine, asked } = recordingEngine(readPlan);
+
+    await runShoTurn({
+      ...turnWith(readPlan, () =>
+        Promise.resolve({ kind: "ok", result: { items: [] } }),
+      ),
+      history: ask.continuation.messages,
+      engine,
+    });
+
+    expect(asked[0]?.focus).toEqual([]);
+    expect(asked[0]?.previous).toBeUndefined();
   });
 
   it("asks with an empty focus when the conversation holds no Шо turn", async () => {

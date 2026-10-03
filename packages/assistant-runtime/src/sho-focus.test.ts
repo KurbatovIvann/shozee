@@ -370,16 +370,14 @@ describe("shoFocusFrom", () => {
     expect(shoPreviousFrom(abandoned)).toBeUndefined();
   });
 
-  it("holds no id for a write still waiting on its card", () => {
+  it("holds nothing for a write that only ever paused", () => {
     const waiting = turn("створи клієнта Катя", {
       command: createKate,
       toolName: CREATE_CUSTOMER_TOOL,
       result: PAUSED,
     });
 
-    expect(shoFocusFrom(waiting, SESSION)).toEqual([
-      { type: "customer", id: "", name: "Катя", how: "created", turns: 0 },
-    ]);
+    expect(shoFocusFrom(waiting, SESSION)).toEqual([]);
   });
 });
 
@@ -406,14 +404,14 @@ describe("shoPreviousFrom", () => {
     expect(shoPreviousFrom(history)).toBeUndefined();
   });
 
-  it("gives the command of a card that is still open", () => {
+  it("gives nothing for a write whose card was never answered", () => {
     const history = turn("створи клієнта Катя", {
       command: createKate,
       toolName: CREATE_CUSTOMER_TOOL,
       result: PAUSED,
     });
 
-    expect(shoPreviousFrom(history)).toEqual({ command: createKate, at: AT });
+    expect(shoPreviousFrom(history)).toBeUndefined();
   });
 
   it("gives nothing when the conversation holds no Шо turn", () => {

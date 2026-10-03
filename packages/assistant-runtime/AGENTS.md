@@ -277,14 +277,14 @@ registry is injected into `createAssistantRuntime`; this package never imports
   result stored beside it, through `STAFF_ASSISTANT_RECORD_SHAPES` — which
   carries each façade's own keys **and** the record kind, so nothing here
   keys a second table by the same tool names. Reading rather than storing
-  them is what closes a card. A card is open while its result is still
-  `{status: "paused"}` **and** no later command stands in the log: then the
-  create has no id and `previous` is that card's command (D93). The kit's
-  resume puts the real result in its place, so a confirmed write hands back
-  its created id and `previous` goes null; a card the person walked away from
-  (the next message abandons the pause) is one command older by the parse
-  after it, and its records and its `previous` go with it, with no second
-  open-or-closed check against Redis. The walk is newest first, counts the person's commands since
+  them is what makes a preview card cost nothing: a turn whose stored result
+  is still `{status: "paused"}` wrote no record, so it holds no `created`
+  entry and is never `previous`, whether the person answered that card later
+  or walked away from it. The kit's resume puts the real result in the
+  paused one's place, so a confirmed write hands back its created id. Шо
+  never runs while a card is open (`shoChatTurn` is reached only with no open
+  pause), so the open card D93 wants is the route's fact to pass in, not
+  something this file re-derives (SHO-776). The walk is newest first, counts the person's commands since
   each entry for `turns`, marks another session's entries `earlier`, keeps one
   entry per record and one marker per kind, and sends at most
   `SHO_MOST_FOCUS`.
