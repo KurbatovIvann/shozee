@@ -301,11 +301,7 @@ describe("composition root identity", () => {
         .filter((edge) => edge.caller === "documents.requestSign")
         .map((edge) => edge.callee)
         .toSorted(),
-    ).toEqual([
-      "companies.get",
-      "docGeneration.getArtifact",
-      "docSigning.get",
-    ]);
+    ).toEqual(["companies.get", "docGeneration.getArtifact", "docSigning.get"]);
     expect(
       edges
         .filter((edge) => edge.caller === "documents.cancel")
