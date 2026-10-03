@@ -4,6 +4,10 @@ import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  assertWalkSkipsLintProbes,
+  TRANSIENT_LINT_PROBE_DIR,
+} from "@showzy/tooling/lint-probe";
+import {
   ASSISTANT_SURFACE_REGISTRY,
   CUSTOMER_ENTITY_PROMPT_LINE,
   CUSTOMERS_LIST_PROMPT_LINE,
@@ -86,6 +90,7 @@ const SKIP_DIR = new Set([
   ".turbo",
   "coverage",
   ".next",
+  TRANSIENT_LINT_PROBE_DIR,
 ]);
 
 function walkTs(directory: string): string[] {
@@ -179,6 +184,12 @@ describe("promptLine definitions (SHO-457)", () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe("repo walk and transient lint probes (SHO-863)", () => {
+  it("never reads a file the web boundary suite writes and deletes", () => {
+    assertWalkSkipsLintProbes(walkTs);
   });
 });
 
