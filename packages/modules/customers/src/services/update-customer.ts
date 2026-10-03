@@ -56,6 +56,7 @@ export async function updateStaffCustomer(env: {
     companyId: ctx.companyId,
     id: input.id,
     columns: {
+      name: companyCustomers.name,
       phone: companyCustomers.phone,
       email: companyCustomers.email,
       userId: companyCustomers.userId,
@@ -65,6 +66,7 @@ export async function updateStaffCustomer(env: {
     },
   });
   const merged = {
+    name: keepOmitted(input.name, current.name),
     phone: nullableText(keepOmitted(input.phone, current.phone)),
     email: nullableText(keepOmitted(input.email, current.email)),
     userId: nullableText(keepOmitted(input.userId, current.userId)),
@@ -84,7 +86,7 @@ export async function updateStaffCustomer(env: {
     const updated = (
       await db
         .update(companyCustomers)
-        .set({ name: input.name, ...merged })
+        .set(merged)
         .where(
           and(
             eq(companyCustomers.companyId, ctx.companyId),

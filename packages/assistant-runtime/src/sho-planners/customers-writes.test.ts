@@ -214,13 +214,38 @@ describe("SHO_CUSTOMER_WRITE_PLANNERS maps the conformance update parses", () =>
     });
   });
 
-  it("sends the D84 notes-only d95-named-update to the LLM", () => {
-    for (const caseId of ["d95-named-update", "d95-named-update-ru"]) {
-      expect({ caseId, plan: planOf(asCompanyRecords(caseId)) }).toEqual({
-        caseId,
-        plan: { kind: "fallback", reason: "unsupported_param" },
-      });
-    }
+  it("plans the D84 notes-only d95-named-update with no name at all", () => {
+    expect(planOf(asCompanyRecords("d95-named-update"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateCustomer",
+      reply: "Клієнта оновлено.",
+      input: {
+        id: COMPANY_IDS["c-honchar"],
+        notes: "бере тільки оптом",
+      },
+    });
+  });
+
+  it("plans the Russian notes-only d95-named-update-ru with no name either", () => {
+    expect(planOf(asCompanyRecords("d95-named-update-ru"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateCustomer",
+      reply: "Клієнта оновлено.",
+      input: {
+        id: COMPANY_IDS["c-savchuk"],
+        notes: "забирает сама после обеда",
+      },
+    });
+  });
+
+  it("asks rather than plan an empty card when the parse names only the customer", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d95-named-update", {
+          params: { customer: reId(paramsOf("d95-named-update")["customer"]) },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "blocking_need" });
   });
 
   it("plans the d79-group-update group as the customer's groupId", () => {

@@ -82,6 +82,7 @@ async function seededGroup(): Promise<string> {
 async function storedCustomer(id: string) {
   const found = await kit.db.runtime.db
     .select({
+      name: companyCustomers.name,
       phone: companyCustomers.phone,
       email: companyCustomers.email,
       notes: companyCustomers.notes,
@@ -178,6 +179,22 @@ describe("a customer edit the assistant makes from a listed row", () => {
     expect(stored?.phone).toBe("0671112233");
     expect(stored?.email).toBe(`${id}@example.com`);
     expect(stored?.notes).toBe(KEPT_NOTE);
+  });
+
+  it("adds a note without a name, so the stored name is never guessed", async () => {
+    const name = `Віталій Гончар ${randomUUID()}`;
+    const id = await seededCustomer(name);
+    const context = request();
+    await listedRow(context, name, id);
+
+    await callTool(context, UPDATE_TOOL, {
+      id,
+      notes: "бере тільки оптом",
+    });
+
+    const stored = await storedCustomer(id);
+    expect(stored?.notes).toBe("бере тільки оптом");
+    expect(stored?.name).toBe(name);
   });
 
   it("keeps notes when the customer is added to a group", async () => {
