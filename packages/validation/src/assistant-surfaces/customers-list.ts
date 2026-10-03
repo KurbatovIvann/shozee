@@ -21,8 +21,11 @@ import {
   type AssistantSurfaceDestinationDeclaration,
 } from "./destination.js";
 import {
+  assistantPageItems,
+  assistantPageNextCursor,
   isRecord,
   lastSuccessfulResult,
+  textOrNull,
   unwrapToolOutput,
   type AssistantSurfaceToolResult,
 } from "./helpers.js";
@@ -74,13 +77,6 @@ export type AssistantCustomersListData = {
   readonly collection: AssistantCollectionDescriptor;
 };
 
-function optionalText(value: unknown): string | null {
-  if (typeof value !== "string" || value.length === 0) {
-    return null;
-  }
-  return value;
-}
-
 function parseCustomerRow(row: unknown): AssistantCustomersListRowData | null {
   if (!isRecord(row)) {
     return null;
@@ -93,28 +89,12 @@ function parseCustomerRow(row: unknown): AssistantCustomersListRowData | null {
   return {
     customerId,
     name,
-    phone: optionalText(row["phone"]),
-    email: optionalText(row["email"]),
-    status: optionalText(row["status"]),
-    groupId: optionalText(row["groupId"]),
-    priceListId: optionalText(row["priceListId"]),
+    phone: textOrNull(row["phone"]),
+    email: textOrNull(row["email"]),
+    status: textOrNull(row["status"]),
+    groupId: textOrNull(row["groupId"]),
+    priceListId: textOrNull(row["priceListId"]),
   };
-}
-
-function pageItems(payload: unknown): unknown[] {
-  if (!isRecord(payload)) {
-    return [];
-  }
-  const items = payload["items"];
-  return Array.isArray(items) ? items : [];
-}
-
-function pageNextCursor(payload: unknown): string | null {
-  if (!isRecord(payload)) {
-    return null;
-  }
-  const cursor = payload["nextCursor"];
-  return typeof cursor === "string" && cursor.length > 0 ? cursor : null;
 }
 
 /**
@@ -133,7 +113,7 @@ export function parseCustomersListSurface(
   }
   const { payload, clipped } = unwrapToolOutput(pageResult.output);
   const parsedRows: AssistantCustomersListRowData[] = [];
-  for (const row of pageItems(payload)) {
+  for (const row of assistantPageItems(payload)) {
     const parsed = parseCustomerRow(row);
     if (parsed !== null) {
       parsedRows.push(parsed);
@@ -143,7 +123,7 @@ export function parseCustomersListSurface(
     parsedRows,
     ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   );
-  const nextCursor = pageNextCursor(payload);
+  const nextCursor = assistantPageNextCursor(payload);
   const hasMore = clipped || nextCursor !== null || capped.truncatedByCap;
   return {
     kind: "customers-list",

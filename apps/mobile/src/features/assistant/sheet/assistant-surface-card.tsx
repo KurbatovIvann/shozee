@@ -63,6 +63,8 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
   switch (surface.kind) {
     case "orders-list":
     case "customers-list":
+    case "products-list":
+    case "price-lists":
       return surface.emptyTitle !== null ? null : (
         <AssistantCollectionBlock
           collection={surface.collection}

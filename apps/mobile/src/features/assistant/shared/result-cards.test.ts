@@ -1547,7 +1547,7 @@ describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
 });
 
 describe("assistant result-card surface registry", () => {
-  it("registers orders kinds plus customers-list and search-results with English prompt lines", () => {
+  it("registers orders kinds plus the customers, products and price-list lists and search-results with English prompt lines", () => {
     expect(
       ASSISTANT_RESULT_SURFACE_REGISTRY.map((entry) => entry.kind),
     ).toEqual([
@@ -1557,6 +1557,8 @@ describe("assistant result-card surface registry", () => {
       "customer-entity",
       "product-entity",
       "customers-list",
+      "products-list",
+      "price-lists",
       "search-results",
     ]);
     for (const entry of ASSISTANT_RESULT_SURFACE_REGISTRY) {
@@ -1573,6 +1575,8 @@ describe("assistant result-card surface registry", () => {
     expect(
       ASSISTANT_RESULT_SURFACE_REGISTRY.map((entry) => entry.destination),
     ).toEqual([
+      { kind: "screen" },
+      { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },

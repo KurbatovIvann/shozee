@@ -70,6 +70,18 @@ export function textOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+export function assistantPageItems(payload: unknown): readonly unknown[] {
+  if (!isRecord(payload)) {
+    return [];
+  }
+  const items = payload["items"];
+  return Array.isArray(items) ? items : [];
+}
+
+export function assistantPageNextCursor(payload: unknown): string | null {
+  return isRecord(payload) ? textOrNull(payload["nextCursor"]) : null;
+}
+
 export function isAssistantClippedToolEnvelope(
   value: unknown,
 ): value is AssistantClippedToolEnvelope {

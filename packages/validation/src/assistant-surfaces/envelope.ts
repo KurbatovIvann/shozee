@@ -17,6 +17,8 @@ import {
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
 } from "./orders-list.js";
+import { PRICE_LISTS_PRICE_LISTS_TOOL } from "./price-lists.js";
+import { PRODUCTS_LIST_PRODUCTS_TOOL } from "./products-list.js";
 import {
   ASSISTANT_SURFACE_REGISTRY,
   type AssistantSurfaceDescriptor,
@@ -93,6 +95,22 @@ function toolCallIdsForSurface(
       const page = lastSuccessfulResult(
         results,
         (name) => name === CUSTOMERS_LIST_CUSTOMERS_TOOL,
+      );
+      pushUniqueId(ids, page?.toolCallId);
+      return ids;
+    }
+    case "products-list": {
+      const page = lastSuccessfulResult(
+        results,
+        (name) => name === PRODUCTS_LIST_PRODUCTS_TOOL,
+      );
+      pushUniqueId(ids, page?.toolCallId);
+      return ids;
+    }
+    case "price-lists": {
+      const page = lastSuccessfulResult(
+        results,
+        (name) => name === PRICE_LISTS_PRICE_LISTS_TOOL,
       );
       pushUniqueId(ids, page?.toolCallId);
       return ids;

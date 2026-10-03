@@ -27,9 +27,17 @@ import {
   type AssistantOrdersListData,
 } from "./orders-list.js";
 import {
+  parsePriceListsSurface,
+  type AssistantPriceListsData,
+} from "./price-lists.js";
+import {
   parseProductEntitySurfaces,
   type AssistantProductEntityData,
 } from "./product-entity.js";
+import {
+  parseProductsListSurface,
+  type AssistantProductsListData,
+} from "./products-list.js";
 import {
   parseSearchResultsSurface,
   type AssistantSearchResultsData,
@@ -42,6 +50,8 @@ export type AssistantSurfaceData =
   | AssistantCustomerEntityData
   | AssistantProductEntityData
   | AssistantCustomersListData
+  | AssistantProductsListData
+  | AssistantPriceListsData
   | AssistantSearchResultsData;
 
 export type AssistantSurfaceKind = AssistantSurfaceData["kind"];
@@ -56,6 +66,8 @@ export function assistantSurfacesFromToolResults(
   const list = parseOrdersListSurface(results);
   const aggregate = list === null ? parseOrdersAggregateSurface(results) : null;
   const customers = parseCustomersListSurface(results);
+  const products = parseProductsListSurface(results);
+  const priceLists = parsePriceListsSurface(results);
   const searchResults = parseSearchResultsSurface(results);
   const entities = parseOrderEntitySurfaces(results);
   const customerEntities = parseCustomerEntitySurfaces(results);
@@ -69,6 +81,12 @@ export function assistantSurfacesFromToolResults(
   }
   if (customers !== null) {
     surfaces.push(customers);
+  }
+  if (products !== null) {
+    surfaces.push(products);
+  }
+  if (priceLists !== null) {
+    surfaces.push(priceLists);
   }
   if (searchResults !== null) {
     surfaces.push(searchResults);
@@ -99,6 +117,8 @@ export function assistantSurfaceSlot(surface: AssistantSurfaceData): string {
     case "product-entity":
       return `product-entity:${surface.productId}`;
     case "customers-list":
+    case "products-list":
+    case "price-lists":
     case "search-results":
       return surface.kind;
   }
