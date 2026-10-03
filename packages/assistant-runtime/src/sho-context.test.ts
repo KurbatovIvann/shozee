@@ -6,7 +6,10 @@ import {
 } from "@showzy/sho-protocol";
 import { describe, expect, it } from "vitest";
 
-import { shoCustomerWriteParse } from "./sho-planners/__tests__/customer-write-parses.js";
+import {
+  cloneShoParse,
+  shoCustomerWriteParse,
+} from "./sho-planners/__tests__/customer-write-parses.js";
 import { SHO_CUSTOMER_WRITE_PLANNERS } from "./sho-planners/customers-writes.js";
 import {
   buildShoContext,
@@ -72,17 +75,20 @@ describe("buildShoContext", () => {
     expect(built.context.partial).toBeUndefined();
   });
 
-  it("marks the counterparties the read truncated as partial", () => {
+  it("marks a list the read cut below the builder's own cap as partial", () => {
+    const read = entries("counterparty", 1);
     const built = buildShoContext(
       snapshot({
         customers: {
           customers: list(entries("customer", 1)),
           groups: list([]),
-          counterparties: list(entries("counterparty", 1), true),
+          counterparties: list(read, true),
         },
       }),
     );
 
+    expect(read.length).toBeLessThan(SHO_CONTEXT_LIMITS.counterparties);
+    expect(built.context.counterparties).toHaveLength(read.length);
     expect(built.context.partial).toEqual(["counterparties"]);
   });
 
@@ -251,9 +257,7 @@ const CONFIDENT = { action: 0.99, margin: 0.8, certainty: 0.9, spans: 0.9 };
 const PLANNED_AT = new Date("2026-10-03T12:00:00.000Z");
 
 function counterpartyCommand(caseId: string, counterpartyId: string) {
-  const parse = JSON.parse(
-    JSON.stringify(shoCustomerWriteParse(caseId)),
-  ) as Record<string, unknown>;
+  const parse = cloneShoParse(shoCustomerWriteParse(caseId));
   const params = parse["params"] as Record<string, Record<string, unknown>>;
   const said = params["counterparty"];
   if (said === undefined) {

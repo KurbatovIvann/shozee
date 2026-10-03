@@ -185,6 +185,30 @@ describe("customers.listNameIndex", () => {
     expect(capped.counterparties.truncated).toBe(true);
   });
 
+  it("leaves a list whose rows exactly fill the cap untruncated", async () => {
+    const own = await readCustomersNameIndex({
+      db: kit.db.runtime.db,
+      companyId: kitIdentities.companies.a,
+      caps: { customers: 1_000, groups: 1_000, counterparties: 1_000 },
+    });
+    const atTheCap = await readCustomersNameIndex({
+      db: kit.db.runtime.db,
+      companyId: kitIdentities.companies.a,
+      caps: {
+        customers: own.customers.items.length,
+        groups: own.groups.items.length,
+        counterparties: own.counterparties.items.length,
+      },
+    });
+
+    expect(atTheCap.counterparties.items).toHaveLength(
+      own.counterparties.items.length,
+    );
+    expect(atTheCap.counterparties.truncated).toBe(false);
+    expect(atTheCap.customers.truncated).toBe(false);
+    expect(atTheCap.groups.truncated).toBe(false);
+  });
+
   it("excludes archived customers", async () => {
     const listed = await kit.invoke(listNameIndex, {});
     expect(listed.customers.items.map((entry) => entry.id)).not.toContain(
