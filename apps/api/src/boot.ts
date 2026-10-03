@@ -187,6 +187,10 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
           logger,
           staffCompany: createStaffCompanyReader(pipeline),
           slots: streamSlots,
+          rateLimit: {
+            store: rateLimitStore,
+            sessionsPerMinutePerUser: config.voice.sessionsPerMinutePerUser,
+          },
           trustedOrigins: authTrustedOrigins({
             baseUrl: config.auth.url,
             webOrigins: config.auth.webOrigins,

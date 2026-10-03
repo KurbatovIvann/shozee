@@ -192,6 +192,8 @@ const envObjectSchema = z.object({
     .max(AI_UNKNOWN_MODEL_TURN_USD_MAX)
     .default(0.1),
 
+  VOICE_SESSIONS_PER_MINUTE_PER_USER: z.coerce.number().int().min(0).default(6),
+
   VOICE_GOOGLE_CREDENTIALS_FILE: z.string().min(1).optional(),
 
   VOICE_GOOGLE_PROJECT_ID: z.string().min(1).optional(),
@@ -379,6 +381,7 @@ export interface ServerConfig {
     readonly unknownModelTurnUsd: number;
   };
   readonly voice: {
+    readonly sessionsPerMinutePerUser: number;
     readonly googleCredentialsFile: string | undefined;
     readonly googleProjectId: string | undefined;
     readonly googleLocation: string;
@@ -499,6 +502,7 @@ export function loadServerConfig(
       unknownModelTurnUsd: parsed.AI_UNKNOWN_MODEL_TURN_USD,
     },
     voice: {
+      sessionsPerMinutePerUser: parsed.VOICE_SESSIONS_PER_MINUTE_PER_USER,
       googleCredentialsFile: parsed.VOICE_GOOGLE_CREDENTIALS_FILE,
       googleProjectId: parsed.VOICE_GOOGLE_PROJECT_ID,
       googleLocation: parsed.VOICE_GOOGLE_LOCATION,

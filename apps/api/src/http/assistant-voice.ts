@@ -23,6 +23,10 @@ import {
 import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
 import type { VoiceRecognizer } from "./assistant-voice-chirp.js";
 import {
+  admitVoiceSession,
+  type VoiceSessionRateLimit,
+} from "./assistant-voice-limit.js";
+import {
   startVoiceSession,
   type VoiceSession,
   type VoiceSessionCaller,
@@ -36,6 +40,7 @@ export type VoiceStreamSlots = Pick<
 export interface AssistantVoiceRuntime {
   readonly auth: AssistantKitAuth;
   readonly logger: Logger;
+  readonly rateLimit: VoiceSessionRateLimit;
   readonly recognizer: VoiceRecognizer;
   readonly staffCompany: (caller: AssistantCaller) => Promise<string>;
   readonly slots: VoiceStreamSlots;
@@ -158,6 +163,34 @@ export function createAssistantVoiceApp(
 
     if (c.req.header("upgrade")?.toLowerCase() !== "websocket") {
       return c.body(null, 426);
+    }
+
+    const admission = await admitVoiceSession({
+      rateLimit: runtime.rateLimit,
+      logger: runtime.logger,
+      requestId,
+      userId: caller.userId,
+    });
+    if (!admission.admitted) {
+      runtime.logger.info(
+        {
+          request_id: requestId,
+          user_id: caller.userId,
+          company_id: companyId,
+          retry_after_sec: admission.retryAfterSec,
+        },
+        "assistant voice refused a caller over the per-user session limit",
+      );
+      const response = json(
+        429,
+        {
+          error: { code: "RATE_LIMITED" },
+          retryAfterSec: admission.retryAfterSec,
+        },
+        requestId,
+      );
+      response.headers.set("Retry-After", String(admission.retryAfterSec));
+      return response;
     }
 
     const streamId = randomUUID();
