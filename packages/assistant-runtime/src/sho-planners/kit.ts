@@ -8,7 +8,6 @@ export const SHO_PLAN_FALLBACK_REASONS = [
   "unrecognized_shape",
   "ui_answer",
   "needs_dialogue",
-  "needs_reference",
   "unsupported_action",
   "conversation_dependent",
   "low_confidence",
@@ -55,11 +54,12 @@ const byQuery = (value: string): ShoLocatorOutcome =>
     : { kind: "locator", locator: { by: "query", value } };
 
 export function shoLocatorFor(ref: ShoRef): ShoLocatorOutcome {
-  if (
-    ref.focus !== undefined ||
-    ref.status === "previous" ||
-    ref.status === "context"
-  ) {
+  if (ref.status === "context") {
+    return typeof ref.id === "string" && ref.id.length > 0
+      ? { kind: "locator", locator: { by: "id", id: ref.id } }
+      : refused("unresolved_reference");
+  }
+  if (ref.focus !== undefined || ref.status === "previous") {
     return refused("conversation_dependent");
   }
   if (ref.status === "resolved") {

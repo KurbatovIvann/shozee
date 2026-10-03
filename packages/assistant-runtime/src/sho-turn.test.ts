@@ -1,5 +1,8 @@
 import type { ModelMessage, ToolSet } from "@showzy/assistant-kit";
+import { shoCommandSchema, type ShoCommand } from "@showzy/sho-protocol";
 import { describe, expect, it, vi } from "vitest";
+
+import { shoFocusFrom, shoPreviousFrom } from "./sho-focus.js";
 
 import {
   runShoTurn,
@@ -8,11 +11,13 @@ import {
   type ShoEngine,
   type ShoPlan,
   type ShoTurnInput,
+  type ShoTurnRequest,
 } from "./sho-turn.js";
 
 const NOW = new Date("2026-09-11T09:30:00.000Z");
 const COMMAND = "0d1f4b2a-6c3e-4a1d-9f55-7b2c8e1a4d60";
 const TOOL = "customers_list_customers";
+const SESSION = "4f2d6c1b-88a3-4e59-9a07-3c5d2e8f1b44";
 
 const engineOf = (plan: ShoPlan): ShoEngine => ({
   plan: () => Promise.resolve(plan),
@@ -35,6 +40,7 @@ function turnWith(
   return {
     text: "покажи клієнтів",
     commandId: COMMAND,
+    sessionId: SESSION,
     now: NOW,
     history,
     tools: toolsWith(execute),
@@ -213,5 +219,123 @@ describe("runShoTurn", () => {
       turnWith(readPlan, () => Promise.reject(new Error("boom"))),
     );
     expect(threw).toEqual({ kind: "fallback", reason: "tool_failed" });
+  });
+});
+
+describe("runShoTurn over the stored log", () => {
+  const CREATED = "11111111-1111-4111-8111-111111111111";
+
+  const createKate: ShoCommand = shoCommandSchema.parse({
+    text: "створи клієнта Катя",
+    action: "customers.createCustomer",
+    kind: "write",
+    effect: "write",
+    confirm: "card",
+    params: { new_name: { text: "Катя" } },
+    needs: [],
+    ready: true,
+    catalogued: true,
+    confidence: { action: 0.99, margin: 0.5, certainty: 0.9, spans: 0.9 },
+    refPrevious: {},
+    creates: { type: "customer", name: "Катя" },
+  });
+
+  const recordingEngine = (
+    plan: ShoPlan,
+  ): { readonly engine: ShoEngine; readonly asked: ShoTurnRequest[] } => {
+    const asked: ShoTurnRequest[] = [];
+    return {
+      asked,
+      engine: {
+        plan: (request) => {
+          asked.push(request);
+          return Promise.resolve(plan);
+        },
+      },
+    };
+  };
+
+  const createPlan: ShoPlan = {
+    kind: "call",
+    toolName: TOOL,
+    input: { name: "Катя" },
+    reply: "Створив Катю.",
+    command: createKate,
+  };
+
+  const created = async (): Promise<readonly ModelMessage[]> => {
+    const { engine } = recordingEngine(createPlan);
+    const outcome = await runShoTurn({
+      ...turnWith(readPlan, () =>
+        Promise.resolve({ kind: "ok", result: { id: CREATED, name: "Катя" } }),
+      ),
+      text: "створи клієнта Катя",
+      engine,
+    });
+    return outcome.kind === "settled" ? outcome.appended : [];
+  };
+
+  it("stores the Шо turn beside the tool call it ran", async () => {
+    const appended = await created();
+
+    expect(shoFocusFrom(appended, SESSION)).toEqual([
+      { type: "customer", id: CREATED, name: "Катя", how: "created", turns: 0 },
+    ]);
+    expect(shoPreviousFrom(appended)).toBeUndefined();
+  });
+
+  it("asks Шо with the focus the stored log holds, never with what a client sent", async () => {
+    const appended = await created();
+    const { engine, asked } = recordingEngine(readPlan);
+
+    await runShoTurn({
+      ...turnWith(readPlan, () =>
+        Promise.resolve({ kind: "ok", result: { items: [] } }),
+      ),
+      text: "створи для неї замовлення",
+      history: appended,
+      engine,
+    });
+
+    expect(asked).toEqual([
+      {
+        text: "створи для неї замовлення",
+        now: NOW,
+        focus: [
+          {
+            type: "customer",
+            id: CREATED,
+            name: "Катя",
+            how: "created",
+            turns: 0,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("asks with an empty focus when the conversation holds no Шо turn", async () => {
+    const { engine, asked } = recordingEngine(readPlan);
+
+    await runShoTurn({
+      ...turnWith(readPlan, () =>
+        Promise.resolve({ kind: "ok", result: { items: [] } }),
+      ),
+      engine,
+    });
+
+    expect(asked[0]?.focus).toEqual([]);
+  });
+
+  it("stores nothing when the engine named no command", async () => {
+    const outcome = await runShoTurn(
+      turnWith(readPlan, () =>
+        Promise.resolve({ kind: "ok", result: { items: [] } }),
+      ),
+    );
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(shoFocusFrom(outcome.appended, SESSION)).toEqual([]);
   });
 });

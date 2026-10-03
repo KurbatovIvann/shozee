@@ -30,7 +30,7 @@ export {
 
 export const SHO_ACTION_CONFIDENCE_FLOOR = 0.95;
 
-export type ShoNeedRoute = "card" | "dialogue";
+export type ShoNeedRoute = "card" | "resolver" | "dialogue";
 
 export const SHO_ACTION_PLANNERS: ShoActionPlanners = SHO_READ_PLANNERS;
 
@@ -40,9 +40,10 @@ export interface ShoPlannerDeps {
 }
 
 export function shoNeedRoute(need: ShoNeed): ShoNeedRoute {
-  return need.reason === "ambiguous" || need.reason === "unknown"
-    ? "card"
-    : "dialogue";
+  if (need.reason === "ambiguous" || need.reason === "unknown") {
+    return "card";
+  }
+  return need.reason === "check_reference" ? "resolver" : "dialogue";
 }
 
 export function shoWrites(command: ShoCommand): boolean {
@@ -75,14 +76,6 @@ function gate(command: ShoCommand): ShoPlanFallbackReason | null {
   }
   if (shoAsksDialogueModel(command)) {
     return "needs_dialogue";
-  }
-  if (
-    command.needs.some(
-      (need) =>
-        need.reason === "reference" || need.reason === "check_reference",
-    )
-  ) {
-    return "needs_reference";
   }
   if (
     command.needs.some(

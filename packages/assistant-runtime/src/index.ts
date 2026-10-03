@@ -22,6 +22,7 @@ export * from "./events.js";
 export * from "./sho-context.js";
 export * from "./sho-context-source.js";
 export * from "./sho-engine.js";
+export * from "./sho-focus.js";
 export * from "./sho-plan.js";
 export * from "./sho-planners/reads.js";
 export * from "./sho-turn.js";

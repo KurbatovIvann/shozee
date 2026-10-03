@@ -154,13 +154,7 @@ describe("createShoPlanner routes to the dialogue model", () => {
       text: "те саме для Олі",
       action: "orders.list",
       needs: [{ path: "customer", reason: "reference" }],
-      expected: "needs_reference",
-    },
-    {
-      text: "а по ньому що",
-      action: "orders.get",
-      needs: [{ path: "order", reason: "check_reference", blocking: false }],
-      expected: "needs_reference",
+      expected: "blocking_need",
     },
     {
       text: "Ручку, стрілочку наверху. Создай мне.",
@@ -500,6 +494,8 @@ describe("shoNeedRoute", () => {
   const needs: readonly (RecordedNeed & { readonly route: string })[] = [
     { path: "customer", reason: "ambiguous", route: "card" },
     { path: "product", reason: "unknown", route: "card" },
+    { path: "customer", reason: "check_reference", route: "resolver" },
+    { path: "customer", reason: "reference", route: "dialogue" },
     { path: "action", reason: "read_as_find", route: "dialogue" },
     { path: "action", reason: "language", route: "dialogue" },
     { path: "items.0.quantity", reason: "missing", route: "dialogue" },
@@ -606,6 +602,26 @@ describe("shoLocatorFor", () => {
   it("refuses an unchecked reference that is neither phone nor email", () => {
     expect(
       shoLocatorFor(ref({ text: "той самий", status: "unchecked" })),
+    ).toEqual({ kind: "fallback", reason: "unresolved_reference" });
+  });
+
+  it("takes the id the focus bound a reference word to", () => {
+    expect(
+      shoLocatorFor(
+        ref({
+          text: "неї",
+          status: "context",
+          id: "c-1",
+          name: "Катя",
+          focus: 0,
+        }),
+      ),
+    ).toEqual({ kind: "locator", locator: { by: "id", id: "c-1" } });
+  });
+
+  it("refuses a focus binding the runtime gave no id", () => {
+    expect(
+      shoLocatorFor(ref({ text: "неї", status: "context", focus: 0 })),
     ).toEqual({ kind: "fallback", reason: "unresolved_reference" });
   });
 

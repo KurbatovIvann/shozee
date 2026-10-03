@@ -76,6 +76,7 @@ const refusing = (error: Error): ShoContextSource => ({
 const request = {
   text: "додай Олю",
   now: { year: 2026, month: 10, day: 2, hour: 12, minute: 30 },
+  focus: [],
   deadlineMs: 900,
   debug: false,
 };

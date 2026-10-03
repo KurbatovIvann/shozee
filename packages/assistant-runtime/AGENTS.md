@@ -61,13 +61,16 @@ registry is injected into `createAssistantRuntime`; this package never imports
 - `sho-plan.ts` — that planner (SHO-769). One gate over the parse result, then
   one registered action planner. The gate sends a turn to the dialogue model
   when Шо read more than one command, `none`, a `ui` answer, a `how_to` or
-  `language` need, a `reference` / `check_reference` need (until SHO-770),
-  `unsupported` on the action, a refinement or a reference to an earlier
+  `language` need, `unsupported` on the action, a refinement or a reference to an earlier
   command, action confidence below the calibrated `0.95`, or a blocking need
   no card can settle. `shoLocatorFor` is the other half of that rule: an
   ambiguous or unknown name with candidates, and an unchecked phone or email,
   become a `by: "query"` locator, so the domain resolver raises the picker and
-  the person taps a card (the SHO-747 rule) instead of the model guessing.
+  the person taps a card (the SHO-747 rule) instead of the model guessing. A
+  ref the runtime bound to the focus (`status: "context"`, SHO-770) is an
+  id locator, and the `check_reference` need D90 offers it with routes to
+  `resolver` rather than to the model; a focus-ambiguous pronoun stays
+  `conversation_dependent`.
   Action planners are registered per action in `SHO_ACTION_PLANNERS` and
   enabled per deployment by `SHO_ACTIONS`, empty by default — an empty list
   means every turn goes to the LLM, as it did before. A planner declares
@@ -204,6 +207,15 @@ registry is injected into `createAssistantRuntime`; this package never imports
   A turn writes under the token the accept stored rather than deriving one
   again, and the placeholder must still be the conversation's latest message —
   only the latest message can be written to.
+- `sho-focus.ts` — `focus` and `previous`, derived from the stored
+  conversation log on every parse and never taken from a client (SHO-770,
+  D78/D88–D90). A Шо turn writes one typed entry (the command, the records it
+  created, showed, listed or named, the session and the moment) into the
+  tool-call message's `providerOptions.sho`, which no provider reads; the next
+  turn walks that log newest first, counts the person's commands since each
+  entry for `turns`, marks another session's entries `earlier`, and sends at
+  most `SHO_MOST_FOCUS` records. `previous` is the newest entry's command
+  while its card is open or it was a read, and nothing after a write.
 - `sho-context.ts`, `sho-context-source.ts` — the Шо parse context (ADR-0051,
   SHO-767): the three `listNameIndex` reads as the staff member, clipped to
   `@showzy/sho-protocol`'s `CONTEXT_LIMITS` and the 8 MB upload budget so an

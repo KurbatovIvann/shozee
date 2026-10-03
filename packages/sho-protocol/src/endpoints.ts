@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { shoCommandSchema, shoResultSchema } from "./result.js";
+import {
+  SHO_CREATES_TYPES,
+  shoCommandSchema,
+  shoResultSchema,
+} from "./result.js";
 
 export const SHO_MAX_TEXT_LENGTH = 400;
 export const SHO_MAX_CONTEXT_BYTES = 8 * 1024 * 1024;
@@ -35,10 +39,46 @@ export const shoNowSchema = z.object({
   minute: z.number().int(),
 });
 
+export const SHO_CONTEXT_LIMITS = {
+  products: 20_000,
+  variantsPerProduct: 200,
+  variants: 100_000,
+  customers: 50_000,
+  counterparties: 50_000,
+  groups: 2_000,
+  priceLists: 2_000,
+  id: 64,
+  name: 120,
+  aliases: 10,
+  revision: 128,
+} as const;
+
 export const shoPreviousSchema = z.object({
   command: shoCommandSchema,
   at: z.union([z.string(), z.number()]).optional(),
 });
+
+export const SHO_MOST_FOCUS = 8;
+
+export const SHO_FOCUS_HOWS = [
+  "created",
+  "opened",
+  "shown",
+  "named",
+  "listed",
+] as const;
+
+export const shoFocusEntrySchema = z.strictObject({
+  type: z.enum(SHO_CREATES_TYPES),
+  id: z.string().max(SHO_CONTEXT_LIMITS.id),
+  name: z.string().max(SHO_CONTEXT_LIMITS.name),
+  how: z.enum(SHO_FOCUS_HOWS),
+  turns: z.number().int().nonnegative().optional(),
+  earlier: z.literal(true).optional(),
+  count: z.number().int().nonnegative().optional(),
+});
+
+export const shoFocusSchema = z.array(shoFocusEntrySchema).max(SHO_MOST_FOCUS);
 
 export const shoParseRequestSchema = z.object({
   requestId: z.string().min(1),
@@ -48,6 +88,7 @@ export const shoParseRequestSchema = z.object({
   text: z.string().min(1).max(SHO_MAX_TEXT_LENGTH),
   now: shoNowSchema,
   previous: shoPreviousSchema.optional(),
+  focus: shoFocusSchema.optional(),
   deadlineMs: z.number().int().positive(),
   debug: z.boolean(),
 });
@@ -91,20 +132,6 @@ export const SHO_SALE_UNITS = [
   "m2",
   "m3",
 ] as const;
-
-export const SHO_CONTEXT_LIMITS = {
-  products: 20_000,
-  variantsPerProduct: 200,
-  variants: 100_000,
-  customers: 50_000,
-  counterparties: 50_000,
-  groups: 2_000,
-  priceLists: 2_000,
-  id: 64,
-  name: 120,
-  aliases: 10,
-  revision: 128,
-} as const;
 
 const NON_BLANK = /\S/;
 
@@ -201,6 +228,8 @@ export type ShoModelStamp = z.infer<typeof shoModelStampSchema>;
 export type ShoModelResponse = z.infer<typeof shoModelResponseSchema>;
 export type ShoNow = z.infer<typeof shoNowSchema>;
 export type ShoPrevious = z.infer<typeof shoPreviousSchema>;
+export type ShoFocusEntry = z.infer<typeof shoFocusEntrySchema>;
+export type ShoFocusHow = (typeof SHO_FOCUS_HOWS)[number];
 export type ShoParseRequest = z.infer<typeof shoParseRequestSchema>;
 export type ShoParseResponse = z.infer<typeof shoParseResponseSchema>;
 export type ShoContext = z.infer<typeof shoContextSchema>;

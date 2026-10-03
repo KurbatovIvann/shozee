@@ -136,6 +136,7 @@ describe("apps/sho over the real Шо runtime in a worker pool", () => {
       text: "!!! ??? ...",
       now: { year: 2026, month: 10, day: 2, hour: 11, minute: 0 },
       previous: null,
+      focus: null,
       debug: false,
       deadlineMs: 30_000,
     });

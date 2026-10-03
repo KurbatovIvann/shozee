@@ -1,9 +1,12 @@
 import type { ActionPipelineDeps } from "@showzy/core";
 import { PermissionDeniedError } from "@showzy/core/errors";
-import type {
-  ShoClient,
-  ShoParseOutcome,
-  ShoResult,
+import {
+  shoCommandSchema,
+  shoResultSchema,
+  type ShoClient,
+  type ShoParseInput,
+  type ShoParseOutcome,
+  type ShoResult,
 } from "@showzy/sho-protocol";
 import { describe, expect, it, vi } from "vitest";
 
@@ -31,7 +34,30 @@ const BUILD: ShoContextBuild = {
   context: {} as ShoContextBuild["context"],
 };
 
-const RESULT = { text: "покажи клієнтів" } as ShoResult;
+const COMMAND = shoCommandSchema.parse({
+  text: "покажи клієнтів",
+  action: "customers.listCustomers",
+  kind: "read",
+  effect: "read",
+  confirm: "none",
+  params: {},
+  needs: [],
+  ready: true,
+  catalogued: true,
+  confidence: { action: 0.99, margin: 0.5, certainty: 0.9, spans: 0.9 },
+  refPrevious: {},
+});
+
+const RESULT: ShoResult = shoResultSchema.parse({
+  schema: "sho-result/2",
+  raw: null,
+  text: "покажи клієнтів",
+  segments: ["покажи клієнтів"],
+  tooMany: false,
+  commands: [],
+  first: COMMAND,
+  context: null,
+});
 
 const CALL: ShoPlan = {
   kind: "call",
@@ -105,7 +131,7 @@ describe("createShoEngine", () => {
     const now = new Date("2026-09-11T06:00:00.000Z");
 
     await expect(
-      engine(MEMBER).plan({ text: "покажи клієнтів", now }),
+      engine(MEMBER).plan({ text: "покажи клієнтів", now, focus: [] }),
     ).resolves.toEqual(CALL);
     expect(plan).toHaveBeenCalledWith(RESULT, now);
   });
@@ -124,7 +150,7 @@ describe("createShoEngine", () => {
     });
 
     await expect(
-      engine(MEMBER).plan({ text: "привіт", now: new Date() }),
+      engine(MEMBER).plan({ text: "привіт", now: new Date(), focus: [] }),
     ).resolves.toEqual({ kind: "fallback", reason: "timeout" });
   });
 
@@ -139,7 +165,7 @@ describe("createShoEngine", () => {
     });
 
     await expect(
-      engine(MEMBER).plan({ text: "привіт", now: new Date() }),
+      engine(MEMBER).plan({ text: "привіт", now: new Date(), focus: [] }),
     ).resolves.toEqual({ kind: "fallback", reason: "unreadable" });
     expect(plan).not.toHaveBeenCalled();
   });
@@ -152,7 +178,7 @@ describe("createShoEngine", () => {
     });
 
     await expect(
-      engine(MEMBER).plan({ text: "привіт", now: new Date() }),
+      engine(MEMBER).plan({ text: "привіт", now: new Date(), focus: [] }),
     ).rejects.toThrow("socket");
   });
 });
@@ -192,5 +218,79 @@ describe("mountShoEngine", () => {
     });
     expect(engine).toBeTypeOf("function");
     expect(engine?.(MEMBER).plan).toBeTypeOf("function");
+  });
+});
+
+describe("what createShoEngine asks Шо", () => {
+  const sent = (): {
+    readonly client: ShoClient;
+    readonly asked: ShoParseInput[];
+  } => {
+    const asked: ShoParseInput[] = [];
+    const client = clientOf(() => parsedOk());
+    return {
+      asked,
+      client: {
+        ...client,
+        parse: (request) => {
+          asked.push(request);
+          return parsedOk();
+        },
+      },
+    };
+  };
+
+  it("passes the focus and the previous command of the turn", async () => {
+    const { client, asked } = sent();
+    const engine = createShoEngine({
+      client,
+      source: sourceOf(() => Promise.resolve(BUILD)),
+      plan: () => CALL,
+    });
+    const focus = [
+      {
+        type: "customer" as const,
+        id: "c-1",
+        name: "Катя",
+        how: "created" as const,
+        turns: 0,
+      },
+    ];
+
+    await engine(MEMBER).plan({
+      text: "створи для неї замовлення",
+      now: new Date("2026-10-02T09:00:00.000Z"),
+      focus,
+      previous: { command: COMMAND, at: "2026-10-02T08:59:00.000Z" },
+    });
+
+    expect(asked[0]?.focus).toEqual(focus);
+    expect(asked[0]?.previous?.command.action).toBe("customers.listCustomers");
+  });
+
+  it("tells the turn which command it planned, so the log stores it", async () => {
+    const engine = createShoEngine({
+      client: clientOf(() =>
+        Promise.resolve({
+          outcome: "ok",
+          value: {
+            model: { id: "sho", md5: "0" },
+            contextRevision: null,
+            result: { ...RESULT, commands: [COMMAND] },
+            ms: 12,
+          },
+        }),
+      ),
+      source: sourceOf(() => Promise.resolve(BUILD)),
+      plan: () => CALL,
+    });
+
+    await expect(
+      engine(MEMBER).plan({
+        text: "покажи клієнтів",
+        now: new Date("2026-10-02T09:00:00.000Z"),
+        focus: [],
+      }),
+    ).resolves.toEqual({ ...CALL, command: COMMAND });
   });
 });
