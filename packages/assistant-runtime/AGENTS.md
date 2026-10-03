@@ -343,7 +343,8 @@ registry is injected into `createAssistantRuntime`; this package never imports
   **resolved** ref, the SHO-856 rule: a focus-bound parent is no product
   index for the runtime, so `resolveVariant` matches the attrs across every
   product in the company and could price a variant of a product the person
-  never named. Without a variant a focus-held product line binds as usual. The price is the Шо money value, never its text: the parsed
+  never named. Without a variant a focus-held product line binds as usual.
+  The price is the Шо money value, never its text: the parsed
   `{ minor, currency }` becomes `priceMinor` plus `currency` together
   (money.md), half the pair or a currency the list cannot store is
   `unsupported_param`, and every line of one command carries the one price
