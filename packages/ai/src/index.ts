@@ -113,9 +113,8 @@ export { staffAssistantTurnContextAddendum } from "./turn-context.js";
 export {
   kyivCalendarDate,
   kyivNamedPeriodRange,
-  KYIV_LAST_DAYS_MAX,
   KYIV_NAMED_PERIODS,
-  mapOrdersListPeriod,
+  mapOrdersListWholePeriod,
   secondsUntilKyivMidnight,
   staffAssistantClockLines,
   STAFF_ASSISTANT_TIME_ZONE,

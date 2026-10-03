@@ -132,7 +132,7 @@ function lastDayOfMonth(date: KyivDate): KyivDate {
  * Map a façade `period` onto inclusive UTC ISO bounds in Europe/Kyiv.
  * Week starts Monday. `createdTo` is the last millisecond of the local day.
  */
-export function mapOrdersListPeriod(
+export function mapOrdersListWholePeriod(
   period: OrdersListPeriod,
   now: Date,
 ): { readonly createdFrom: string; readonly createdTo: string } {
@@ -166,8 +166,6 @@ const firstOfMonth = (date: KyivDate): KyivDate => ({
   month: date.month,
   day: 1,
 });
-
-export const KYIV_LAST_DAYS_MAX = 3650;
 
 const QUARTER_MONTHS = 3;
 
@@ -280,9 +278,11 @@ function periodBounds(period: string, today: KyivDate): KyivRange | null {
   const lastDays = LAST_DAYS_PERIOD.exec(period);
   if (lastDays !== null) {
     const days = Number(lastDays[1]);
-    return days >= 1 && days <= KYIV_LAST_DAYS_MAX
-      ? [addCalendarDays(today, -(days - 1)), today]
-      : null;
+    if (days < 1) {
+      return null;
+    }
+    const first = addCalendarDays(today, -(days - 1));
+    return Number.isFinite(dayOrdinal(first)) ? [first, today] : null;
   }
   const spoken = DAY_RANGE_PERIOD.exec(period);
   if (spoken !== null) {

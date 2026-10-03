@@ -14,6 +14,7 @@ import { LIST_CUSTOMERS_SEARCH_MAX } from "@showzy/customers/contract";
 import { LIST_PRICE_LISTS_QUERY_MAX } from "@showzy/pricing/contract";
 import type { ShoCommand, ShoParam, ShoRef } from "@showzy/sho-protocol";
 import { ENTITY_REF_QUERY_MAX } from "@showzy/validation/entity-ref";
+import { isCanonicalOrderNumberToken } from "@showzy/validation/search";
 
 import type { ShoPlan } from "../sho-turn.js";
 
@@ -71,12 +72,22 @@ function enumValue(param: ShoParam): string | null {
   return "text" in param && param.text.length > 0 ? param.text : null;
 }
 
-function clipped(param: ShoParam, max: number): string | null {
-  if (Array.isArray(param) || !("text" in param)) {
+function spokenText(param: ShoParam): string | null {
+  if (Array.isArray(param)) {
     return null;
   }
-  const text = param.text.trim();
-  return text.length === 0 ? null : text.slice(0, max);
+  const said =
+    "value" in param && typeof param.value === "string"
+      ? param.value
+      : "text" in param
+        ? param.text
+        : null;
+  const text = said?.trim() ?? "";
+  return text.length === 0 ? null : text;
+}
+
+function clipped(param: ShoParam, max: number): string | null {
+  return spokenText(param)?.slice(0, max) ?? null;
 }
 
 function locatorOf(param: ShoParam): ShoLocator | ShoPlanFallbackReason {
@@ -137,8 +148,13 @@ const orderCustomer: ParamMapper = (param) => {
 };
 
 const orderNumber: ParamMapper = (param) => {
-  const text = clipped(param, LIST_ORDERS_QUERY_MAX);
-  return text === null ? "unsupported_param" : { query: text };
+  const text =
+    Array.isArray(param) || !("text" in param) ? null : param.text.trim();
+  return text === null ||
+    text.length === 0 ||
+    !isCanonicalOrderNumberToken(text)
+    ? "unsupported_param"
+    : { query: text.slice(0, LIST_ORDERS_QUERY_MAX) };
 };
 
 const customerGroup: ParamMapper = (param) => {

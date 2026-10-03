@@ -19,6 +19,7 @@ const SAMPLE_TOKENS: readonly string[] = [
   "last_days:7",
   "last_days:30",
   "last_days:365",
+  "last_days:4000",
   "range:03-01..03-31",
   "range:12-20..01-10",
   "range:2025-02-01..2025-02-28",

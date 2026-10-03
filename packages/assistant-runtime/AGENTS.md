@@ -87,8 +87,11 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `availability` — an unreadable period, an unreadable status, a second
   value for one façade field, and a non-uuid resolved id are all
   `unsupported_param`, which is the LLM. `orders.get` plans
-  `orders_list_page` with the order number as `query`, because that façade
-  already matches an order number. Periods go through `kyivNamedPeriodRange`,
+  `orders_list_page` with the order number as `query`, but only when
+  `isCanonicalOrderNumberToken` says the spoken text is a `{prefix}-{tail}`
+  number: a stored number is base36 (`services/order-number-format.ts`), so
+  the digits in «замовлення номер 133» would match a different order by
+  coincidence through the `ilike`. Periods go through `kyivNamedPeriodRange`,
   which reads the tokens Шо emits (`today` … `last_quarter`, `last_days:N`,
   `range:MM-DD..MM-DD`, `range:YYYY-MM-DD..YYYY-MM-DD`) with the runtime's
   own semantics — a «this» period ends today — and never a second date map.

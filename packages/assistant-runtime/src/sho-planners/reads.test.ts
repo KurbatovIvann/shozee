@@ -178,17 +178,17 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
     });
   });
 
-  it("plans «Відкрий замовлення номер 133» as the order-number query", () => {
+  it("plans a canonical order number as the orders page query", () => {
     expect(
       planOf({
-        text: "Відкрий замовлення номер 133",
+        text: "Відкрий замовлення SP-1A33",
         action: "orders.get",
-        params: { order_number: { text: "SP-0133" } },
+        params: { order_number: { text: "SP-1A33", value: 133 } },
       }),
     ).toEqual({
       kind: "call",
       toolName: "orders_list_page",
-      input: { query: "SP-0133" },
+      input: { query: "SP-1A33" },
       reply: "Ось замовлення.",
     });
   });
@@ -364,10 +364,10 @@ describe("SHO_READ_PLANNERS falls back to the model", () => {
       reason: "conversation_dependent",
     },
     {
-      text: "покажи замовлення 133 для Шерлока",
+      text: "покажи замовлення SP-1A33 для Шерлока",
       action: "orders.get",
       params: {
-        order_number: { text: "SP-0133" },
+        order_number: { text: "SP-1A33", value: 133 },
         customer: {
           text: "Шерлок",
           status: "ambiguous",
@@ -407,6 +407,12 @@ describe("SHO_READ_PLANNERS falls back to the model", () => {
       reason: "unsupported_param",
     },
     {
+      text: "Відкрий замовлення номер 133",
+      action: "orders.get",
+      params: { order_number: { text: "133", value: 133 } },
+      reason: "unsupported_param",
+    },
+    {
       text: "покажи активні прайс-листи",
       action: "pricing.listPriceLists",
       params: { availability: { value: "active" } },
@@ -443,7 +449,7 @@ describe("read planners never take a write", () => {
           kind: "write",
           effect: "destructive",
           confirm: "strong",
-          params: { order_number: { text: "SP-0024" } },
+          params: { order_number: { text: "SP-0024", value: 24 } },
         }),
         NOW,
       ),
