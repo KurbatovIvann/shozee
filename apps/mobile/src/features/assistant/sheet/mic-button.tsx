@@ -1,31 +1,18 @@
-import { useEffect } from "react";
 import { Pressable, View } from "react-native";
 import { MicIcon } from "lucide-react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import type { SubscribeVoiceLevel } from "../voice/use-voice-capture";
-import {
-  voiceMicActive,
-  voiceRingScale,
-  VOICE_RING_REST_SCALE,
-  type VoiceMicMode,
-} from "../voice/voice-composer";
-
-const RING_RISE_MS = 90;
-
-const RING_REST_MS = 220;
+import { voiceMicActive, type VoiceMicMode } from "../voice/voice-composer";
+import { useMicLevelRing } from "./use-mic-level-ring";
 
 export function AssistantMicButton(props: {
   readonly mode: VoiceMicMode;
   readonly label: string;
   readonly disabled: boolean;
   readonly onPress: () => void;
-  readonly onLevel: SubscribeVoiceLevel | null;
+  readonly onLevel: SubscribeVoiceLevel;
 }) {
   const { theme } = useUnistyles();
   const active = voiceMicActive(props.mode);
@@ -36,30 +23,7 @@ export function AssistantMicButton(props: {
       ? theme.colors.icon.muted
       : theme.colors.primaryForeground;
 
-  const scale = useSharedValue(VOICE_RING_REST_SCALE);
-  const onLevel = props.onLevel;
-
-  useEffect(() => {
-    scale.value = withTiming(VOICE_RING_REST_SCALE, {
-      duration: RING_REST_MS,
-    });
-    if (onLevel === null || !active) {
-      return;
-    }
-    return onLevel((level) => {
-      scale.value = withTiming(voiceRingScale({ active: true, level }), {
-        duration: RING_RISE_MS,
-      });
-    });
-  }, [active, onLevel, scale]);
-
-  const ringStyle = useAnimatedStyle(() => ({
-    opacity:
-      scale.value <= VOICE_RING_REST_SCALE
-        ? 0
-        : Math.min(1, scale.value - VOICE_RING_REST_SCALE),
-    transform: [{ scale: scale.value }],
-  }));
+  const ringStyle = useMicLevelRing({ active, onLevel: props.onLevel });
 
   return (
     <View style={styles.slot}>
