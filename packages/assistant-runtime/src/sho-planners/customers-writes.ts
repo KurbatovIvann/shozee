@@ -18,20 +18,16 @@ import {
   GROUP_NAME_MAX,
 } from "@showzy/validation/customers";
 
+import { shoIsRef, type ShoActionPlanners } from "./kit.js";
 import {
-  shoIsRef,
-  shoRefLocator,
-  shoRefused,
-  type ShoActionPlanners,
-} from "./kit.js";
-import {
+  shoIdFrom,
+  shoIdOnly,
   shoSpanText,
   shoSpokenText,
   shoTypedText,
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
-  type ShoWriteMapped,
   type ShoWriteParamMapper,
   type ShoWritePlan,
   type ShoWritePlans,
@@ -101,22 +97,9 @@ const SET_GROUP_NOTES: Readonly<Record<string, string>> = {
 const clipped = (param: ShoParam, max: number): string | null =>
   shoSpokenText(param)?.slice(0, max) ?? null;
 
-const idFrom = (param: ShoParam, field: string): ShoWriteMapped => {
-  const locator = shoRefLocator(param);
-  if (shoRefused(locator)) {
-    return locator;
-  }
-  return locator.by === "id" ? { [field]: locator.id } : "unsupported_param";
-};
-
-const idOnly =
-  (field: string): ShoWriteParamMapper =>
-  (param) =>
-    idFrom(param, field);
-
 const soleCustomerId: ShoWriteParamMapper = (param) => {
   const only = Array.isArray(param) && param.length === 1 ? param[0] : null;
-  return shoIsRef(only) ? idFrom(only, "id") : "unsupported_param";
+  return shoIsRef(only) ? shoIdFrom(only, "id") : "unsupported_param";
 };
 
 const created =
@@ -177,7 +160,7 @@ const phone = contact("phone", CUSTOMER_PHONE_MAX);
 
 const email = contact("email", CUSTOMER_EMAIL_MAX);
 
-const priceList = idOnly("priceListId");
+const priceList = shoIdOnly("priceListId");
 
 const createdCounterpartyName = created("counterparty", COUNTERPARTY_NAME_MAX);
 
@@ -211,7 +194,7 @@ const COUNTERPARTY_REQUISITES: Readonly<Record<string, ShoWriteParamMapper>> = {
   phone: counterpartyPhone,
   email: counterpartyEmail,
   comment: counterpartyNotes,
-  customer: idOnly("customerId"),
+  customer: shoIdOnly("customerId"),
 };
 
 const onResolvedRecord = (
@@ -222,7 +205,7 @@ const onResolvedRecord = (
 ): ShoWritePlan => ({
   toolName: toProviderToolName(action),
   reply,
-  params: { [param]: idOnly("id") },
+  params: { [param]: shoIdOnly("id") },
   required: [param],
   notes,
 });
@@ -236,7 +219,7 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
       phone,
       email,
       comment,
-      group: idOnly("groupId"),
+      group: shoIdOnly("groupId"),
     },
     required: ["new_name"],
     oneOf: [["phone", "email"]],
@@ -246,12 +229,12 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
     toolName: toProviderToolName(SHO_UPDATE_CUSTOMER),
     reply: "Клієнта оновлено.",
     params: {
-      customer: idOnly("id"),
+      customer: shoIdOnly("id"),
       rename_to: renamedTo,
       phone,
       email,
       comment,
-      group: idOnly("groupId"),
+      group: shoIdOnly("groupId"),
     },
     required: ["customer"],
     oneOf: [["rename_to", "phone", "email", "comment", "group"]],
@@ -280,7 +263,7 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
     reply: "Клієнта оновлено.",
     params: {
       customers: soleCustomerId,
-      group: idOnly("groupId"),
+      group: shoIdOnly("groupId"),
     },
     required: ["customers", "group"],
     notes: SET_GROUP_NOTES,
@@ -299,7 +282,7 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
     toolName: toProviderToolName(SHO_UPDATE_GROUP),
     reply: "Групу оновлено.",
     params: {
-      group: idOnly("id"),
+      group: shoIdOnly("id"),
       rename_to: renamedGroupTo,
       description: describedGroup,
       price_list: priceList,
@@ -327,7 +310,7 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
     toolName: toProviderToolName(SHO_UPDATE_COUNTERPARTY),
     reply: "Контрагента оновлено.",
     params: {
-      counterparty: idOnly("id"),
+      counterparty: shoIdOnly("id"),
       rename_to: renamedCounterpartyTo,
       ...COUNTERPARTY_REQUISITES,
     },

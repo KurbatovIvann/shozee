@@ -1,6 +1,7 @@
 import { kyivCalendarDate, kyivNamedPeriodRange } from "@showzy/ai";
 import {
   SHO_CUSTOMER_WRITE_PLANNER_PARAMS,
+  SHO_DOCUMENT_WRITE_PLANNER_PARAMS,
   SHO_ORDER_LIFECYCLE_PLANNER_PARAMS,
   SHO_FOCUS_PARAM_TYPES,
   SHO_READ_PLANNER_PARAMS,
@@ -52,6 +53,7 @@ const WRITE_PLANNER_PARAMS: Readonly<Record<string, readonly string[]>> = {
   ...SHO_WRITE_PLANNER_PARAMS,
   ...SHO_ORDER_LIFECYCLE_PLANNER_PARAMS,
   ...SHO_CUSTOMER_WRITE_PLANNER_PARAMS,
+  ...SHO_DOCUMENT_WRITE_PLANNER_PARAMS,
 };
 
 let bundle: Bundle;

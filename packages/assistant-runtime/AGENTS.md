@@ -242,6 +242,26 @@ registry is injected into `createAssistantRuntime`; this package never imports
   and an identifier the runtime failed its own check on arrives as a blocking
   `invalid_value` need, which is the LLM. No identifier, phone or e-mail ever
   reaches the Шо context: a counterparty enters it as an id and a name.
+- `sho-planners/documents-writes.ts` — the document write planners (SHO-861):
+  `documents.createFromOrder`, `documents.cancel`, `documents.share` and
+  `documents.requestSign` onto their own action tools, `writes: true`, so each
+  pauses on the ADR-0050 preview; the SHO-788/801/809 preview callbacks own
+  the share token and the signing request, and no planner input carries one.
+  All four actions take a uuid and nothing else, so the only reference that
+  binds is a ref the parse bound to a live focus entry (`status: "context"`,
+  SHO-770). `order_number` is such an entry, so a create from the order just
+  made plans; `document_ref` is not — the protocol has no `document` record
+  type, so the focus never holds a document and `shoFocusHolds` refuses any
+  context `document_ref`. A spoken document or order number is therefore
+  `unsupported_param`, which is the LLM, until those actions take an
+  id-or-reference input as the lifecycle four did at SHO-853 (SHO-869).
+  `document_type` maps to the two types Shozee issues and `counterparty` to a
+  resolved uuid;
+  `customer`, `period`, `status`, `amount`, `basis`, `channel`, `email` and
+  `phone` are the LLM's — a `basis` span is a bare document number («57»),
+  never the «Підстава» sentence the action stores.
+  `SHO_DOCUMENT_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
+  config default stays empty.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never
