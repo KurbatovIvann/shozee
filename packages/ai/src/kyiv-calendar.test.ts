@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   kyivCalendarDate,
-  mapOrdersListPeriod,
+  kyivNamedPeriodRange,
+  KYIV_NAMED_PERIODS,
+  mapOrdersListWholePeriod,
   secondsUntilKyivMidnight,
   staffAssistantClockLines,
   STAFF_ASSISTANT_TIME_ZONE,
@@ -46,9 +48,9 @@ function kyivWall(iso: string): string {
   }).format(new Date(iso));
 }
 
-describe("mapOrdersListPeriod", () => {
+describe("mapOrdersListWholePeriod", () => {
   it("maps today to inclusive Europe/Kyiv local day as UTC ISO", () => {
-    const interval = mapOrdersListPeriod("today", WEDNESDAY_SEP_2);
+    const interval = mapOrdersListWholePeriod("today", WEDNESDAY_SEP_2);
     expect(interval).toEqual({
       createdFrom: "2026-09-01T21:00:00.000Z",
       createdTo: "2026-09-02T20:59:59.999Z",
@@ -58,7 +60,7 @@ describe("mapOrdersListPeriod", () => {
   });
 
   it("maps this_week Monday–Sunday in Europe/Kyiv", () => {
-    const interval = mapOrdersListPeriod("this_week", WEDNESDAY_SEP_2);
+    const interval = mapOrdersListWholePeriod("this_week", WEDNESDAY_SEP_2);
     expect(interval).toEqual({
       createdFrom: "2026-08-30T21:00:00.000Z",
       createdTo: "2026-09-06T20:59:59.999Z",
@@ -68,7 +70,7 @@ describe("mapOrdersListPeriod", () => {
   });
 
   it("maps this_month to the inclusive local calendar month", () => {
-    const interval = mapOrdersListPeriod("this_month", WEDNESDAY_SEP_2);
+    const interval = mapOrdersListWholePeriod("this_month", WEDNESDAY_SEP_2);
     expect(interval).toEqual({
       createdFrom: "2026-08-31T21:00:00.000Z",
       createdTo: "2026-09-30T20:59:59.999Z",
@@ -79,14 +81,14 @@ describe("mapOrdersListPeriod", () => {
 
   it("starts this_week on Monday when now is Sunday in Kyiv", () => {
     const sunday = new Date("2026-09-06T12:00:00.000Z");
-    const interval = mapOrdersListPeriod("this_week", sunday);
+    const interval = mapOrdersListWholePeriod("this_week", sunday);
     expect(kyivWall(interval.createdFrom)).toBe("31/08/2026, 00:00:00");
     expect(kyivWall(interval.createdTo)).toBe("06/09/2026, 23:59:59");
   });
 
   it("maps today across the Europe/Kyiv winter offset", () => {
     const winter = new Date("2026-01-15T12:00:00.000Z");
-    const interval = mapOrdersListPeriod("today", winter);
+    const interval = mapOrdersListWholePeriod("today", winter);
     expect(interval).toEqual({
       createdFrom: "2026-01-14T22:00:00.000Z",
       createdTo: "2026-01-15T21:59:59.999Z",
@@ -104,5 +106,79 @@ describe("staffAssistantClockLines", () => {
     expect(line).toContain("Europe/Kyiv");
     expect(line).toMatch(/UTC[+-]\d+/);
     expect(line).toContain("week starts on Monday");
+  });
+});
+
+describe("kyivNamedPeriodRange", () => {
+  const cases: readonly (readonly [string, string, string])[] = [
+    ["today", "2026-09-01T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["yesterday", "2026-08-31T21:00:00.000Z", "2026-09-01T20:59:59.999Z"],
+    ["this_week", "2026-08-30T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["last_week", "2026-08-23T21:00:00.000Z", "2026-08-30T20:59:59.999Z"],
+    ["this_month", "2026-08-31T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["last_month", "2026-07-31T21:00:00.000Z", "2026-08-31T20:59:59.999Z"],
+    ["this_quarter", "2026-06-30T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["last_quarter", "2026-03-31T21:00:00.000Z", "2026-06-30T20:59:59.999Z"],
+    ["this_year", "2025-12-31T22:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["last_year", "2024-12-31T22:00:00.000Z", "2025-12-31T21:59:59.999Z"],
+    ["last_days:1", "2026-09-01T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["last_days:7", "2026-08-26T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    ["last_days:4000", "2015-09-20T21:00:00.000Z", "2026-09-02T20:59:59.999Z"],
+    [
+      "range:03-01..03-31",
+      "2026-02-28T22:00:00.000Z",
+      "2026-03-31T20:59:59.999Z",
+    ],
+    [
+      "range:12-20..01-10",
+      "2025-12-19T22:00:00.000Z",
+      "2026-01-10T21:59:59.999Z",
+    ],
+    [
+      "range:2025-02-01..2025-02-28",
+      "2025-01-31T22:00:00.000Z",
+      "2025-02-28T21:59:59.999Z",
+    ],
+  ];
+
+  it.each(cases)("maps %s to inclusive Kyiv day bounds", (period, from, to) => {
+    expect(kyivNamedPeriodRange(period, WEDNESDAY_SEP_2)).toEqual({
+      createdFrom: from,
+      createdTo: to,
+    });
+  });
+
+  it.each([
+    "",
+    "range",
+    "last_days",
+    "previous",
+    "tomorrow",
+    "next_week",
+    "last_7_days",
+    "last_days:0",
+    "last_days:999999999999",
+    "range:13-01..13-31",
+    "range:2026-02-30..2026-03-01",
+    "range:2026-03-31..2026-03-01",
+    "2026-03-01",
+    "минулий тиждень",
+  ])("refuses %s", (period) => {
+    expect(kyivNamedPeriodRange(period, WEDNESDAY_SEP_2)).toBeNull();
+  });
+
+  it("reads every named period it advertises", () => {
+    for (const period of KYIV_NAMED_PERIODS) {
+      expect(kyivNamedPeriodRange(period, WEDNESDAY_SEP_2)).not.toBeNull();
+    }
+  });
+
+  it("ends a «this» period today, unlike the façade enum", () => {
+    expect(kyivNamedPeriodRange("this_week", WEDNESDAY_SEP_2)?.createdTo).toBe(
+      kyivNamedPeriodRange("today", WEDNESDAY_SEP_2)?.createdTo,
+    );
+    expect(
+      mapOrdersListWholePeriod("this_week", WEDNESDAY_SEP_2).createdTo,
+    ).toBe("2026-09-06T20:59:59.999Z");
   });
 });

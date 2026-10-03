@@ -51,6 +51,7 @@ export {
   foldSearchApostrophes,
   foldSearchNameToken,
   hasLetterOrDigit,
+  isCanonicalOrderNumberToken,
   prepareSearchQuery,
 } from "./normalize.js";
 export type {

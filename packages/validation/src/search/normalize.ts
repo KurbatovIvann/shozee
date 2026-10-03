@@ -113,6 +113,10 @@ function foldIdentifier(value: string): string {
  * Order numbers: strip `#`, NFC, trim, upper; prepend `{prefix}-` only when
  * there is no `-` **and** the token is not the company prefix alone.
  */
+export function isCanonicalOrderNumberToken(raw: string): boolean {
+  return foldIdentifier(raw.replaceAll("#", "")).includes("-");
+}
+
 export function canonicalizeOrderNumberToken(
   raw: string,
   companyPrefix: string,
@@ -125,10 +129,7 @@ export function canonicalizeOrderNumberToken(
   if (stripped === prefix) {
     return undefined;
   }
-  if (stripped.includes("-")) {
-    return stripped;
-  }
-  return `${prefix}-${stripped}`;
+  return isCanonicalOrderNumberToken(raw) ? stripped : `${prefix}-${stripped}`;
 }
 
 export type CanonicalDocumentNumberQuery =

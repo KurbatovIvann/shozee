@@ -25,7 +25,7 @@ import { z } from "zod";
 import type { ActionToolExecute } from "../action-tool.js";
 import { STAFF_ASSISTANT_CLIP_JSON_MAX } from "../clip-tool-result.js";
 import {
-  mapOrdersListPeriod,
+  mapOrdersListWholePeriod,
   ORDERS_LIST_PERIODS,
   type OrdersListPeriod,
 } from "../kyiv-calendar.js";
@@ -182,7 +182,7 @@ function mappedOrdersListFilter(
   let createdFrom = input.createdFrom;
   let createdTo = input.createdTo;
   if (input.period !== undefined) {
-    const interval = mapOrdersListPeriod(input.period, clock.now);
+    const interval = mapOrdersListWholePeriod(input.period, clock.now);
     createdFrom = interval.createdFrom;
     createdTo = interval.createdTo;
   }
