@@ -21,6 +21,7 @@ import {
 } from "./sho-engine.js";
 import type { ShoContextBuild } from "./sho-context.js";
 import type { ShoContextSource } from "./sho-context-source.js";
+import { shoCustomerWriteParse } from "./sho-planners/__tests__/customer-write-parses.js";
 import { shoOrderWriteParse } from "./sho-planners/__tests__/order-write-parses.js";
 import type { ShoPlan } from "./sho-turn.js";
 
@@ -458,5 +459,61 @@ describe("what createShoEngine asks Шо", () => {
         focus: focusedAs("order"),
       }),
     ).resolves.toMatchObject({ kind: "call" });
+  });
+
+  const GROUPED = shoCommandSchema.parse({
+    ...(JSON.parse(
+      JSON.stringify(shoCustomerWriteParse("d88-there-group")),
+    ) as Json),
+    confidence: CONFIDENT,
+    params: {
+      customers: [{ text: "її", status: "context", id: "c-lytvyn", focus: 0 }],
+      group: {
+        text: "туди",
+        status: "context",
+        id: "new-wedding",
+        name: "Весільні",
+        focus: 1,
+      },
+    },
+  });
+
+  const IN_THE_GROUP = {
+    type: "group" as const,
+    id: "new-wedding",
+    name: "Весільні",
+    how: "created" as const,
+    turns: 1,
+  };
+
+  const listedAs = (type: "customer" | "product") => [
+    {
+      type,
+      id: "c-lytvyn",
+      name: "Ігор Литвин",
+      how: "shown" as const,
+      turns: 0,
+    },
+    IN_THE_GROUP,
+  ];
+
+  it("plans a record list whose entry the focus holds as that record", async () => {
+    await expect(
+      engineOver(GROUPED)(MEMBER).plan({
+        text: "закинь її туди",
+        now: new Date("2026-10-02T09:00:00.000Z"),
+        focus: listedAs("customer"),
+      }),
+    ).resolves.toMatchObject({ kind: "call" });
+  });
+
+  it("refuses a record list whose entry the focus holds as another record", async () => {
+    await expect(
+      engineOver(GROUPED)(MEMBER).plan({
+        text: "закинь її туди",
+        now: new Date("2026-10-02T09:00:00.000Z"),
+        focus: listedAs("product"),
+      }),
+    ).resolves.toEqual({ kind: "fallback", reason: "unresolved_reference" });
   });
 });

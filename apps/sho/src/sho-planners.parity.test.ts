@@ -8,6 +8,7 @@ import {
 } from "@showzy/assistant-runtime";
 import {
   FOCUS_PARAM_TYPES,
+  listItemType,
   loadV3Bundle,
   periodDates,
   type Bundle,
@@ -154,9 +155,21 @@ describe("kyiv-calendar reads the periods the Шо runtime emits", () => {
 });
 
 describe("the focus guard and Шо read a param as the same record", () => {
-  it("gives every param the guard names the type the lexicon gives it", () => {
-    expect(Object.fromEntries(FOCUS_PARAM_TYPES)).toEqual(
-      SHO_FOCUS_PARAM_TYPES,
-    );
+  it("names the record type every declared param carries, lists included", () => {
+    const declared: Record<string, string> = {};
+    for (const intent of Object.values(bundle.intents)) {
+      for (const [name, type] of Object.entries(intent.params)) {
+        const record = FOCUS_PARAM_TYPES.get(
+          listItemType(bundle, type) ?? type,
+        );
+        if (record === undefined) {
+          continue;
+        }
+        const seen = declared[name];
+        declared[name] =
+          seen === undefined || seen === record ? record : `${seen}|${record}`;
+      }
+    }
+    expect(declared).toEqual(SHO_FOCUS_PARAM_TYPES);
   });
 });

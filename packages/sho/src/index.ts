@@ -34,6 +34,7 @@ export {
   VERSION as runtimeVersion,
   compileContext,
   isContextV2,
+  listItemType,
   parseContext,
   parseFocus,
   parsePrevious,

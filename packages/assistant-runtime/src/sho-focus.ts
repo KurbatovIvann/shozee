@@ -43,6 +43,7 @@ export const SHO_FOCUS_PARAM_TYPES: Readonly<Record<string, ShoRecordType>> = {
   product: "product",
   price_list: "price_list",
   counterparty: "counterparty",
+  customers: "customer",
 };
 
 const focusKey = (type: ShoRecordType, id: string): string =>
@@ -85,12 +86,11 @@ function rowsOf(
 
 function namedIn(command: ShoCommand): readonly ShoFocusRecord[] {
   const named: ShoFocusRecord[] = [];
-  for (const [path, param] of Object.entries(command.params)) {
-    const type = SHO_FOCUS_PARAM_TYPES[path];
-    if (type === undefined || !shoIsRef(param) || param.status !== "resolved") {
+  for (const { slot, direct, ref } of shoCommandRefs(command)) {
+    const type = SHO_FOCUS_PARAM_TYPES[slot];
+    if (!direct || type === undefined || ref.status !== "resolved") {
       continue;
     }
-    const ref = param;
     const id = ref.id;
     if (typeof id !== "string" || id.length === 0) {
       continue;
@@ -163,33 +163,39 @@ export function shoTurnRecords(
 }
 
 interface Referred {
-  readonly path: string;
+  readonly slot: string;
+  readonly direct: boolean;
   readonly ref: ShoRef;
 }
 
-function refsInto(path: string, value: unknown, into: Referred[]): void {
+function refsInto(
+  slot: string,
+  direct: boolean,
+  value: unknown,
+  into: Referred[],
+): void {
   if (shoIsRef(value)) {
-    into.push({ path, ref: value });
+    into.push({ slot, direct, ref: value });
     return;
   }
   if (Array.isArray(value)) {
     for (const entry of value) {
-      refsInto(path, entry, into);
+      refsInto(slot, false, entry, into);
     }
     return;
   }
   if (!isJson(value)) {
     return;
   }
-  for (const [key, field] of Object.entries(value)) {
-    refsInto(key, field, into);
+  for (const [field, inner] of Object.entries(value)) {
+    refsInto(field, false, inner, into);
   }
 }
 
 function shoCommandRefs(command: ShoCommand): readonly Referred[] {
   const refs: Referred[] = [];
   for (const [path, param] of Object.entries(command.params)) {
-    refsInto(path, param, refs);
+    refsInto(path, true, param, refs);
   }
   return refs;
 }
@@ -199,18 +205,13 @@ export function shoFocusHolds(
   focus: readonly ShoFocusEntry[],
 ): boolean {
   const heldAs = new Set(focus.map((entry) => focusKey(entry.type, entry.id)));
-  const heldIds = new Set(focus.map((entry) => entry.id));
-  for (const { path, ref } of shoCommandRefs(command)) {
+  for (const { slot, ref } of shoCommandRefs(command)) {
     const id = ref.id;
     if (ref.status !== "context" || typeof id !== "string" || id.length === 0) {
       continue;
     }
-    const expected = SHO_FOCUS_PARAM_TYPES[path];
-    const holds =
-      expected === undefined
-        ? heldIds.has(id)
-        : heldAs.has(focusKey(expected, id));
-    if (!holds) {
+    const expected = SHO_FOCUS_PARAM_TYPES[slot];
+    if (expected === undefined || !heldAs.has(focusKey(expected, id))) {
       return false;
     }
   }
