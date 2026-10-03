@@ -23,7 +23,10 @@ import { describe, expect, it } from "vitest";
 
 import { createShoPlanner, type ShoActionPlan } from "../sho-plan.js";
 
-import { shoCustomerWriteParse } from "./__tests__/customer-write-parses.js";
+import {
+  cloneShoParse,
+  shoCustomerWriteParse,
+} from "./__tests__/customer-write-parses.js";
 import { shoOrderWriteParse } from "./__tests__/order-write-parses.js";
 import { shoReadParse } from "./__tests__/read-parses.js";
 import {
@@ -87,7 +90,7 @@ function reId(value: unknown): unknown {
 }
 
 const parseOf = (caseId: string): Json =>
-  JSON.parse(JSON.stringify(shoCustomerWriteParse(caseId))) as Json;
+  cloneShoParse(shoCustomerWriteParse(caseId));
 
 const paramsOf = (caseId: string): Json => parseOf(caseId)["params"] as Json;
 
@@ -468,7 +471,7 @@ describe("the D84 and D85 misreads are carried to the card", () => {
 const verbatim = (parse: unknown): ShoCommand =>
   shoCommandSchema.parse({
     confidence: OVER_THE_FLOOR,
-    ...(reId(JSON.parse(JSON.stringify(parse)) as Json) as Json),
+    ...(reId(cloneShoParse(parse)) as Json),
   });
 
 const archiving = (): ShoCommand =>

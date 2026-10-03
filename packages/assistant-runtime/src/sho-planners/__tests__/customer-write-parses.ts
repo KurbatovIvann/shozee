@@ -895,6 +895,10 @@ export const SHO_CUSTOMER_WRITE_PARSES: Readonly<Record<string, unknown>> =
     },
   });
 
+export function cloneShoParse(parse: unknown): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(parse)) as Record<string, unknown>;
+}
+
 export function shoCustomerWriteParse(caseId: string): unknown {
   const parse = SHO_CUSTOMER_WRITE_PARSES[caseId];
   if (parse === undefined) {

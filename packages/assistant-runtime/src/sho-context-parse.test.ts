@@ -31,6 +31,7 @@ const built: ShoContextBuild = buildShoContext({
   customers: {
     customers: { items: [{ id: "customer-1", name: "Оля" }], truncated: false },
     groups: { items: [], truncated: false },
+    counterparties: { items: [], truncated: false },
   },
   pricing: null,
 });

@@ -47,6 +47,7 @@ const fixtures = {
   counterparty: randomUUID(),
   group: randomUUID(),
   priceList: randomUUID(),
+  foreignCounterparty: randomUUID(),
 };
 
 const names = {
@@ -60,6 +61,7 @@ const names = {
   counterparty: "Шо ТОВ Партнер",
   group: "Шо Гурт",
   priceList: "Шо Роздріб",
+  foreignCounterparty: "Шо ТОВ Чужий Партнер",
 };
 
 const contact = {
@@ -176,6 +178,11 @@ beforeAll(async () => {
       name: names.counterparty,
       ...requisites,
     },
+    {
+      id: fixtures.foreignCounterparty,
+      companyId: kitIdentities.companies.b,
+      name: names.foreignCounterparty,
+    },
   ]);
 
   await kit.db.runtime.db.insert(customerGroups).values([
@@ -267,7 +274,25 @@ describe("createShoContextSource", () => {
     expect(wire).not.toContain(contact.email);
   });
 
-  it("pushes a context with no customer phone or e-mail, and guards the counterparty ЄДРПОУ, IBAN and contacts against a counterparties list the builder does not send yet", async () => {
+  it("never carries another company's counterparties", async () => {
+    const source = sourceOf();
+    const ours = await source.current(anna());
+    const theirs = await source.current(boris());
+
+    expect(
+      ours.context.counterparties?.map((record) => record.id),
+    ).not.toContain(fixtures.foreignCounterparty);
+    expect(
+      theirs.context.counterparties?.map((record) => record.id),
+    ).not.toContain(fixtures.counterparty);
+    expect(JSON.stringify(theirs.context)).not.toContain(names.counterparty);
+    expect(theirs.context.counterparties).toContainEqual({
+      id: fixtures.foreignCounterparty,
+      name: names.foreignCounterparty,
+    });
+  });
+
+  it("pushes a context with no phone, e-mail, ЄДРПОУ or IBAN", async () => {
     const sent: ShoContextRequest[] = [];
 
     const outcome = await parseWithShoContext(
@@ -288,6 +313,10 @@ describe("createShoContextSource", () => {
     expect(pushed?.customers).toContainEqual({
       id: fixtures.customer,
       name: names.customer,
+    });
+    expect(pushed?.counterparties).toContainEqual({
+      id: fixtures.counterparty,
+      name: names.counterparty,
     });
     expect(shoContextSchema.parse(pushed)).toEqual(pushed);
 
