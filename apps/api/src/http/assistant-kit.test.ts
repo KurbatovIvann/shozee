@@ -595,6 +595,7 @@ type KitBody = {
   readonly status?: string;
   readonly reason?: string;
   readonly code?: string;
+  readonly userMessageId?: string | null;
   readonly window?: {
     readonly messages: readonly {
       readonly role: string;
@@ -682,6 +683,35 @@ describe("POST /assistant/kit/chat", () => {
     expect(history.saved).toEqual([
       [{ role: "user", content: "покажи замовлення" }],
     ]);
+  });
+
+  it("names the message it stored, and names the same one on a replay", async () => {
+    const { app, kit, bind } = harness();
+
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    const stored = window.messages[0]?.messageId;
+    expect(stored).toBeDefined();
+    expect(((await first.json()) as KitBody).userMessageId).toBe(stored);
+    expect(((await retry.json()) as KitBody).userMessageId).toBe(stored);
+  });
+
+  it("names no message when the send stored none", async () => {
+    const { app } = harness();
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("перший"));
+
+    const refused = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...chatBody("другий"),
+      commandId: "77777777-7777-4777-8777-777777777777",
+    });
+
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as KitBody).userMessageId).toBeUndefined();
   });
 
   it("does not accept a client-supplied transcript", async () => {
@@ -2314,6 +2344,60 @@ describe("a send while a card is open answers it", () => {
     expect(queue.added).toEqual([
       { kind: "answer", conversationId: CONVERSATION, commandId: COMMAND },
     ]);
+  });
+
+  it("names the message the accepted answer stored, fresh and on a replay", async () => {
+    const { app, kit, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+
+    const first = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
+    const retry = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
+
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    const stored = window.messages.find(
+      (message) => message.role === "user",
+    )?.messageId;
+    expect(stored).toBeDefined();
+    expect(((await first.json()) as KitBody).userMessageId).toBe(stored);
+    expect(((await retry.json()) as KitBody).userMessageId).toBe(stored);
+  });
+
+  it("names no message when the answer only opened the next question", async () => {
+    const { app, kit, bind } = harness({ resolveAnswer: SECOND_QUESTION });
+    const pause = await openPause(kit, bind);
+
+    const first = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "перший"),
+    );
+    const retry = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "перший"),
+    );
+
+    expect([first.status, retry.status]).toEqual([200, 200]);
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    expect(window.messages.some((message) => message.role === "user")).toBe(
+      false,
+    );
+    expect(((await first.json()) as KitBody).userMessageId).toBeNull();
+    expect(((await retry.json()) as KitBody).userMessageId).toBeNull();
   });
 
   it("«ні» declines it exactly as the card's own cancel does", async () => {

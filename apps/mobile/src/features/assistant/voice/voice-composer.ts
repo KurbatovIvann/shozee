@@ -115,27 +115,27 @@ export function voiceAnnouncementKey(input: {
   return input.spokeLast ? "done" : null;
 }
 
-export function voiceSpokenKey(text: string): string {
-  return text.trim();
-}
+export type VoiceSendResult = {
+  readonly delivered: boolean;
+  readonly messageId: string | null;
+};
 
 export function rememberSpoken(
   spoken: ReadonlySet<string>,
-  text: string,
+  messageId: string | null,
 ): ReadonlySet<string> {
-  const key = voiceSpokenKey(text);
-  if (key.length === 0) {
+  if (messageId === null || messageId.length === 0) {
     return spoken;
   }
-  const kept = [...spoken].filter((item) => item !== key);
-  kept.push(key);
+  const kept = [...spoken].filter((item) => item !== messageId);
+  kept.push(messageId);
   return new Set(kept.slice(-VOICE_SPOKEN_MEMORY));
 }
 
 export function voiceRowSpoken(input: {
   readonly role: "user" | "assistant";
-  readonly text: string;
+  readonly messageId: string;
   readonly spoken: ReadonlySet<string>;
 }): boolean {
-  return input.role === "user" && input.spoken.has(voiceSpokenKey(input.text));
+  return input.role === "user" && input.spoken.has(input.messageId);
 }

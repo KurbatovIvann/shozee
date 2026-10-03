@@ -407,7 +407,7 @@ describe("useAssistantConversation", () => {
       interactionId: INTERACTION,
       revision: 2,
     });
-    expect(outcome).toEqual({ kind: "sent" });
+    expect(outcome).toEqual({ kind: "sent", messageId: null });
     expect(view.latest().failure).toBeNull();
   });
 

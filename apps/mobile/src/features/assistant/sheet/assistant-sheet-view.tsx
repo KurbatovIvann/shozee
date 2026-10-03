@@ -71,7 +71,7 @@ export type AssistantSheetViewModel = {
   readonly loadOlder: () => void;
   readonly loadingOlder: boolean;
   readonly voice: AssistantComposerVoice | null;
-  readonly spokenTexts: ReadonlySet<string>;
+  readonly spokenMessageIds: ReadonlySet<string>;
 };
 
 const NO_EXAMPLE_CHIPS: readonly AssistantExampleChip[] = [];
@@ -163,8 +163,8 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
         onDismiss={model.dismiss}
         spoken={voiceRowSpoken({
           role: item.role,
-          text: item.text,
-          spoken: model.spokenTexts,
+          messageId: item.id,
+          spoken: model.spokenMessageIds,
         })}
         spokenLabel={copy.voice.spoken}
       />
@@ -178,7 +178,7 @@ export function AssistantSheetView(model: AssistantSheetViewModel) {
       model.dismiss,
       model.openHref,
       model.pendingOptionId,
-      model.spokenTexts,
+      model.spokenMessageIds,
     ],
   );
 

@@ -64,6 +64,7 @@ import {
   type VoiceComposerModel,
 } from "./use-voice-composer";
 import { VOICE_SAMPLE_RATE_HZ } from "@showzy/validation/assistant-voice";
+import type { VoiceSendResult } from "./voice-composer";
 import type {
   VoiceWebSocketFactory,
   VoiceWebSocketListener,
@@ -108,7 +109,7 @@ type Latest = { current: VoiceComposerModel | null };
 
 function Probe(props: {
   readonly latest: Latest;
-  readonly send: (text: string) => Promise<boolean>;
+  readonly send: (text: string) => Promise<VoiceSendResult>;
   readonly blocked: boolean;
   readonly createSocket: VoiceWebSocketFactory;
   readonly available: boolean;
@@ -163,7 +164,11 @@ function mount(options?: {
           latest,
           send: (text: string) => {
             sent.push(text);
-            return Promise.resolve(options?.refused !== true);
+            return Promise.resolve(
+              options?.refused === true
+                ? { delivered: false, messageId: null }
+                : { delivered: true, messageId: `msg-${String(sent.length)}` },
+            );
           },
           blocked: options?.blocked ?? false,
           available: options?.available ?? true,
@@ -239,8 +244,32 @@ describe("useVoiceComposer", () => {
 
     expect(view.sent).toEqual(["дві пачки"]);
     expect(view.model().mode).toBe("idle");
-    expect([...view.model().spoken]).toEqual(["дві пачки"]);
+    expect([...view.model().spoken]).toEqual(["msg-1"]);
     expect(platform.announced).toContain(ANNOUNCEMENTS.done);
+  });
+
+  it("keeps the two sends of one phrase apart by the id each stored", async () => {
+    const view = await listening();
+
+    act(() => {
+      view.wire().onText(finalText("дві пачки"));
+    });
+    await flush();
+    view.render();
+    await flush();
+    act(() => {
+      view.model().toggle();
+    });
+    await flush();
+    act(() => {
+      view.wire().onText(finalText("дві пачки"));
+    });
+    await flush();
+    view.render();
+    await flush();
+
+    expect(view.sent).toEqual(["дві пачки", "дві пачки"]);
+    expect([...view.model().spoken]).toEqual(["msg-1", "msg-2"]);
   });
 
   it("sends a transcript the app backgrounded before the composer read it", async () => {

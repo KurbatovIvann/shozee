@@ -35,7 +35,9 @@ import {
   assistantCloseTrace,
   assistantRejectedTrace,
   assistantTurnEarnedCard,
+  assistantTurnMessageId,
   readAssistantChatWindow,
+  type AssistantChatWindowWithTurn,
   type AssistantKitFor,
   type AssistantTracePart,
 } from "@showzy/assistant-runtime";
@@ -51,6 +53,7 @@ import {
   readJson,
   requireBudgetTicket,
   requireCaller,
+  storedUserMessageId,
   takeCommand,
   toolContext,
   type AssistantKitAppEnv,
@@ -214,6 +217,7 @@ export async function handleAssistantKitAbandon(
     200,
     {
       status: "abandoned",
+      userMessageId: null,
       window: await readAssistantChatWindow(kit, turns, scope),
     },
     requestId,
@@ -245,6 +249,23 @@ export async function handleAssistantKitAnswer(
   });
   const scope = { conversationId: body.conversationId, bind: caller.bind };
   const windowNow = () => readAssistantChatWindow(kit, turns, scope);
+  const askedMessageId =
+    given.askedText === undefined
+      ? null
+      : assistantTurnMessageId(
+          { kind: "answer", commandId: body.commandId },
+          "user",
+        );
+  const windowAndAsked = async (): Promise<{
+    readonly window: AssistantChatWindowWithTurn;
+    readonly userMessageId: string | null;
+  }> => {
+    const window = await windowNow();
+    return {
+      window,
+      userMessageId: storedUserMessageId(window, askedMessageId),
+    };
+  };
 
   // Before the claim, not after. The claim is exactly-once by design, so a
   // retry that reached it would be told `gone` — the answer *did* take, and the
@@ -265,7 +286,7 @@ export async function handleAssistantKitAnswer(
   // queued, and a client waiting for this turn's `turn.finished` would wait for
   // an event that is never coming (ADR-0039: `202` means stored and queued).
   if (!(await takeCommand(runtime, command))) {
-    return json(200, { status: "ok", window: await windowNow() }, requestId);
+    return json(200, { status: "ok", ...(await windowAndAsked()) }, requestId);
   }
 
   const claimed = await kit.claim({
@@ -404,7 +425,7 @@ export async function handleAssistantKitAnswer(
       return json(500, { error: { code: "INTERNAL" } }, requestId);
     }
 
-    return json(200, { status: "ok", window: await windowNow() }, requestId);
+    return json(200, { status: "ok", ...(await windowAndAsked()) }, requestId);
   }
 
   if (resolvedOutcome.kind === "error") {
@@ -506,7 +527,11 @@ export async function handleAssistantKitAnswer(
 
   return json(
     202,
-    { status: "accepted", window: await windowNow() },
+    {
+      status: "accepted",
+      userMessageId: result.turn.userMessageId,
+      window: await windowNow(),
+    },
     requestId,
   );
 }

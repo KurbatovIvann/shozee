@@ -53,6 +53,7 @@ export async function handleAssistantKitContinue(
       202,
       {
         status: "accepted",
+        userMessageId: null,
         window: await readAssistantChatWindow(kit, turns, scope),
       },
       requestId,

@@ -31,6 +31,7 @@ import {
   shoMayReadCard,
   type AssistantChatWindowWithTurn,
 } from "@showzy/assistant-runtime";
+import type { AssistantChatSendReceipt } from "@showzy/validation/assistant-chat";
 import type { Context } from "hono";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -51,6 +52,7 @@ import {
   requireCaller,
   requireVerifiedCompany,
   requireOpenCardRead,
+  storedUserMessageId,
   takeCommand,
   type AssistantKitAppEnv,
   type AssistantKitCardVerdict,
@@ -140,7 +142,7 @@ export const assistantKitChatBodySchema = z.strictObject({
  * `openPause` inside it is the open question, so there is no separate `pause`
  * field to keep consistent with it either.
  */
-export interface AssistantKitTurnOk {
+export interface AssistantKitTurnOk extends AssistantChatSendReceipt {
   readonly status: "ok";
   readonly window: AssistantChatWindowWithTurn;
 }
@@ -150,7 +152,7 @@ export interface AssistantKitTurnOk {
  * worker writes into, so a client renders the thread correctly without knowing
  * anything about the queue.
  */
-export interface AssistantKitTurnAccepted {
+export interface AssistantKitTurnAccepted extends AssistantChatSendReceipt {
   readonly status: "accepted";
   readonly window: AssistantChatWindowWithTurn;
 }
@@ -182,15 +184,29 @@ export async function handleAssistantKitChat(
     clientIp: c.get("clientIp"),
   });
   const scope = { conversationId: body.conversationId, bind: caller.bind };
-  const accepted = async (): Promise<Response> =>
-    json(
+  const chatUserMessageId = assistantTurnMessageId(
+    { kind: "chat", commandId: body.commandId },
+    "user",
+  );
+  const answerUserMessageId = assistantTurnMessageId(
+    { kind: "answer", commandId: body.commandId },
+    "user",
+  );
+  const accepted = async (stored?: string | null): Promise<Response> => {
+    const window = await readAssistantChatWindow(kit, turns, scope);
+    return json(
       202,
       {
         status: "accepted",
-        window: await readAssistantChatWindow(kit, turns, scope),
+        userMessageId:
+          stored === undefined
+            ? storedUserMessageId(window, chatUserMessageId)
+            : stored,
+        window,
       },
       requestId,
     );
+  };
 
   const command = {
     route: "chat" as const,
@@ -200,15 +216,18 @@ export async function handleAssistantKitChat(
   };
 
   const finishing = { ...command, route: "answer" as const };
-  const settled = async (): Promise<Response> =>
-    json(
+  const settled = async (): Promise<Response> => {
+    const window = await readAssistantChatWindow(kit, turns, scope);
+    return json(
       200,
       {
         status: "ok",
-        window: await readAssistantChatWindow(kit, turns, scope),
+        userMessageId: storedUserMessageId(window, answerUserMessageId),
+        window,
       },
       requestId,
     );
+  };
   const writeFailed = async (outcome: PauseWriteOutcome): Promise<Response> => {
     await runtime.commands.release(finishing);
     return outcome === "wrong_owner"
@@ -273,10 +292,7 @@ export async function handleAssistantKitChat(
     }
     const asked = await appendChatText(kit, scope, {
       role: "user",
-      messageId: assistantTurnMessageId(
-        { kind: "answer", commandId: body.commandId },
-        "user",
-      ),
+      messageId: answerUserMessageId,
       text: body.text,
     });
     if (asked !== "ok") {
@@ -296,11 +312,13 @@ export async function handleAssistantKitChat(
       if (declined !== "ok") {
         return await writeFailed(declined);
       }
+      const window = await readAssistantChatWindow(kit, turns, scope);
       return json(
         200,
         {
           status: "abandoned",
-          window: await readAssistantChatWindow(kit, turns, scope),
+          userMessageId: storedUserMessageId(window, answerUserMessageId),
+          window,
         },
         requestId,
       );
@@ -431,7 +449,7 @@ export async function handleAssistantKitChat(
     await kit.abandon({ ...scope, interactionId: open.interactionId });
   }
 
-  return await accepted();
+  return await accepted(result.turn.userMessageId);
 }
 
 export async function handleAssistantKitMessages(
@@ -477,5 +495,5 @@ export async function handleAssistantKitMessages(
     before === undefined ? {} : { before },
   );
 
-  return json(200, { status: "ok", window }, requestId);
+  return json(200, { status: "ok", userMessageId: null, window }, requestId);
 }
