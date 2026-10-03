@@ -5,6 +5,7 @@ import {
   createShoClient,
   SHO_DEFAULT_TIMEOUT_MS,
   type ShoClient,
+  type ShoCommand,
   type ShoNow,
   type ShoParseOutcome,
   type ShoResult,
@@ -15,6 +16,7 @@ import {
   parseWithShoContext,
   type ShoContextSource,
 } from "./sho-context-source.js";
+import { shoFocusHolds } from "./sho-focus.js";
 import { createShoPlanner } from "./sho-plan.js";
 import type { ShoEngine, ShoPlan } from "./sho-turn.js";
 
@@ -65,6 +67,9 @@ const fallback = (
   reason: Extract<ShoPlan, { kind: "fallback" }>["reason"],
 ): ShoPlan => ({ kind: "fallback", reason });
 
+const told = (plan: ShoPlan, command: ShoCommand | undefined): ShoPlan =>
+  plan.kind === "call" && command !== undefined ? { ...plan, command } : plan;
+
 export function createShoEngine(deps: ShoEngineDeps): ShoEngineFor {
   const deadlineMs = deps.deadlineMs ?? SHO_DEFAULT_TIMEOUT_MS;
   return (member) => ({
@@ -80,6 +85,10 @@ export function createShoEngine(deps: ShoEngineDeps): ShoEngineFor {
         parsed = await parseWithShoContext(deps.client, deps.source, caller, {
           text: request.text,
           now: shoNowAt(request.now),
+          focus: request.focus,
+          ...(request.previous === undefined
+            ? {}
+            : { previous: request.previous }),
           deadlineMs,
           debug: false,
         });
@@ -95,7 +104,11 @@ export function createShoEngine(deps: ShoEngineDeps): ShoEngineFor {
       if (parsed.outcome !== "ok") {
         return fallback("unreadable");
       }
-      return deps.plan(parsed.value.result, request.now);
+      const command = parsed.value.result.commands[0];
+      if (command !== undefined && !shoFocusHolds(command, request.focus)) {
+        return fallback("unresolved_reference");
+      }
+      return told(deps.plan(parsed.value.result, request.now), command);
     },
   });
 }

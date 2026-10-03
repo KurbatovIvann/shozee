@@ -1,4 +1,8 @@
+import { createAssistantKit } from "@showzy/assistant-kit";
 import type { ModelMessage, ToolSet } from "@showzy/assistant-kit";
+import { testDeps } from "@showzy/assistant-kit/testing";
+import { toProviderToolName } from "@showzy/ai";
+import { shoCommandSchema, type ShoCommand } from "@showzy/sho-protocol";
 import {
   assistantConfirmationPromptSchema,
   ASSISTANT_PREVIEW_LIST_MAX,
@@ -6,17 +10,28 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  assistantInteractions,
+  type assistantInteractionTypes,
+} from "./assistant-interactions.js";
+import { shoFocusFrom, shoPreviousFrom } from "./sho-focus.js";
+
+import {
   runShoTurn,
   shoFreeBudgetHold,
   shoToolCallId,
   type ShoEngine,
   type ShoPlan,
+  type ShoTurnAsk,
   type ShoTurnInput,
+  type ShoTurnRequest,
 } from "./sho-turn.js";
 
 const NOW = new Date("2026-09-11T09:30:00.000Z");
 const COMMAND = "0d1f4b2a-6c3e-4a1d-9f55-7b2c8e1a4d60";
 const TOOL = "customers_list_customers";
+const SESSION = "4f2d6c1b-88a3-4e59-9a07-3c5d2e8f1b44";
+const CONVERSATION = "7c9a1e35-4b62-4d08-9f71-2a6b5c8d3e10";
+const BIND = "owner-1:scope-1";
 
 const engineOf = (plan: ShoPlan): ShoEngine => ({
   plan: () => Promise.resolve(plan),
@@ -39,6 +54,7 @@ function turnWith(
   return {
     text: "покажи клієнтів",
     commandId: COMMAND,
+    sessionId: SESSION,
     now: NOW,
     history,
     tools: toolsWith(execute),
@@ -302,5 +318,236 @@ describe("runShoTurn", () => {
     expect(outcome.kind).toBe("ask");
     if (outcome.kind !== "ask") return;
     expect(outcome.prompt).toEqual({ summary: "Кого саме?" });
+  });
+});
+
+describe("runShoTurn over the stored log", () => {
+  const CREATED = "11111111-1111-4111-8111-111111111111";
+  const CREATE_TOOL = toProviderToolName("customers.createCustomer");
+
+  const createKate: ShoCommand = shoCommandSchema.parse({
+    text: "створи клієнта Катя",
+    action: "customers.createCustomer",
+    kind: "write",
+    effect: "write",
+    confirm: "card",
+    params: { new_name: { text: "Катя" } },
+    needs: [],
+    ready: true,
+    catalogued: true,
+    confidence: { action: 0.99, margin: 0.5, certainty: 0.9, spans: 0.9 },
+    refPrevious: {},
+    creates: { type: "customer", name: "Катя" },
+  });
+
+  const createPlan: ShoPlan = {
+    kind: "call",
+    toolName: CREATE_TOOL,
+    input: { name: "Катя" },
+    reply: "Створив Катю.",
+    writes: true,
+    command: createKate,
+  };
+
+  const recordingEngine = (
+    plan: ShoPlan,
+  ): { readonly engine: ShoEngine; readonly asked: ShoTurnRequest[] } => {
+    const asked: ShoTurnRequest[] = [];
+    return {
+      asked,
+      engine: {
+        plan: (request) => {
+          asked.push(request);
+          return Promise.resolve(plan);
+        },
+      },
+    };
+  };
+
+  const pausing = (): ToolSet => ({
+    [CREATE_TOOL]: {
+      execute: () =>
+        Promise.resolve({
+          kind: "pause",
+          interaction: "confirmation",
+          prompt: { summary: "Створити Катю?" },
+          secret: null,
+        }),
+    } as ToolSet[string],
+  });
+
+  const askCard = async (
+    history: readonly ModelMessage[] = [],
+  ): Promise<ShoTurnAsk> => {
+    const { engine } = recordingEngine(createPlan);
+    const outcome = await runShoTurn({
+      text: "створи клієнта Катя",
+      commandId: COMMAND,
+      sessionId: SESSION,
+      now: NOW,
+      history,
+      tools: () => Promise.resolve(pausing()),
+      engine,
+    });
+    if (outcome.kind !== "ask") {
+      throw new Error("expected the write to pause on its card");
+    }
+    return outcome;
+  };
+
+  const openCard = async (): Promise<readonly ModelMessage[]> =>
+    (await askCard()).continuation.messages;
+
+  const scope = { conversationId: CONVERSATION, bind: BIND };
+
+  const cardFor = async (
+    kit: ReturnType<
+      typeof createAssistantKit<typeof assistantInteractionTypes>
+    >,
+    ask: ShoTurnAsk,
+  ): Promise<string> => {
+    const opened = await kit.open({
+      ...scope,
+      kind: "confirmation",
+      prompt: {
+        summary: "Створити Катю?",
+        preview: { title: "Новий клієнт", lines: [], notes: [] },
+        also: [],
+        level: "card",
+      },
+      secret: {
+        actionName: "customers.createCustomer",
+        canonicalInput: { name: "Катя" },
+        idempotencyKey: "k",
+        challengeId: "c",
+        also: [],
+      },
+      continuation: ask.continuation,
+    });
+    if (opened.kind !== "opened") {
+      throw new Error("expected an open card");
+    }
+    return opened.pause.interactionId;
+  };
+
+  const answered = async (
+    ask: ShoTurnAsk,
+    result: unknown,
+  ): Promise<readonly ModelMessage[]> => {
+    const kit = createAssistantKit(testDeps(assistantInteractions));
+    const interactionId = await cardFor(kit, ask);
+    const claimed = await kit.claim({
+      ...scope,
+      interactionId,
+      revision: 1,
+      answer: { approved: true },
+    });
+    if (claimed.kind !== "claimed") {
+      throw new Error("expected the tap to claim the card");
+    }
+    return kit.resume(claimed, result).messages;
+  };
+
+  const walkedAwayFrom = async (ask: ShoTurnAsk): Promise<void> => {
+    const kit = createAssistantKit(testDeps(assistantInteractions));
+    const interactionId = await cardFor(kit, ask);
+    const dropped = await kit.abandon({ ...scope, interactionId });
+    if (dropped.kind !== "cancelled") {
+      throw new Error("expected the card to be dropped");
+    }
+  };
+
+  it("holds nothing of a write the person has not answered", async () => {
+    const paused = await openCard();
+
+    expect(shoFocusFrom(paused, SESSION)).toEqual([]);
+    expect(shoPreviousFrom(paused)).toBeUndefined();
+  });
+
+  it("takes the created id and drops previous once the write settles", async () => {
+    const settled = await answered(await askCard(), {
+      id: CREATED,
+      name: "Катя",
+    });
+
+    expect(shoFocusFrom(settled, SESSION)).toEqual([
+      { type: "customer", id: CREATED, name: "Катя", how: "created", turns: 0 },
+    ]);
+    expect(shoPreviousFrom(settled)).toBeUndefined();
+  });
+
+  it("asks Шо with the focus the stored log holds, never with what a client sent", async () => {
+    const settled = await answered(await askCard(), {
+      id: CREATED,
+      name: "Катя",
+    });
+    const { engine, asked } = recordingEngine(readPlan);
+
+    await runShoTurn({
+      ...turnWith(readPlan, () =>
+        Promise.resolve({ kind: "ok", result: { items: [] } }),
+      ),
+      text: "створи для неї замовлення",
+      history: settled,
+      engine,
+    });
+
+    expect(asked).toEqual([
+      {
+        text: "створи для неї замовлення",
+        now: NOW,
+        focus: [
+          {
+            type: "customer",
+            id: CREATED,
+            name: "Катя",
+            how: "created",
+            turns: 0,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("asks with nothing from a card the person walked away from", async () => {
+    const ask = await askCard();
+    await walkedAwayFrom(ask);
+    const { engine, asked } = recordingEngine(readPlan);
+
+    await runShoTurn({
+      ...turnWith(readPlan, () =>
+        Promise.resolve({ kind: "ok", result: { items: [] } }),
+      ),
+      history: ask.continuation.messages,
+      engine,
+    });
+
+    expect(asked[0]?.focus).toEqual([]);
+    expect(asked[0]?.previous).toBeUndefined();
+  });
+
+  it("asks with an empty focus when the conversation holds no Шо turn", async () => {
+    const { engine, asked } = recordingEngine(readPlan);
+
+    await runShoTurn({
+      ...turnWith(readPlan, () =>
+        Promise.resolve({ kind: "ok", result: { items: [] } }),
+      ),
+      engine,
+    });
+
+    expect(asked[0]?.focus).toEqual([]);
+  });
+
+  it("stores nothing when the engine named no command", async () => {
+    const outcome = await runShoTurn(
+      turnWith(readPlan, () =>
+        Promise.resolve({ kind: "ok", result: { items: [] } }),
+      ),
+    );
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(shoFocusFrom(outcome.appended, SESSION)).toEqual([]);
   });
 });

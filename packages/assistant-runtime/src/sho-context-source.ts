@@ -6,6 +6,7 @@ import { listNameIndex as listPricingNameIndex } from "@showzy/pricing";
 import type {
   ShoClient,
   ShoFallback,
+  ShoFocusEntry,
   ShoNow,
   ShoParseOutcome,
   ShoPrevious,
@@ -45,6 +46,7 @@ export interface ShoContextSource {
 export interface ShoParseText {
   readonly text: string;
   readonly now: ShoNow;
+  readonly focus: readonly ShoFocusEntry[];
   readonly previous?: ShoPrevious;
   readonly deadlineMs: number;
   readonly debug: boolean;
@@ -180,6 +182,7 @@ export async function parseWithShoContext(
       fingerprint: built.fingerprint,
       text: request.text,
       now: request.now,
+      focus: [...request.focus],
       ...(request.previous === undefined ? {} : { previous: request.previous }),
       deadlineMs: request.deadlineMs,
       debug: request.debug,

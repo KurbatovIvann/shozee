@@ -61,13 +61,16 @@ registry is injected into `createAssistantRuntime`; this package never imports
 - `sho-plan.ts` — that planner (SHO-769). One gate over the parse result, then
   one registered action planner. The gate sends a turn to the dialogue model
   when Шо read more than one command, `none`, a `ui` answer, a `how_to` or
-  `language` need, a `reference` / `check_reference` need (until SHO-770),
-  `unsupported` on the action, a refinement or a reference to an earlier
+  `language` need, `unsupported` on the action, a refinement or a reference to an earlier
   command, action confidence below the calibrated `0.95`, or a blocking need
   no card can settle. `shoLocatorFor` is the other half of that rule: an
   ambiguous or unknown name with candidates, and an unchecked phone or email,
   become a `by: "query"` locator, so the domain resolver raises the picker and
-  the person taps a card (the SHO-747 rule) instead of the model guessing.
+  the person taps a card (the SHO-747 rule) instead of the model guessing. A
+  ref the runtime bound to a live focus entry (`status: "context"`, SHO-770)
+  is an id locator; an offer (`check_reference`) and a focus-ambiguous
+  pronoun are not, because D90 forbids binding either silently and no card
+  asks «Для <name>?» yet — both stay the model's.
   Action planners are registered per action in `SHO_ACTION_PLANNERS` and
   enabled per deployment by `SHO_ACTIONS`, empty by default — an empty list
   means every turn goes to the LLM, as it did before. A planner declares
@@ -266,6 +269,25 @@ registry is injected into `createAssistantRuntime`; this package never imports
   A turn writes under the token the accept stored rather than deriving one
   again, and the placeholder must still be the conversation's latest message —
   only the latest message can be written to.
+- `sho-focus.ts` — `focus` and `previous`, derived from the stored
+  conversation log on every parse and never taken from a client (SHO-770,
+  D78/D88–D90). A Шо turn writes one entry — the command, the session and the
+  moment — into the tool-call message's `providerOptions.sho`, which no
+  provider reads; the records are read back out of that command and the tool
+  result stored beside it, through `STAFF_ASSISTANT_RECORD_SHAPES` — which
+  carries each façade's own keys **and** the record kind, so nothing here
+  keys a second table by the same tool names. Reading rather than storing
+  them is what makes a preview card cost nothing: a turn whose stored result
+  is still `{status: "paused"}` wrote no record, so it holds no `created`
+  entry and is never `previous`, whether the person answered that card later
+  or walked away from it. The kit's resume puts the real result in the
+  paused one's place, so a confirmed write hands back its created id. Шо
+  never runs while a card is open (`shoChatTurn` is reached only with no open
+  pause), so the open card D93 wants is the route's fact to pass in, not
+  something this file re-derives (SHO-776). The walk is newest first, counts the person's commands since
+  each entry for `turns`, marks another session's entries `earlier`, keeps one
+  entry per record and one marker per kind, and sends at most
+  `SHO_MOST_FOCUS`.
 - `sho-context.ts`, `sho-context-source.ts` — the Шо parse context (ADR-0051,
   SHO-767): the three `listNameIndex` reads as the staff member, clipped to
   `@showzy/sho-protocol`'s `CONTEXT_LIMITS` and the 8 MB upload budget so an

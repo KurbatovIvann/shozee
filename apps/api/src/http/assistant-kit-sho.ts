@@ -109,6 +109,7 @@ export async function shoChatTurn(
     const outcome = await runShoTurn({
       text: env.text,
       commandId: env.command.commandId,
+      sessionId: env.caller.sessionId,
       now,
       history: await env.history.load(env.scope),
       tools: () => env.runtime.tools(context),

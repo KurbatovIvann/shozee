@@ -11,6 +11,7 @@ import {
   createShoPlanner,
   shoLocatorFor,
   shoNeedRoute,
+  shoRefLocator,
   shoWrites,
   SHO_ACTION_CONFIDENCE_FLOOR,
   type ShoActionPlan,
@@ -613,6 +614,38 @@ describe("shoLocatorFor", () => {
     expect(
       shoLocatorFor(ref({ text: "той самий", status: "unchecked" })),
     ).toEqual({ kind: "fallback", reason: "unresolved_reference" });
+  });
+
+  it("takes the id the focus bound a reference word to", () => {
+    expect(
+      shoLocatorFor(
+        ref({
+          text: "неї",
+          status: "context",
+          id: "c-1",
+          name: "Катя",
+          focus: 0,
+        }),
+      ),
+    ).toEqual({ kind: "locator", locator: { by: "id", id: "c-1" } });
+  });
+
+  it("leaves a focus pointer the runtime gave no id to the model", () => {
+    expect(
+      shoLocatorFor(ref({ text: "неї", status: "context", focus: 0 })),
+    ).toEqual({ kind: "fallback", reason: "conversation_dependent" });
+  });
+
+  it("gives a write planner the focus id only when it is shaped like one", () => {
+    const bound = (id: string): ShoRef =>
+      ref({ text: "неї", status: "context", id, name: "Катя", focus: 0 });
+    expect(
+      shoRefLocator(bound("11111111-1111-4111-8111-111111111111")),
+    ).toEqual({
+      by: "id",
+      id: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(shoRefLocator(bound("c-1"))).toBe("unsupported_param");
   });
 
   it("refuses a reference that only the conversation explains", () => {

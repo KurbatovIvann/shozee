@@ -114,6 +114,11 @@ export {
   staffAssistantSystemMessages,
   staffAssistantSystemPrompt,
 } from "./system-prompt.js";
+export {
+  STAFF_ASSISTANT_RECORD_SHAPES,
+  type StaffAssistantRecordKind,
+  type StaffAssistantRecordShape,
+} from "./tool-facades/records.js";
 export { staffAssistantTurnContextAddendum } from "./turn-context.js";
 export {
   kyivCalendarDate,

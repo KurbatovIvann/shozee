@@ -278,6 +278,7 @@ export type ShoConfirmation =
   (typeof SHO_CONFIRMATIONS)[number] | ShoUnrecognized;
 export type ShoNeedReason = (typeof SHO_NEED_REASONS)[number] | ShoUnrecognized;
 export type ShoRefStatus = (typeof SHO_REF_STATUSES)[number] | ShoUnrecognized;
+export type ShoRecordType = (typeof SHO_CREATES_TYPES)[number];
 
 export type ShoCandidate = z.infer<typeof shoCandidateSchema>;
 export type ShoNearCandidate = z.infer<typeof shoNearCandidateSchema>;

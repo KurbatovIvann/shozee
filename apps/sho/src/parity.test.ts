@@ -1,15 +1,21 @@
 import {
   CONTEXT_LIMITS,
+  MOST_FOCUS,
   RECORD_LISTS,
   SALE_UNITS,
   parseContext,
+  parseFocus,
 } from "@showzy/sho";
 import {
   SHO_CONTEXT_LIMITS,
   SHO_CONTEXT_LIST_NAMES,
+  SHO_CREATES_TYPES,
+  SHO_FOCUS_HOWS,
   SHO_MAX_CONTEXT_BYTES,
+  SHO_MOST_FOCUS,
   SHO_SALE_UNITS,
   shoContextSchema,
+  shoFocusEntrySchema,
 } from "@showzy/sho-protocol";
 import { describe, expect, it } from "vitest";
 
@@ -207,5 +213,72 @@ describe("@showzy/sho-protocol and the Шо runtime agree on the context", () =>
   it.each(REFUSED)("refuses %s on both sides", (_name, context) => {
     expect(shoContextSchema.safeParse(context).success).toBe(false);
     expect(() => parseContext(context)).toThrow();
+  });
+});
+
+const FOCUS_ENTRY = {
+  type: "customer",
+  id: "11111111-1111-4111-8111-111111111111",
+  name: "Катя",
+  how: "created",
+} as const;
+
+const FOCUS_ACCEPTED: readonly [string, unknown][] = [
+  ["a created record", FOCUS_ENTRY],
+  ["the commands since it was touched", { ...FOCUS_ENTRY, turns: 3 }],
+  ["an earlier conversation's record", { ...FOCUS_ENTRY, earlier: true }],
+  [
+    "a list marker with no id and no name",
+    { type: "order", id: "", name: "", how: "listed", count: 40 },
+  ],
+  ...SHO_CREATES_TYPES.map((type): [string, unknown] => [
+    `the list kind ${type}`,
+    { ...FOCUS_ENTRY, type },
+  ]),
+  ...SHO_FOCUS_HOWS.map((how): [string, unknown] => [
+    `a record ${how}`,
+    { ...FOCUS_ENTRY, how },
+  ]),
+];
+
+const FOCUS_REFUSED: readonly [string, unknown][] = [
+  [
+    "a list kind the runtime has no nouns for",
+    { ...FOCUS_ENTRY, type: "invoice" },
+  ],
+  ["a touch neither side names", { ...FOCUS_ENTRY, how: "whispered" }],
+  ["a negative count of commands", { ...FOCUS_ENTRY, turns: -1 }],
+  ["a fractional count of commands", { ...FOCUS_ENTRY, turns: 1.5 }],
+  ["an entry that is not a record", "Катя"],
+];
+
+describe("@showzy/sho-protocol and the Шо runtime agree on the focus", () => {
+  it("holds the same number of records", () => {
+    expect(SHO_MOST_FOCUS).toBe(MOST_FOCUS);
+  });
+
+  it.each(FOCUS_ACCEPTED)("accepts %s on both sides", (_name, entry) => {
+    expect(shoFocusEntrySchema.safeParse(entry).success).toBe(true);
+    expect(() => parseFocus([entry])).not.toThrow();
+  });
+
+  it.each(FOCUS_REFUSED)("refuses %s on both sides", (_name, entry) => {
+    expect(shoFocusEntrySchema.safeParse(entry).success).toBe(false);
+    expect(() => parseFocus([entry])).toThrow();
+  });
+
+  it("keeps every field the protocol sends", () => {
+    const [entry] = parseFocus([
+      { ...FOCUS_ENTRY, turns: 2, earlier: true, count: 5 },
+    ]);
+    expect(entry).toMatchObject({
+      type: "customer",
+      id: FOCUS_ENTRY.id,
+      name: "Катя",
+      how: "created",
+      turns: 2,
+      earlier: true,
+      count: 5,
+    });
   });
 });
