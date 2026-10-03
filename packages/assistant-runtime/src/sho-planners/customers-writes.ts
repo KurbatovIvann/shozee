@@ -9,6 +9,7 @@ import {
 
 import { shoRefLocator, shoRefused, type ShoActionPlanners } from "./kit.js";
 import {
+  shoSpanText,
   shoSpokenText,
   shoWriteActions,
   shoWritePlanners,
@@ -72,7 +73,7 @@ const contact =
   };
 
 const comment: ShoWriteParamMapper = (param) => {
-  const text = clipped(param, CUSTOMER_NOTES_MAX);
+  const text = shoSpanText(param)?.slice(0, CUSTOMER_NOTES_MAX) ?? null;
   return text === null ? "unsupported_param" : { notes: text };
 };
 

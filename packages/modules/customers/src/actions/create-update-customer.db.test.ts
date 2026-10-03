@@ -33,6 +33,7 @@ import {
 import { createCustomer } from "./create-customer.js";
 import { getCustomerPricingFacts } from "./get-customer-pricing-facts.js";
 import { updateCustomer } from "./update-customer.js";
+import { updateCustomerInputSchema } from "./update-customer.contract.js";
 
 const fixtures = {
   customerUpdateA: randomUUID(),
@@ -720,6 +721,37 @@ describe("customers.updateCustomer", () => {
       groupId: null,
       priceListId: fixtures.listA,
     });
+  });
+
+  it("keeps the stored name when the patch omits it, and never clears it", async () => {
+    const created = await kit.invoke(createCustomer, {
+      name: "Оксана Осадча",
+      phone: "+380501000081",
+    });
+
+    const patched = await kit.invoke(updateCustomer, {
+      id: created.id,
+      notes: "бере тільки оптом",
+    });
+    expect(patched).toMatchObject({
+      name: "Оксана Осадча",
+      phone: "+380501000081",
+      notes: "бере тільки оптом",
+    });
+
+    const renamed = await kit.invoke(updateCustomer, {
+      id: created.id,
+      name: "Оксана Коваль",
+    });
+    expect(renamed).toMatchObject({
+      name: "Оксана Коваль",
+      notes: "бере тільки оптом",
+    });
+
+    expect(
+      updateCustomerInputSchema.safeParse({ id: created.id, name: null })
+        .success,
+    ).toBe(false);
   });
 
   it("refuses to clear the last contact while the others stay omitted", async () => {

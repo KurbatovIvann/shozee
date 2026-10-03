@@ -29,18 +29,24 @@ export interface ShoWritePlan {
 
 export type ShoWritePlans = Readonly<Record<string, ShoWritePlan>>;
 
+const nonEmpty = (said: string | null): string | null => {
+  const text = said?.trim() ?? "";
+  return text.length === 0 ? null : text;
+};
+
+export function shoSpanText(param: ShoParam): string | null {
+  return Array.isArray(param) || !("text" in param)
+    ? null
+    : nonEmpty(param.text);
+}
+
 export function shoSpokenText(param: ShoParam): string | null {
   if (Array.isArray(param)) {
     return null;
   }
-  const said =
-    "value" in param && typeof param.value === "string"
-      ? param.value
-      : "text" in param
-        ? param.text
-        : null;
-  const text = said?.trim() ?? "";
-  return text.length === 0 ? null : text;
+  return "value" in param && typeof param.value === "string"
+    ? nonEmpty(param.value)
+    : shoSpanText(param);
 }
 
 function noteOf(prefix: string, need: ShoNeed): string {
@@ -53,7 +59,10 @@ export function shoWriteNotes(
   notes: Readonly<Record<string, string>>,
 ): readonly string[] {
   return command.needs.flatMap((need) => {
-    const prefix = need.blocking ? undefined : notes[need.reason];
+    const prefix =
+      need.blocking || !Object.hasOwn(notes, need.reason)
+        ? undefined
+        : notes[need.reason];
     return prefix === undefined ? [] : [noteOf(prefix, need)];
   });
 }
@@ -61,7 +70,9 @@ export function shoWriteNotes(
 function inputFor(plan: ShoWritePlan, command: ShoCommand): ShoWriteMapped {
   const input: ShoWriteFields = {};
   for (const [name, param] of Object.entries(command.params)) {
-    const mapper = plan.params[name];
+    const mapper = Object.hasOwn(plan.params, name)
+      ? plan.params[name]
+      : undefined;
     if (mapper === undefined) {
       return "unsupported_param";
     }
@@ -70,13 +81,13 @@ function inputFor(plan: ShoWritePlan, command: ShoCommand): ShoWriteMapped {
       return mapped;
     }
     for (const [field, value] of Object.entries(mapped)) {
-      if (field in input) {
+      if (Object.hasOwn(input, field)) {
         return "unsupported_param";
       }
       input[field] = value;
     }
   }
-  const said = (name: string): boolean => name in command.params;
+  const said = (name: string): boolean => Object.hasOwn(command.params, name);
   return plan.required.every(said) &&
     (plan.oneOf ?? []).every((names) => names.some(said))
     ? input

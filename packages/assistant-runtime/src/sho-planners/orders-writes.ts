@@ -22,7 +22,7 @@ import {
   type ShoPlanFallbackReason,
 } from "./kit.js";
 import {
-  shoSpokenText,
+  shoSpanText,
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
@@ -168,7 +168,7 @@ const createItems = (param: ShoParam): Mapped => {
 };
 
 const createComment: ShoWriteParamMapper = (param) => {
-  const text = shoSpokenText(param);
+  const text = shoSpanText(param);
   return text === null
     ? "unsupported_param"
     : { comment: text.slice(0, CREATE_ORDER_COMMENT_MAX) };

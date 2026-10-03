@@ -233,6 +233,35 @@ export const SHO_CUSTOMER_WRITE_PARSES: Readonly<Record<string, unknown>> =
       domain: "customers",
       verb: "update",
     },
+    "d79-group-update": {
+      text: "признач групі салони партнерський прайс",
+      action: "customers.updateGroup",
+      kind: "write",
+      effect: "write",
+      confirm: "card",
+      params: {
+        group: {
+          text: "салони",
+          status: "resolved",
+          id: "g-salons",
+          name: "Салони",
+          match: "exact",
+        },
+        price_list: {
+          text: "партнерський",
+          status: "resolved",
+          id: "pl-partner",
+          name: "Партнерський",
+          match: "exact",
+        },
+      },
+      needs: [],
+      ready: true,
+      refPrevious: {},
+      catalogued: false,
+      domain: "customers",
+      verb: "create",
+    },
   });
 
 export function shoCustomerWriteParse(caseId: string): unknown {

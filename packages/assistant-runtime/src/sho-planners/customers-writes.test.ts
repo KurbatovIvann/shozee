@@ -1,4 +1,8 @@
 import {
+  createCustomerContract,
+  updateCustomerContract,
+} from "@showzy/customers/contract";
+import {
   shoCommandSchema,
   shoResultSchema,
   type ShoCommand,
@@ -31,6 +35,7 @@ const OVER_THE_FLOOR = {
 const COMPANY_IDS: Readonly<Record<string, string>> = {
   "c-honchar": "6d2f0a71-4c83-4e19-9a7b-2f58d31c6e40",
   "c-savchuk": "b18c7e52-30d9-4a66-8f21-5c90e4a7b3d6",
+  "g-salons": "2a47f5c8-91b0-4d3e-8c62-7e01b9d45f38",
 };
 
 type Json = Record<string, unknown>;
@@ -86,12 +91,29 @@ function resultOf(command: ShoCommand): ShoResult {
   });
 }
 
+function actionAccepts(action: string, input: unknown): boolean {
+  if (action === createCustomerContract.name) {
+    return createCustomerContract.input.safeParse(input).success;
+  }
+  if (action === updateCustomerContract.name) {
+    return updateCustomerContract.input.safeParse(input).success;
+  }
+  throw new Error(`no action input schema for ${action}`);
+}
+
 function planOf(command: ShoCommand): ShoActionPlan {
   const planner = SHO_CUSTOMER_WRITE_PLANNERS[command.action];
   if (planner === undefined) {
     throw new Error(`no customer write planner for ${command.action}`);
   }
-  return planner.plan(command, NOW);
+  const plan = planner.plan(command, NOW);
+  if (plan.kind === "call") {
+    expect({
+      action: command.action,
+      accepted: actionAccepts(command.action, plan.input),
+    }).toEqual({ action: command.action, accepted: true });
+  }
+  return plan;
 }
 
 const notesOf = (plan: ShoActionPlan): unknown =>
@@ -175,6 +197,41 @@ describe("SHO_CUSTOMER_WRITE_PLANNERS maps the conformance update parses", () =>
         notes: "забирает сама после обеда",
       },
     });
+  });
+
+  it("plans the d79-group-update group as the customer's groupId", () => {
+    const edit = paramsOf("d79-group-update");
+    const plan = planOf(
+      asCompanyRecords("d95-named-update", {
+        params: {
+          customer: (reId(paramsOf("d95-named-update")) as Json)["customer"],
+          group: reId(edit["group"]),
+        },
+      }),
+    );
+    expect(plan).toEqual({
+      kind: "call",
+      toolName: "customers_updateCustomer",
+      reply: "Клієнта оновлено.",
+      input: {
+        id: COMPANY_IDS["c-honchar"],
+        groupId: COMPANY_IDS["g-salons"],
+      },
+    });
+  });
+
+  it("sends a price_list to the LLM: the planner maps no price list", () => {
+    const edit = paramsOf("d79-group-update");
+    expect(
+      planOf(
+        asCompanyRecords("d95-named-update", {
+          params: {
+            customer: (reId(paramsOf("d95-named-update")) as Json)["customer"],
+            price_list: reId(edit["price_list"]),
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
   });
 
   it("sends only what Шо parsed, so an unsaid field keeps its stored value", () => {
