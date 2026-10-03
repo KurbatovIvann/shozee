@@ -1,5 +1,9 @@
 import type { ActionCtx } from "@showzy/core";
-import { companyCustomers, customerGroups } from "@showzy/db/schema/customers";
+import {
+  companyCustomers,
+  counterparties,
+  customerGroups,
+} from "@showzy/db/schema/customers";
 import { and, asc, eq } from "drizzle-orm";
 
 type StaffDb = Extract<ActionCtx, { principal: "staff" }>["db"];
@@ -7,6 +11,7 @@ type StaffDb = Extract<ActionCtx, { principal: "staff" }>["db"];
 export type CustomersNameIndexCaps = {
   readonly customers: number;
   readonly groups: number;
+  readonly counterparties: number;
 };
 
 export async function readCustomersNameIndex(args: {
@@ -33,6 +38,13 @@ export async function readCustomersNameIndex(args: {
     .orderBy(asc(customerGroups.id))
     .limit(args.caps.groups + 1);
 
+  const counterpartyRows = await args.db
+    .select({ id: counterparties.id, name: counterparties.name })
+    .from(counterparties)
+    .where(eq(counterparties.companyId, args.companyId))
+    .orderBy(asc(counterparties.id))
+    .limit(args.caps.counterparties + 1);
+
   return {
     customers: {
       items: customerRows.slice(0, args.caps.customers),
@@ -41,6 +53,10 @@ export async function readCustomersNameIndex(args: {
     groups: {
       items: groupRows.slice(0, args.caps.groups),
       truncated: groupRows.length > args.caps.groups,
+    },
+    counterparties: {
+      items: counterpartyRows.slice(0, args.caps.counterparties),
+      truncated: counterpartyRows.length > args.caps.counterparties,
     },
   };
 }

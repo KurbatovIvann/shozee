@@ -9,7 +9,11 @@ import {
 import { user } from "@showzy/db/schema/auth";
 import { products, productVariants } from "@showzy/db/schema/catalog";
 import { companyMembers } from "@showzy/db/schema/companies";
-import { companyCustomers, customerGroups } from "@showzy/db/schema/customers";
+import {
+  companyCustomers,
+  counterparties,
+  customerGroups,
+} from "@showzy/db/schema/customers";
 import { priceLists } from "@showzy/db/schema/pricing";
 import { shoContextSchema } from "@showzy/sho-protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -33,6 +37,8 @@ const fixtures = {
   foreignCustomer: randomUUID(),
   group: randomUUID(),
   priceList: randomUUID(),
+  counterparty: randomUUID(),
+  foreignCounterparty: randomUUID(),
 };
 
 const names = {
@@ -45,11 +51,24 @@ const names = {
   foreignCustomer: "Шо Чужа Оля",
   group: "Шо Гурт",
   priceList: "Шо Роздріб",
+  counterparty: "Шо ТОВ Ранок",
+  foreignCounterparty: "Шо ТОВ Чужий Ранок",
 };
 
 const contact = {
   phone: "+380501000777",
   email: `sho-context-${fixtures.customer}@kit.test`,
+};
+
+const requisites = {
+  edrpou: "14360570",
+  iban: "UA213223130000026007233566001",
+  bankName: "Шо Монобанк",
+  bankMfo: "322313",
+  legalAddress: "вулиця Бджолина 8",
+  phone: "+380501000779",
+  email: `sho-counterparty-${fixtures.counterparty}@kit.test`,
+  notes: "Шо платить із затримкою",
 };
 
 const clerkUserId = randomUUID();
@@ -125,6 +144,20 @@ beforeAll(async () => {
       companyId: kitIdentities.companies.a,
       name: names.group,
       slug: `sho-group-${fixtures.group}`,
+    },
+  ]);
+
+  await kit.db.runtime.db.insert(counterparties).values([
+    {
+      id: fixtures.counterparty,
+      companyId: kitIdentities.companies.a,
+      name: names.counterparty,
+      ...requisites,
+    },
+    {
+      id: fixtures.foreignCounterparty,
+      companyId: kitIdentities.companies.b,
+      name: names.foreignCounterparty,
     },
   ]);
 
@@ -206,6 +239,38 @@ describe("createShoContextSource", () => {
     const wire = JSON.stringify(built.context);
     expect(wire).not.toContain(contact.phone);
     expect(wire).not.toContain(contact.email);
+  });
+
+  it("carries a counterparty as an id and a name, never its requisites", async () => {
+    const built = await sourceOf().current(anna());
+
+    expect(built.context.counterparties).toContainEqual({
+      id: fixtures.counterparty,
+      name: names.counterparty,
+    });
+
+    const wire = JSON.stringify(built.context);
+    for (const identifier of Object.values(requisites)) {
+      expect(wire).not.toContain(identifier);
+    }
+  });
+
+  it("never carries another company's counterparties", async () => {
+    const source = sourceOf();
+    const ours = await source.current(anna());
+    const theirs = await source.current(boris());
+
+    expect(
+      ours.context.counterparties?.map((record) => record.id),
+    ).not.toContain(fixtures.foreignCounterparty);
+    expect(
+      theirs.context.counterparties?.map((record) => record.id),
+    ).not.toContain(fixtures.counterparty);
+    expect(JSON.stringify(theirs.context)).not.toContain(names.counterparty);
+    expect(theirs.context.counterparties).toContainEqual({
+      id: fixtures.foreignCounterparty,
+      name: names.foreignCounterparty,
+    });
   });
 
   it("never carries one company's names into another company's key", async () => {

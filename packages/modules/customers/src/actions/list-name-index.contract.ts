@@ -3,6 +3,7 @@ import { z } from "zod";
 
 export const LIST_NAME_INDEX_CUSTOMERS_MAX = 20_000;
 export const LIST_NAME_INDEX_GROUPS_MAX = 5_000;
+export const LIST_NAME_INDEX_COUNTERPARTIES_MAX = 20_000;
 
 const nameIndexEntrySchema = z.strictObject({
   id: z.uuid(),
@@ -19,12 +20,13 @@ export const listNameIndexInputSchema = z.strictObject({});
 export const listNameIndexOutputSchema = z.strictObject({
   customers: nameIndexListSchema,
   groups: nameIndexListSchema,
+  counterparties: nameIndexListSchema,
 });
 
 export const listNameIndexContract = defineActionContract({
   name: "customers.listNameIndex",
   description:
-    "Return every active CRM customer and every customer group in the staff member's active company as ids and names only, for the Шо parse context (ADR-0051). Archived customers are excluded. No phone, email, or any other contact field is returned: a phone or email a person says is an unchecked reference the server resolves. Each list is capped (20000 customers, 5000 groups) and sets truncated when more rows exist. The byte budget of the Шо context and its partial flag belong to the context builder (ADR-0051), not to this read. Company id is never input. Internal — not mounted on HTTP.",
+    "Return every active CRM customer, every customer group and every counterparty in the staff member's active company as ids and names only, for the Шо parse context (ADR-0051). Archived customers are excluded. No phone, email, or any other contact field is returned, and a counterparty carries neither its ЄДРПОУ, IBAN, bank, legal address nor its notes: a phone, email or requisite a person says is an unchecked reference the server resolves. Each list is capped (20000 customers, 5000 groups, 20000 counterparties) and sets truncated when more rows exist. The byte budget of the Шо context and its partial flag belong to the context builder (ADR-0051), not to this read. Company id is never input. Internal — not mounted on HTTP.",
   principal: "staff",
   transport: "internal",
   input: listNameIndexInputSchema,

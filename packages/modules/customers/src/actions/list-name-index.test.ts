@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  LIST_NAME_INDEX_COUNTERPARTIES_MAX,
   LIST_NAME_INDEX_CUSTOMERS_MAX,
   LIST_NAME_INDEX_GROUPS_MAX,
   listNameIndexContract,
 } from "./list-name-index.contract.js";
+
+const SOME_ID = "11111111-1111-4111-8111-111111111111";
+
+const outputOf = (overrides: Record<string, unknown> = {}) => ({
+  customers: { items: [{ id: SOME_ID, name: "Alpha" }], truncated: false },
+  groups: { items: [], truncated: false },
+  counterparties: { items: [], truncated: false },
+  ...overrides,
+});
 
 describe("customers.listNameIndex contract", () => {
   it("is a staff internal read with customers:view", () => {
@@ -21,6 +31,7 @@ describe("customers.listNameIndex contract", () => {
     expect(listNameIndexContract.timeout).toBe(5_000);
     expect(LIST_NAME_INDEX_CUSTOMERS_MAX).toBe(20_000);
     expect(LIST_NAME_INDEX_GROUPS_MAX).toBe(5_000);
+    expect(LIST_NAME_INDEX_COUNTERPARTIES_MAX).toBe(20_000);
   });
 
   it("takes no input and rejects a tenant identifier", () => {
@@ -36,13 +47,7 @@ describe("customers.listNameIndex contract", () => {
   });
 
   it("carries ids and names only, never a contact field", () => {
-    const parsed = listNameIndexContract.output.parse({
-      customers: {
-        items: [{ id: "11111111-1111-4111-8111-111111111111", name: "Alpha" }],
-        truncated: false,
-      },
-      groups: { items: [], truncated: false },
-    });
+    const parsed = listNameIndexContract.output.parse(outputOf());
     expect(Object.keys(parsed.customers.items[0] ?? {}).sort()).toEqual([
       "id",
       "name",
@@ -50,20 +55,59 @@ describe("customers.listNameIndex contract", () => {
 
     for (const contact of ["phone", "email"]) {
       expect(
-        listNameIndexContract.output.safeParse({
-          customers: {
-            items: [
-              {
-                id: "11111111-1111-4111-8111-111111111111",
-                name: "Alpha",
-                [contact]: "leaked",
-              },
-            ],
-            truncated: false,
-          },
-          groups: { items: [], truncated: false },
-        }).success,
+        listNameIndexContract.output.safeParse(
+          outputOf({
+            customers: {
+              items: [{ id: SOME_ID, name: "Alpha", [contact]: "leaked" }],
+              truncated: false,
+            },
+          }),
+        ).success,
       ).toBe(false);
     }
+  });
+
+  it("carries a counterparty as an id and a name without its requisites", () => {
+    const parsed = listNameIndexContract.output.parse(
+      outputOf({
+        counterparties: {
+          items: [{ id: SOME_ID, name: "ТОВ Ранок" }],
+          truncated: false,
+        },
+      }),
+    );
+    expect(parsed.counterparties.items).toEqual([
+      { id: SOME_ID, name: "ТОВ Ранок" },
+    ]);
+
+    for (const requisite of [
+      "edrpou",
+      "iban",
+      "bankName",
+      "bankMfo",
+      "legalAddress",
+      "phone",
+      "email",
+      "notes",
+    ]) {
+      expect(
+        listNameIndexContract.output.safeParse(
+          outputOf({
+            counterparties: {
+              items: [
+                { id: SOME_ID, name: "ТОВ Ранок", [requisite]: "leaked" },
+              ],
+              truncated: false,
+            },
+          }),
+        ).success,
+      ).toBe(false);
+    }
+  });
+
+  it("requires the counterparties list of every read", () => {
+    const without: Record<string, unknown> = outputOf();
+    delete without["counterparties"];
+    expect(listNameIndexContract.output.safeParse(without).success).toBe(false);
   });
 });

@@ -10,7 +10,11 @@ import {
 } from "@showzy/core/testing";
 import { user } from "@showzy/db/schema/auth";
 import { companyMembers } from "@showzy/db/schema/companies";
-import { companyCustomers, customerGroups } from "@showzy/db/schema/customers";
+import {
+  companyCustomers,
+  counterparties,
+  customerGroups,
+} from "@showzy/db/schema/customers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { readCustomersNameIndex } from "../services/name-index.js";
@@ -24,6 +28,20 @@ const fixtures = {
   group: randomUUID(),
   secondGroup: randomUUID(),
   foreignGroup: randomUUID(),
+  counterparty: randomUUID(),
+  secondCounterparty: randomUUID(),
+  foreignCounterparty: randomUUID(),
+};
+
+const requisites = {
+  edrpou: "14360570",
+  iban: "UA213223130000026007233566001",
+  bankName: "Монобанк",
+  bankMfo: "322313",
+  legalAddress: "вулиця Бджолина 8",
+  phone: "+380501000005",
+  email: "counterparty@kit.test",
+  notes: "платить із затримкою",
 };
 
 const clerkUserId = randomUUID();
@@ -84,6 +102,25 @@ beforeAll(async () => {
     },
   ]);
 
+  await kit.db.runtime.db.insert(counterparties).values([
+    {
+      id: fixtures.counterparty,
+      companyId: kitIdentities.companies.a,
+      name: "ТОВ Ранок",
+      ...requisites,
+    },
+    {
+      id: fixtures.secondCounterparty,
+      companyId: kitIdentities.companies.a,
+      name: "ФОП Нечипорук",
+    },
+    {
+      id: fixtures.foreignCounterparty,
+      companyId: kitIdentities.companies.b,
+      name: "ТОВ Чужий Ранок",
+    },
+  ]);
+
   await kit.db.runtime.db.insert(user).values({
     id: clerkUserId,
     name: "Clerk",
@@ -137,13 +174,15 @@ describe("customers.listNameIndex", () => {
     const capped = await readCustomersNameIndex({
       db: kit.db.runtime.db,
       companyId: kitIdentities.companies.a,
-      caps: { customers: 1, groups: 1 },
+      caps: { customers: 1, groups: 1, counterparties: 1 },
     });
 
     expect(capped.customers.items).toHaveLength(1);
     expect(capped.customers.truncated).toBe(true);
     expect(capped.groups.items).toHaveLength(1);
     expect(capped.groups.truncated).toBe(true);
+    expect(capped.counterparties.items).toHaveLength(1);
+    expect(capped.counterparties.truncated).toBe(true);
   });
 
   it("excludes archived customers", async () => {
@@ -155,8 +194,31 @@ describe("customers.listNameIndex", () => {
 
   it("returns no phone, email, or other contact field", async () => {
     const listed = await kit.invoke(listNameIndex, {});
-    for (const entry of [...listed.customers.items, ...listed.groups.items]) {
+    for (const entry of [
+      ...listed.customers.items,
+      ...listed.groups.items,
+      ...listed.counterparties.items,
+    ]) {
       expect(Object.keys(entry).sort()).toEqual(["id", "name"]);
+    }
+  });
+
+  it("returns counterparties as ids and names without their requisites", async () => {
+    const listed = await kit.invoke(listNameIndex, {});
+
+    expect(
+      listed.counterparties.items.find(
+        (entry) => entry.id === fixtures.counterparty,
+      ),
+    ).toEqual({ id: fixtures.counterparty, name: "ТОВ Ранок" });
+    expect(listed.counterparties.items.map((entry) => entry.id)).toContain(
+      fixtures.secondCounterparty,
+    );
+    expect(listed.counterparties.truncated).toBe(false);
+
+    const wire = JSON.stringify(listed.counterparties);
+    for (const leaked of Object.values(requisites)) {
+      expect(wire).not.toContain(leaked);
     }
   });
 
@@ -167,6 +229,9 @@ describe("customers.listNameIndex", () => {
     );
     expect(listed.groups.items.map((entry) => entry.id)).not.toContain(
       fixtures.foreignGroup,
+    );
+    expect(listed.counterparties.items.map((entry) => entry.id)).not.toContain(
+      fixtures.foreignCounterparty,
     );
 
     const otherTenant = await kit.invoke(
@@ -183,6 +248,12 @@ describe("customers.listNameIndex", () => {
     expect(otherTenant.customers.items.map((entry) => entry.id)).not.toContain(
       fixtures.active,
     );
+    expect(otherTenant.counterparties.items.map((entry) => entry.id)).toContain(
+      fixtures.foreignCounterparty,
+    );
+    expect(
+      otherTenant.counterparties.items.map((entry) => entry.id),
+    ).not.toContain(fixtures.counterparty);
   });
 
   it("denies staff without customers:view", async () => {

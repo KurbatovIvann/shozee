@@ -34,6 +34,7 @@ export interface ShoCatalogNameIndex {
 export interface ShoCustomersNameIndex {
   readonly customers: ShoNameList;
   readonly groups: ShoNameList;
+  readonly counterparties: ShoNameList;
 }
 
 export interface ShoPricingNameIndex {
@@ -71,6 +72,7 @@ interface ShoContextCaps {
   readonly variants: number;
   readonly customers: number;
   readonly groups: number;
+  readonly counterparties: number;
   readonly priceLists: number;
 }
 
@@ -80,6 +82,7 @@ const FULL_CAPS: ShoContextCaps = {
   variants: SHO_CONTEXT_LIMITS.variants,
   customers: SHO_CONTEXT_LIMITS.customers,
   groups: SHO_CONTEXT_LIMITS.groups,
+  counterparties: SHO_CONTEXT_LIMITS.counterparties,
   priceLists: SHO_CONTEXT_LIMITS.priceLists,
 };
 
@@ -185,6 +188,10 @@ function compose(
     snapshot.customers === null
       ? null
       : clipList(snapshot.customers.groups, caps.groups);
+  const counterparties =
+    snapshot.customers === null
+      ? null
+      : clipList(snapshot.customers.counterparties, caps.counterparties);
   const priceLists =
     snapshot.pricing === null
       ? null
@@ -194,6 +201,7 @@ function compose(
       ["products", products],
       ["customers", customers],
       ["groups", groups],
+      ["counterparties", counterparties],
       ["priceLists", priceLists],
     ] as const
   )
@@ -205,6 +213,9 @@ function compose(
     ...(products === null ? {} : { products: products.items }),
     ...(customers === null ? {} : { customers: customers.items }),
     ...(groups === null ? {} : { groups: groups.items }),
+    ...(counterparties === null
+      ? {}
+      : { counterparties: counterparties.items }),
     ...(priceLists === null ? {} : { priceLists: priceLists.items }),
     ...(partial.length === 0 ? {} : { partial }),
   };
@@ -227,6 +238,7 @@ function halved(caps: ShoContextCaps): ShoContextCaps {
     variants: Math.floor(caps.variants / 2),
     customers: Math.floor(caps.customers / 2),
     groups: Math.floor(caps.groups / 2),
+    counterparties: Math.floor(caps.counterparties / 2),
     priceLists: Math.floor(caps.priceLists / 2),
   };
 }

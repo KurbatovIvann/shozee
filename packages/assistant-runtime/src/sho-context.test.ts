@@ -1,10 +1,13 @@
 import {
   SHO_CONTEXT_LIMITS,
   SHO_MAX_CONTEXT_BYTES,
+  shoCommandSchema,
   shoContextSchema,
 } from "@showzy/sho-protocol";
 import { describe, expect, it } from "vitest";
 
+import { shoCustomerWriteParse } from "./sho-planners/__tests__/customer-write-parses.js";
+import { SHO_CUSTOMER_WRITE_PLANNERS } from "./sho-planners/customers-writes.js";
 import {
   buildShoContext,
   type ShoCatalogNameIndex,
@@ -44,6 +47,7 @@ const snapshot = (
   customers: {
     customers: list(entries("customer", 2)),
     groups: list(entries("group", 2)),
+    counterparties: list(entries("counterparty", 2)),
   },
   pricing: { priceLists: list(entries("price-list", 2)) },
   ...overrides,
@@ -61,7 +65,51 @@ describe("buildShoContext", () => {
     ]);
     expect(built.context.groups).toHaveLength(2);
     expect(built.context.priceLists).toHaveLength(2);
+    expect(built.context.counterparties).toEqual([
+      { id: id("counterparty", 0), name: "counterparty 0" },
+      { id: id("counterparty", 1), name: "counterparty 1" },
+    ]);
     expect(built.context.partial).toBeUndefined();
+  });
+
+  it("marks the counterparties the read truncated as partial", () => {
+    const built = buildShoContext(
+      snapshot({
+        customers: {
+          customers: list(entries("customer", 1)),
+          groups: list([]),
+          counterparties: list(entries("counterparty", 1), true),
+        },
+      }),
+    );
+
+    expect(built.context.partial).toEqual(["counterparties"]);
+  });
+
+  it("clips the counterparties at the runtime limit", () => {
+    const built = buildShoContext(
+      snapshot({
+        customers: {
+          customers: list([]),
+          groups: list([]),
+          counterparties: list(
+            entries("counterparty", SHO_CONTEXT_LIMITS.counterparties + 10),
+          ),
+        },
+      }),
+    );
+
+    expect(shoContextSchema.parse(built.context)).toEqual(built.context);
+    expect(built.context.counterparties).toHaveLength(
+      SHO_CONTEXT_LIMITS.counterparties,
+    );
+    expect(built.context.partial).toEqual(["counterparties"]);
+  });
+
+  it("leaves the counterparties out when the customers scope is unseen", () => {
+    const built = buildShoContext(snapshot({ customers: null }));
+
+    expect(built.context.counterparties).toBeUndefined();
   });
 
   it("leaves brand, unit and variant values unsent", () => {
@@ -123,6 +171,7 @@ describe("buildShoContext", () => {
             { id: "customer-2", name: "   " },
           ]),
           groups: list([]),
+          counterparties: list([]),
         },
       }),
     );
@@ -152,6 +201,7 @@ describe("buildShoContext", () => {
         customers: {
           customers: list(entries("customer", 1)),
           groups: list(entries("group", SHO_CONTEXT_LIMITS.groups + 1_000)),
+          counterparties: list(entries("counterparty", 1)),
         },
       }),
     );
@@ -180,6 +230,7 @@ describe("buildShoContext", () => {
             ),
           ),
           groups: list([]),
+          counterparties: list([]),
         },
         pricing: null,
       }),
@@ -190,5 +241,58 @@ describe("buildShoContext", () => {
     expect(bytes).toBeLessThan(SHO_MAX_CONTEXT_BYTES);
     expect(built.context.customers?.length).toBeGreaterThan(0);
     expect(built.context.partial).toEqual(["customers"]);
+  });
+});
+
+const NECHYPORUK = "b18c7e52-30d9-4a66-8f21-5c90e4a7b3d6";
+
+const CONFIDENT = { action: 0.99, margin: 0.8, certainty: 0.9, spans: 0.9 };
+
+const PLANNED_AT = new Date("2026-10-03T12:00:00.000Z");
+
+function counterpartyCommand(caseId: string, counterpartyId: string) {
+  const parse = JSON.parse(
+    JSON.stringify(shoCustomerWriteParse(caseId)),
+  ) as Record<string, unknown>;
+  const params = parse["params"] as Record<string, Record<string, unknown>>;
+  const said = params["counterparty"];
+  if (said === undefined) {
+    throw new Error(`${caseId} names no counterparty`);
+  }
+  return shoCommandSchema.parse({
+    ...parse,
+    confidence: CONFIDENT,
+    params: { ...params, counterparty: { ...said, id: counterpartyId } },
+  });
+}
+
+describe("the counterparties the builder publishes", () => {
+  it("carry the ids a counterparty write planner plans on", () => {
+    const built = buildShoContext(
+      snapshot({
+        customers: {
+          customers: list([]),
+          groups: list([]),
+          counterparties: list([
+            { id: NECHYPORUK, name: "ФОП Нечипорук Галина" },
+          ]),
+        },
+      }),
+    );
+
+    expect(built.context.counterparties).toEqual([
+      { id: NECHYPORUK, name: "ФОП Нечипорук Галина" },
+    ]);
+
+    const command = counterpartyCommand("d79-counterparty-rest", NECHYPORUK);
+
+    expect(
+      SHO_CUSTOMER_WRITE_PLANNERS[command.action]?.plan(command, PLANNED_AT),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_updateCounterparty",
+      reply: "Контрагента оновлено.",
+      input: { id: NECHYPORUK, phone: "0501112233" },
+    });
   });
 });
