@@ -1,4 +1,4 @@
-import { implementAction, type AuditTargetEnv } from "@showzy/core";
+import { implementAction } from "@showzy/core";
 import { NotFoundError } from "@showzy/core/errors";
 import { documents, documentShareTokens } from "@showzy/db/schema/documents";
 import { getArtifact } from "@showzy/doc-generation/get-artifact";
@@ -7,9 +7,9 @@ import {
   issueShareDownloadUrl,
   issueShareSigningDownloadUrl,
 } from "@showzy/files";
+import { holderAuditTarget } from "@showzy/module-kit/audit-target";
 import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import { and, eq, isNull } from "drizzle-orm";
-import { z } from "zod";
 
 import {
   PAGE_TOKEN_TTL_MS,
@@ -30,6 +30,7 @@ import {
   hasLiveShareToken,
   loadDocumentPreviewFacts,
 } from "../services/preview-document.js";
+import { resolveDocumentReference } from "../services/resolve-document-reference.js";
 import { getDocumentShareOrigin } from "../services/share-origin.js";
 import {
   generateDocumentShareToken,
@@ -37,8 +38,6 @@ import {
 } from "../services/token-hash.js";
 import { mapShareActiveTokenUniqueViolation } from "../services/unique-violations.js";
 import { requireWritable } from "../services/writable.js";
-
-const documentIdHolder = z.object({ documentId: z.string() });
 
 const PAGE_TOKEN_TTL_DAYS = PAGE_TOKEN_TTL_MS / (24 * 60 * 60 * 1000);
 
@@ -49,24 +48,29 @@ function shareNote(replacesActiveLink: boolean): string {
     : `Буде створено нове посилання, і ${lifetime}.`;
 }
 
-function shareAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
-  const parsed = documentIdHolder.safeParse(env.input);
-  return {
-    type: "document",
-    id: parsed.success ? parsed.data.documentId : "unknown",
-  };
-}
+const shareAuditTarget = holderAuditTarget({
+  type: "document",
+  field: "documentId",
+  fallback: "unknown",
+  sources: ["output", "input"],
+});
 
 export const shareDocument = implementAction(shareDocumentContract, {
   handler: async (input, ctx) => {
     const db = requireWritable(ctx.db);
+    const documentId = await resolveDocumentReference({
+      db,
+      companyId: ctx.companyId,
+      call: ctx.call,
+      input,
+    });
     const locked = await db
       .select({ id: documents.id })
       .from(documents)
       .where(
         and(
           eq(documents.companyId, ctx.companyId),
-          eq(documents.id, input.documentId),
+          eq(documents.id, documentId),
         ),
       )
       .limit(1)
@@ -78,10 +82,10 @@ export const shareDocument = implementAction(shareDocumentContract, {
     const view = await loadStaffDocument({
       db: ctx.db,
       companyId: ctx.companyId,
-      documentId: input.documentId,
+      documentId: documentId,
     });
     const generation = await loadGenerationArtifact({
-      documentId: input.documentId,
+      documentId: documentId,
       getArtifact: (body) => ctx.call(getArtifact, body),
     });
     const minted = await mintSharePdfDownload({
@@ -90,7 +94,7 @@ export const shareDocument = implementAction(shareDocumentContract, {
         ctx.call(issueShareDownloadUrl, { fileId: id }),
     });
     const signing = await ctx.call(getSigning, {
-      documentId: input.documentId,
+      documentId: documentId,
     });
     const signedFileId =
       signing.status === "supplier_signed"
@@ -111,7 +115,7 @@ export const shareDocument = implementAction(shareDocumentContract, {
       .where(
         and(
           eq(documentShareTokens.companyId, ctx.companyId),
-          eq(documentShareTokens.documentId, input.documentId),
+          eq(documentShareTokens.documentId, documentId),
           isNull(documentShareTokens.revokedAt),
         ),
       );
@@ -119,7 +123,7 @@ export const shareDocument = implementAction(shareDocumentContract, {
     try {
       await db.insert(documentShareTokens).values({
         companyId: ctx.companyId,
-        documentId: input.documentId,
+        documentId: documentId,
         tokenHash,
         expiresAt: new Date(now.getTime() + PAGE_TOKEN_TTL_MS),
         pdfDownloadUrl: minted.pdfDownloadUrl,
@@ -140,15 +144,21 @@ export const shareDocument = implementAction(shareDocumentContract, {
   },
   preview: async (input, env) => {
     const companyId = previewCompanyScope(env.companyId, shareDocumentContract);
+    const documentId = await resolveDocumentReference({
+      db: env.tx,
+      companyId,
+      call: env.call,
+      input,
+    });
     const facts = await loadDocumentPreviewFacts({
       tx: env.tx,
       companyId,
-      documentId: input.documentId,
+      documentId,
     });
     const replacesActiveLink = await hasLiveShareToken({
       tx: env.tx,
       companyId,
-      documentId: input.documentId,
+      documentId,
     });
     return {
       title: `Поділитися документом ${facts.documentNumber}`,

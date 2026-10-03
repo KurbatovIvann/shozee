@@ -284,6 +284,18 @@ const callEdges: readonly DeclaredCallEdge[] = [
     callee: "docSigning.get",
   },
   {
+    caller: "documents.cancel",
+    callee: "companies.get",
+  },
+  {
+    caller: "documents.share",
+    callee: "companies.get",
+  },
+  {
+    caller: "documents.requestSign",
+    callee: "companies.get",
+  },
+  {
     caller: "docGeneration.renderPdf",
     callee: "documents.getForGeneration",
   },

@@ -12,9 +12,12 @@
 import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
-export const cancelDocumentInputSchema = z.strictObject({
-  documentId: z.uuid(),
-});
+import {
+  DOCUMENT_REFERENCE_DESCRIPTION,
+  documentReferenceInputSchema,
+} from "./document-reference.contract.js";
+
+export const cancelDocumentInputSchema = documentReferenceInputSchema;
 
 export const cancelDocumentOutputSchema = z.object({
   documentId: z.uuid(),
@@ -24,8 +27,7 @@ export const cancelDocumentOutputSchema = z.object({
 
 export const cancelDocumentContract = defineActionContract({
   name: "documents.cancel",
-  description:
-    "Cancel an issued staff document in the active company. Cancellation is a status transition only: issued moves to cancelled. The document number stays consumed. A recorded supplier signature fails with conflict. Already cancelled documents fail with conflict. Unsigned cancel clears the HITL grant. Missing or foreign-company documents fail with not-found. Company id is never input.",
+  description: `Cancel an issued staff document in the active company. Cancellation is a status transition only: issued moves to cancelled. The document number stays consumed. A recorded supplier signature fails with conflict. Already cancelled documents fail with conflict. Unsigned cancel clears the HITL grant. Missing or foreign-company documents fail with not-found. Company id is never input. ${DOCUMENT_REFERENCE_DESCRIPTION}`,
   principal: "staff",
   transport: "client",
   input: cancelDocumentInputSchema,

@@ -9,6 +9,7 @@ import {
 import { SHOZEE_DOCUMENT_TYPES } from "./reads.js";
 import {
   shoIdOnly,
+  shoReferenceParam,
   shoSpokenText,
   shoWriteActions,
   shoWritePlanners,
@@ -41,6 +42,8 @@ const focusHeldId =
       : "unresolved_reference";
   };
 
+const documentReference = shoReferenceParam("documentId", "documentNumber");
+
 const documentType: ShoWriteParamMapper = (param) => {
   const value = shoSpokenText(param);
   return value !== null && SHOZEE_DOCUMENT_TYPES.includes(value)
@@ -51,7 +54,7 @@ const documentType: ShoWriteParamMapper = (param) => {
 const onDocument = (action: string, reply: string): ShoWritePlan => ({
   toolName: toProviderToolName(action),
   reply,
-  params: { document_ref: focusHeldId("documentId") },
+  params: { document_ref: documentReference },
   required: ["document_ref"],
 });
 

@@ -1,4 +1,4 @@
-import { implementAction, type AuditTargetEnv } from "@showzy/core";
+import { implementAction } from "@showzy/core";
 import {
   ConflictError,
   CoreInvariantError,
@@ -7,6 +7,7 @@ import {
 import { documents } from "@showzy/db/schema/documents";
 import { getArtifact } from "@showzy/doc-generation/get-artifact";
 import { getSigning } from "@showzy/doc-signing/get";
+import { holderAuditTarget } from "@showzy/module-kit/audit-target";
 import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import {
   ALREADY_SIGNED_MESSAGE,
@@ -14,7 +15,6 @@ import {
   PDF_NOT_READY_MESSAGE,
 } from "@showzy/validation/signing";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
 
 import { documentsSignRequested } from "../events/sign-requested.js";
 import {
@@ -25,6 +25,7 @@ import {
   documentPreviewLines,
   loadDocumentPreviewFacts,
 } from "../services/preview-document.js";
+import { resolveDocumentReference } from "../services/resolve-document-reference.js";
 import { requireReadyPdf } from "../services/signing-gates.js";
 import { requireWritable } from "../services/writable.js";
 import { requestSignContract } from "./request-sign.contract.js";
@@ -42,22 +43,22 @@ export function requestSignPreviewTitle(documentNumber: string): string {
   return `Запросити підписання документа ${documentNumber}`;
 }
 
-const documentIdHolder = z.object({ documentId: z.string() });
-
-function requestSignAuditTarget(env: AuditTargetEnv): {
-  type: string;
-  id: string;
-} {
-  const parsed = documentIdHolder.safeParse(env.input);
-  return {
-    type: "document",
-    id: parsed.success ? parsed.data.documentId : "unknown",
-  };
-}
+const requestSignAuditTarget = holderAuditTarget({
+  type: "document",
+  field: "documentId",
+  fallback: "unknown",
+  sources: ["output", "input"],
+});
 
 export const requestSign = implementAction(requestSignContract, {
   handler: async (input, ctx) => {
     const db = requireWritable(ctx.db);
+    const documentId = await resolveDocumentReference({
+      db,
+      companyId: ctx.companyId,
+      call: ctx.call,
+      input,
+    });
     const rows = await db
       .select({
         status: documents.status,
@@ -66,7 +67,7 @@ export const requestSign = implementAction(requestSignContract, {
       .where(
         and(
           eq(documents.companyId, ctx.companyId),
-          eq(documents.id, input.documentId),
+          eq(documents.id, documentId),
         ),
       )
       .limit(1)
@@ -83,13 +84,13 @@ export const requestSign = implementAction(requestSignContract, {
     }
 
     const generation = await loadGenerationArtifact({
-      documentId: input.documentId,
+      documentId: documentId,
       getArtifact: (body) => ctx.call(getArtifact, body),
     });
     requireReadyPdf(readyArtifactFileId(generation));
 
     const signing = await ctx.call(getSigning, {
-      documentId: input.documentId,
+      documentId: documentId,
     });
     if (signing.status === "supplier_signed") {
       throw new ConflictError(ALREADY_SIGNED_MESSAGE);
@@ -101,7 +102,7 @@ export const requestSign = implementAction(requestSignContract, {
       .where(
         and(
           eq(documents.companyId, ctx.companyId),
-          eq(documents.id, input.documentId),
+          eq(documents.id, documentId),
         ),
       )
       .returning({ id: documents.id });
@@ -112,17 +113,23 @@ export const requestSign = implementAction(requestSignContract, {
     }
 
     ctx.emit(documentsSignRequested, {
-      aggregate: { type: "document", id: input.documentId },
-      payload: { documentId: input.documentId },
+      aggregate: { type: "document", id: documentId },
+      payload: { documentId: documentId },
     });
 
-    return { documentId: input.documentId };
+    return { documentId: documentId };
   },
   preview: async (input, env) => {
+    const companyId = previewCompanyScope(env.companyId, requestSignContract);
     const facts = await loadDocumentPreviewFacts({
       tx: env.tx,
-      companyId: previewCompanyScope(env.companyId, requestSignContract),
-      documentId: input.documentId,
+      companyId,
+      documentId: await resolveDocumentReference({
+        db: env.tx,
+        companyId,
+        call: env.call,
+        input,
+      }),
     });
     return {
       title: requestSignPreviewTitle(facts.documentNumber),

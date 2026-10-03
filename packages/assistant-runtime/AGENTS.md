@@ -247,14 +247,20 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `documents.requestSign` onto their own action tools, `writes: true`, so each
   pauses on the ADR-0050 preview; the SHO-788/801/809 preview callbacks own
   the share token and the signing request, and no planner input carries one.
-  All four actions take a uuid and nothing else, so the only reference that
-  binds is a ref the parse bound to a live focus entry (`status: "context"`,
-  SHO-770). `order_number` is such an entry, so a create from the order just
-  made plans; `document_ref` is not — the protocol has no `document` record
-  type, so the focus never holds a document and `shoFocusHolds` refuses any
-  context `document_ref`. A spoken document or order number is therefore
-  `unsupported_param`, which is the LLM, until those actions take an
-  id-or-reference input as the lifecycle four did at SHO-853 (SHO-869).
+  `documents.createFromOrder` still takes a uuid `orderId`, so its
+  `order_number` binds only as a ref the parse bound to a live focus entry
+  (`status: "context"`, SHO-770) — a create from the order just made.
+  Since SHO-869 `documents.cancel`, `documents.share` and
+  `documents.requestSign` take a document reference — a `documentId` or a
+  `documentNumber` resolved inside `documents` under the core transaction
+  (ADR-0033) — so `document_ref` sends one of two things and reads nothing
+  first. The protocol still has no `document` record type, so the focus never
+  holds a document and a context `document_ref` is refused by
+  `shoFocusHolds`; what binds is the spoken or written number span («57»,
+  «KA-РХ-000057»), sent verbatim as `documentNumber`, with `documents`
+  raising the picker when that number names several documents (a bare
+  sequence names the invoice and the delivery note alike) and not-found when
+  it names none.
   `document_type` maps to the two types Shozee issues and `counterparty` to a
   resolved uuid;
   `customer`, `period`, `status`, `amount`, `basis`, `channel`, `email` and
