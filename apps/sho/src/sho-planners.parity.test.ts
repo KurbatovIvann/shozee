@@ -2,10 +2,17 @@ import { kyivCalendarDate, kyivNamedPeriodRange } from "@showzy/ai";
 import {
   SHO_CUSTOMER_WRITE_PLANNER_PARAMS,
   SHO_ORDER_LIFECYCLE_PLANNER_PARAMS,
+  SHO_FOCUS_PARAM_TYPES,
   SHO_READ_PLANNER_PARAMS,
   SHO_WRITE_PLANNER_PARAMS,
 } from "@showzy/assistant-runtime";
-import { loadV3Bundle, periodDates, type Bundle, type Day } from "@showzy/sho";
+import {
+  FOCUS_PARAM_TYPES,
+  loadV3Bundle,
+  periodDates,
+  type Bundle,
+  type Day,
+} from "@showzy/sho";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const TODAYS: readonly Day[] = [
@@ -143,5 +150,13 @@ describe("kyiv-calendar reads the periods the Шо runtime emits", () => {
         read: null,
       });
     }
+  });
+});
+
+describe("the focus guard and Шо read a param as the same record", () => {
+  it("gives every param the guard names the type the lexicon gives it", () => {
+    expect(Object.fromEntries(FOCUS_PARAM_TYPES)).toEqual(
+      SHO_FOCUS_PARAM_TYPES,
+    );
   });
 });

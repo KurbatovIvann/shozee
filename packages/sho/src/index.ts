@@ -25,6 +25,7 @@ import {
 
 export {
   CONTEXT_LIMITS,
+  FOCUS_PARAM_TYPES,
   InputError,
   MOST_FOCUS,
   RECORD_LISTS,

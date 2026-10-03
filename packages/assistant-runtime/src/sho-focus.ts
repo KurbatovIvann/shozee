@@ -36,7 +36,7 @@ export const shoTurnLogSchema = z.object({
 export type ShoFocusRecord = z.infer<typeof shoFocusRecordSchema>;
 export type ShoTurnLog = z.infer<typeof shoTurnLogSchema>;
 
-const FOCUS_PARAM_TYPES: Readonly<Record<string, ShoRecordType>> = {
+export const SHO_FOCUS_PARAM_TYPES: Readonly<Record<string, ShoRecordType>> = {
   customer: "customer",
   group: "group",
   order_number: "order",
@@ -86,7 +86,7 @@ function rowsOf(
 function namedIn(command: ShoCommand): readonly ShoFocusRecord[] {
   const named: ShoFocusRecord[] = [];
   for (const [path, param] of Object.entries(command.params)) {
-    const type = FOCUS_PARAM_TYPES[path];
+    const type = SHO_FOCUS_PARAM_TYPES[path];
     if (type === undefined || !shoIsRef(param) || param.status !== "resolved") {
       continue;
     }
@@ -205,7 +205,7 @@ export function shoFocusHolds(
     if (ref.status !== "context" || typeof id !== "string" || id.length === 0) {
       continue;
     }
-    const expected = FOCUS_PARAM_TYPES[path];
+    const expected = SHO_FOCUS_PARAM_TYPES[path];
     const holds =
       expected === undefined
         ? heldIds.has(id)
