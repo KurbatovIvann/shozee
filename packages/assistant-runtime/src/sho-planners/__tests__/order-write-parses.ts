@@ -512,6 +512,28 @@ export const SHO_ORDER_WRITE_PARSES: Readonly<Record<string, unknown>> =
       domain: "orders",
       verb: "status",
     },
+    "d88-object-order": {
+      text: "підтверди його",
+      action: "orders.confirm",
+      kind: "write",
+      effect: "write",
+      confirm: "card",
+      params: {
+        order_number: {
+          text: "його",
+          status: "context",
+          id: "o-7001",
+          name: "№ 7001",
+          focus: 0,
+        },
+      },
+      needs: [],
+      ready: true,
+      refPrevious: {},
+      catalogued: false,
+      domain: "orders",
+      verb: "status",
+    },
     "d90-closed-order": {
       text: "підтверджуй його зараз же",
       action: "orders.confirm",
