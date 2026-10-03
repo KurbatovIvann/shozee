@@ -6,9 +6,11 @@ import type {
 } from "@showzy/sho-protocol";
 
 import {
+  shoIsRef,
   shoPlanFallback,
   shoRefLocator,
   shoRefused,
+  SHO_UUID,
   type ShoActionPlan,
   type ShoActionPlanner,
   type ShoActionPlanners,
@@ -48,6 +50,52 @@ export const shoIdOnly =
   (field: string) =>
   (param: ShoParam): ShoWriteMapped =>
     shoIdFrom(param, field);
+
+export const shoResolvedProductId = (param: ShoParam): ShoWriteMapped =>
+  shoIsRef(param) && param.status === "resolved"
+    ? shoIdFrom(param, "productId")
+    : "unsupported_param";
+
+export function shoVariantId(param: ShoParam): ShoWriteMapped {
+  if (
+    Array.isArray(param) ||
+    !("attrs" in param) ||
+    param.status !== "resolved"
+  ) {
+    return "unsupported_param";
+  }
+  return typeof param.id === "string" && SHO_UUID.test(param.id)
+    ? { variantId: param.id }
+    : "unsupported_param";
+}
+
+export interface ShoMoney {
+  readonly minor: number;
+  readonly currency: string;
+}
+
+export function shoMoneyOf(param: ShoParam): ShoMoney | null {
+  if (Array.isArray(param) || !("value" in param)) {
+    return null;
+  }
+  const value: unknown = param.value;
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("minor" in value) ||
+    !("currency" in value)
+  ) {
+    return null;
+  }
+  const minor: unknown = value.minor;
+  const currency: unknown = value.currency;
+  return typeof minor === "number" &&
+    Number.isSafeInteger(minor) &&
+    minor >= 0 &&
+    typeof currency === "string"
+    ? { minor, currency }
+    : null;
+}
 
 const nonEmpty = (said: string | null): string | null => {
   const text = said?.trim() ?? "";
