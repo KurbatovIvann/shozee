@@ -17,6 +17,7 @@ export const SHO_PLAN_FALLBACK_REASONS = [
   "effect_mismatch",
   "unresolved_reference",
   "unsupported_param",
+  "no_surface",
 ] as const;
 
 export type ShoPlanFallbackReason = (typeof SHO_PLAN_FALLBACK_REASONS)[number];

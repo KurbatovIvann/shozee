@@ -55,6 +55,13 @@ allowBuilds:
 # apps/mobile and transitively by the @better-auth/expo peer tree in
 # apps/api. No server or client runtime path imports it, and no production
 # exists. Drop when Expo bumps node-forge.
+#
+# SHO-868: braces <=3.0.3 (stack-exhaustion DoS on deeply nested patterns),
+# no patched release. Reachable only through micromatch in
+# eslint-plugin-boundaries (ESLint, CI) and the Expo Metro tree
+# (@expo/metro-file-map, bundler; in apps/api via the @better-auth/expo peer).
+# No server or client runtime path, and patterns are repo-authored, never user
+# input. Drop when micromatch/braces ships a fix.
 audit:
   ignore:
     - GHSA-w3rx-r6r6-pgpr
@@ -66,3 +73,4 @@ audit:
     - GHSA-6j4f-fj2g-mc7p
     - GHSA-m9gg-hp2v-232j
     - GHSA-86w9-cpqp-85rv
+    - GHSA-vfj7-8cjw-p6xm

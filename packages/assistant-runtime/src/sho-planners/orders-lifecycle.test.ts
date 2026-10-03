@@ -234,13 +234,67 @@ describe("an order the focus does not hold is never written to", () => {
   });
 });
 
-describe("a spoken order number is not a reference a write can follow", () => {
-  it("refuses the dv3 digit span «131»", () => {
+describe("a spoken order number is the reference orders resolves (SHO-853)", () => {
+  it("plans the dv3 digit span «131» as the order number", () => {
     expect(
       planOf(
         commandOf(focusedOn(OUR_ORDER), {
-          text: "підтверди 131",
+          text: "підтверди замовлення 131",
           params: { order_number: { text: "131", value: 131 } },
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "orders_confirm",
+      reply: "Замовлення підтверджено.",
+      input: { orderNumber: "131" },
+    });
+  });
+
+  it("sends the spoken number through the preview like every other Шо write", () => {
+    expect(
+      whitelisted(
+        resultOf(
+          commandOf(focusedOn(OUR_ORDER), {
+            text: "скасуй замовлення 131",
+            action: SHO_CANCEL_ORDER,
+            verb: "cancel",
+            params: { order_number: { text: "131", value: 131 } },
+          }),
+        ),
+        NOW,
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "orders_cancel",
+      reply: "Замовлення скасовано.",
+      input: { orderNumber: "131" },
+      writes: true,
+    });
+  });
+
+  it("plans the written number «KA-7» verbatim", () => {
+    expect(
+      planOf(
+        commandOf(focusedOn(OUR_ORDER), {
+          text: "підтверди замовлення KA-7",
+          params: { order_number: { text: "KA-7" } },
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "orders_confirm",
+      reply: "Замовлення підтверджено.",
+      input: { orderNumber: "KA-7" },
+    });
+  });
+
+  it("refuses a spoken number the parse left blank", () => {
+    expect(
+      planOf(
+        commandOf(focusedOn(OUR_ORDER), {
+          text: "підтверди замовлення",
+          params: { order_number: { text: "  " } },
         }),
       ),
     ).toEqual({ kind: "fallback", reason: "unsupported_param" });

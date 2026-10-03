@@ -10,9 +10,12 @@
 import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
-export const cancelOrderInputSchema = z.object({
-  orderId: z.uuid(),
-});
+import {
+  ORDER_REFERENCE_DESCRIPTION,
+  orderReferenceInputSchema,
+} from "./order-reference.contract.js";
+
+export const cancelOrderInputSchema = orderReferenceInputSchema;
 
 export const cancelOrderOutputSchema = z.object({
   orderId: z.uuid(),
@@ -22,8 +25,7 @@ export const cancelOrderOutputSchema = z.object({
 
 export const cancelOrderContract = defineActionContract({
   name: "orders.cancel",
-  description:
-    "Cancel a new, confirmed, or in-progress staff-intake order in the active company. Cancellation is a status transition only: the order moves to canceled. Already canceled orders fail with conflict. Missing or foreign-company orders fail with not-found.",
+  description: `Cancel a new, confirmed, or in-progress staff-intake order in the active company. Cancellation is a status transition only: the order moves to canceled. Already canceled orders fail with conflict. Missing or foreign-company orders fail with not-found. ${ORDER_REFERENCE_DESCRIPTION}`,
   principal: "staff",
   transport: "client",
   input: cancelOrderInputSchema,

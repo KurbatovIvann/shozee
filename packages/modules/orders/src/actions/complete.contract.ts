@@ -9,9 +9,12 @@
 import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
-export const completeOrderInputSchema = z.object({
-  orderId: z.uuid(),
-});
+import {
+  ORDER_REFERENCE_DESCRIPTION,
+  orderReferenceInputSchema,
+} from "./order-reference.contract.js";
+
+export const completeOrderInputSchema = orderReferenceInputSchema;
 
 export const completeOrderOutputSchema = z.object({
   orderId: z.uuid(),
@@ -21,8 +24,7 @@ export const completeOrderOutputSchema = z.object({
 
 export const completeOrderContract = defineActionContract({
   name: "orders.complete",
-  description:
-    "Complete an in-progress staff-intake order in the active company. Completion is a status transition only: the order moves from in_progress to done. Already completed orders fail with conflict. Missing or foreign-company orders fail with not-found.",
+  description: `Complete an in-progress staff-intake order in the active company. Completion is a status transition only: the order moves from in_progress to done. Already completed orders fail with conflict. Missing or foreign-company orders fail with not-found. ${ORDER_REFERENCE_DESCRIPTION}`,
   principal: "staff",
   transport: "client",
   input: completeOrderInputSchema,

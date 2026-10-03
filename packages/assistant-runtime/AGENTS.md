@@ -83,7 +83,38 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `SHO_ACTION_PLANNERS` is (SHO-771): `orders.list`, `orders.count`,
   `orders.get`, `customers.getCustomer`, `customers.listCustomers`,
   `catalog.getProduct`, `catalog.listProducts`, `pricing.listPriceLists`,
-  each onto the existing staff façade input. Every param name is one the Шо
+  each onto the existing staff façade input. SHO-854 adds the rest of the
+  reads Шо already parses — `customers.listGroups`, `customers.getGroup`,
+  `customers.listCounterparties`, `customers.getCounterparty`,
+  `pricing.getPriceList`, `pricing.listPriceListEntries`, `documents.list`,
+  `docGeneration.listLayouts`, `search.query` — onto the provider tool name
+  of the action itself where no façade exists.
+  **A read plans only when its tool composes an assistant surface.** The rule
+  is one membership test against `ASSISTANT_SURFACE_REGISTRY`'s own
+  `toolNames` — never a hand list — and an unsurfaced read is the
+  `no_surface` fallback, so Haiku narrates it instead of the turn settling
+  with a reply and no data. Today that leaves `catalog.listProducts`,
+  `pricing.listPriceLists` and all of SHO-854 but `search.query` to the LLM;
+  each becomes live the day its surface lands, with no planner change.
+  `SHO_SURFACED_READ_ACTIONS` is what that rule currently yields and the list
+  worth pasting into `SHO_ACTIONS`; `shoReadPlanners(surfaced)` is the same
+  factory with the registry injected, which is how the mapping of a read
+  waiting for its surface stays tested.
+  Those actions take ids, not names, so a `group`, `counterparty`,
+  `price_list`, `product` or `customer` reference plans only as an id
+  locator and a spoken name is `unsupported_param`, which is the LLM:
+  there is no id-or-reference input to fall into. `documents.get` is not
+  registered at all — Шо parses a spoken document number, which is never the
+  uuid `documentId` the action takes, so the intent could never plan.
+  A `ReadPlan` declares `required` and `oneOf` like a write plan, so a parse
+  missing the id the action needs is `unsupported_param` here rather than a
+  `VALIDATION` round trip. `document_type` maps only
+  to the two types Shozee issues (`payment_invoice`, `delivery_note`), and
+  `search_type` only to a `SEARCH_ENTITY_TYPES` member, so the catalogue's
+  `act`, `reconciliation_act`, `receipt`, `shipment` are the model's.
+  `documents.list` maps `document_type` alone — `customer`, `period` and
+  `signing_status` need the Shozee change the catalogue note names.
+  Every param name is one the Шо
   catalogue gives that intent (`customer`, `status`, `period`, `group_by`,
   `order_number`, `search_text`, `group`, `product`, `phone`, `email`); a
   param the planner does not name — `due`, `payment_status`, `amount`,
@@ -102,8 +133,13 @@ registry is injected into `createAssistantRuntime`; this package never imports
   piece: it is the only place allowed to import both `@showzy/sho` and the
   rest (ADR-0051), and it checks `SHO_READ_PLANNER_PARAMS` against the model
   bundle's intents and every bundle period token against the parser.
-  `SHO_READ_ACTIONS` is the list to paste into `SHO_ACTIONS` for dev; the
-  config default stays empty.
+  `SHO_READ_ACTIONS` is every registered read planner and
+  `SHO_SURFACED_READ_ACTIONS` the ones that plan today — the latter is the
+  list to paste into `SHO_ACTIONS` for dev; the config default stays empty.
+  The SHO-854 planner tests run on verbatim parses from
+  `packages/sho/test/conformance-v3` in `__tests__/read-parses.ts`, keyed by
+  the conformance case id, as the write planners' do; an intent with no gold
+  parse borrows the nearest case's param and names that case id.
 - `sho-planners/orders-writes.ts` — the order write planner (SHO-772):
   `orders.create` onto the `orders_create` façade, `writes: true`, so the
   plan pauses on the ADR-0050 preview and Шо executes nothing itself. It
@@ -138,23 +174,22 @@ registry is injected into `createAssistantRuntime`; this package never imports
 - `sho-planners/orders-lifecycle.ts` — the order lifecycle write planners
   (SHO-845): `orders.confirm`, `orders.start`, `orders.complete` and
   `orders.cancel` onto their own action tools, `writes: true`, so each pauses
-  on the ADR-0050 preview like every other Шо write. Those actions take
-  `orderId` and nothing else, so the only reference they can follow is the one
-  the parse already bound to a live focus entry (`status: "context"` with a
-  uuid id, SHO-770) — which `createShoEngine` has already checked this turn's
-  focus holds, so an order id from another company never reaches a planner.
-  `status: "context"` is required, not merely sufficient: a `resolved` ref
-  carrying a uuid is `unsupported_param`, because nothing but the focus binds
-  a lifecycle write. Everything else is the LLM too: the spoken digit span
-  «131» (not a canonical `{prefix}-{tail}` code), a canonical code (no uuid to
-  send, and no planner may read first and write second), and an order
-  described by its `customer`, `period` or `amount`. D89's non-blocking
-  `read_as_focus_type` becomes the card's note — the delete family maps a
-  focused `order` to `orders.cancel`, so «видали її» said over an order is a
-  cancel the person must see named before the tap. Resolving a spoken or
-  canonical code to one order needs an order
-  reference on those four contracts — `orders` is not an owner module of
-  SHO-742, so that stays an owner decision.
+  on the ADR-0050 preview like every other Шо write. Since SHO-853 those four
+  actions take an order reference — an `orderId` or an `orderNumber` resolved
+  inside `orders` under the core transaction (ADR-0033) — so the planner sends
+  one of two things and reads nothing first. A ref the parse bound to a live
+  focus entry (`status: "context"` with a uuid id, SHO-770), which
+  `createShoEngine` has already checked this turn's focus holds, becomes
+  `orderId`; the spoken or written number span («131», «KA-7») becomes
+  `orderNumber` verbatim, and `orders` raises the picker when that number
+  prefixes several orders and not-found when it names none. `status: "context"`
+  stays required of a ref, not merely sufficient: a `resolved` ref carrying a
+  uuid is `unsupported_param`, because nothing but the focus binds a lifecycle
+  write to an id. An order described by its `customer`, `period` or `amount`
+  is still the LLM. D89's non-blocking `read_as_focus_type` becomes the card's
+  note — the delete family maps a focused `order` to `orders.cancel`, so
+  «видали її» said over an order is a cancel the person must see named before
+  the tap.
 - `sho-planners/write-kit.ts`, `sho-planners/customers-writes.ts` — the one
   write-plan machinery every write planner is built from (map each said param
   through its mapper, no field written twice, the required and `one_of` params

@@ -46734,7 +46734,7 @@
     "/orders/confirm": {
       "post": {
         "operationId": "orders.confirm",
-        "summary": "Confirm a new staff-intake order in the active company. Confirmation is a status transition only: the order moves from new to confirmed and records confirmed_at. Already confirmed or canceled orders fail with conflict. Missing or foreign-company orders fail with not-found.",
+        "summary": "Confirm a new staff-intake order in the active company. Confirmation is a status transition only: the order moves from new to confirmed and records confirmed_at. Already confirmed or canceled orders fail with conflict. Missing or foreign-company orders fail with not-found. Takes exactly one of a canonical orderId or a human orderNumber (the spoken or printed order number, with or without the company prefix). An exact order number returns that order. Several orders starting with the given number fail with a conflict carrying them as options. No match fails with not-found.",
         "requestBody": {
           "required": true,
           "content": {
@@ -46745,11 +46745,13 @@
                   "orderId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "orderNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
-                },
-                "required": [
-                  "orderId"
-                ]
+                }
               }
             }
           }
@@ -47490,7 +47492,7 @@
     "/orders/start": {
       "post": {
         "operationId": "orders.start",
-        "summary": "Start a confirmed staff-intake order in the active company. Starting is a status transition only: the order moves from confirmed to in_progress. Already started orders fail with conflict. Missing or foreign-company orders fail with not-found.",
+        "summary": "Start a confirmed staff-intake order in the active company. Starting is a status transition only: the order moves from confirmed to in_progress. Already started orders fail with conflict. Missing or foreign-company orders fail with not-found. Takes exactly one of a canonical orderId or a human orderNumber (the spoken or printed order number, with or without the company prefix). An exact order number returns that order. Several orders starting with the given number fail with a conflict carrying them as options. No match fails with not-found.",
         "requestBody": {
           "required": true,
           "content": {
@@ -47501,11 +47503,13 @@
                   "orderId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "orderNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
-                },
-                "required": [
-                  "orderId"
-                ]
+                }
               }
             }
           }
@@ -48241,7 +48245,7 @@
     "/orders/complete": {
       "post": {
         "operationId": "orders.complete",
-        "summary": "Complete an in-progress staff-intake order in the active company. Completion is a status transition only: the order moves from in_progress to done. Already completed orders fail with conflict. Missing or foreign-company orders fail with not-found.",
+        "summary": "Complete an in-progress staff-intake order in the active company. Completion is a status transition only: the order moves from in_progress to done. Already completed orders fail with conflict. Missing or foreign-company orders fail with not-found. Takes exactly one of a canonical orderId or a human orderNumber (the spoken or printed order number, with or without the company prefix). An exact order number returns that order. Several orders starting with the given number fail with a conflict carrying them as options. No match fails with not-found.",
         "requestBody": {
           "required": true,
           "content": {
@@ -48252,11 +48256,13 @@
                   "orderId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "orderNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
-                },
-                "required": [
-                  "orderId"
-                ]
+                }
               }
             }
           }
@@ -48992,7 +48998,7 @@
     "/orders/cancel": {
       "post": {
         "operationId": "orders.cancel",
-        "summary": "Cancel a new, confirmed, or in-progress staff-intake order in the active company. Cancellation is a status transition only: the order moves to canceled. Already canceled orders fail with conflict. Missing or foreign-company orders fail with not-found.",
+        "summary": "Cancel a new, confirmed, or in-progress staff-intake order in the active company. Cancellation is a status transition only: the order moves to canceled. Already canceled orders fail with conflict. Missing or foreign-company orders fail with not-found. Takes exactly one of a canonical orderId or a human orderNumber (the spoken or printed order number, with or without the company prefix). An exact order number returns that order. Several orders starting with the given number fail with a conflict carrying them as options. No match fails with not-found.",
         "requestBody": {
           "required": true,
           "content": {
@@ -49003,11 +49009,13 @@
                   "orderId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "orderNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
-                },
-                "required": [
-                  "orderId"
-                ]
+                }
               }
             }
           }
