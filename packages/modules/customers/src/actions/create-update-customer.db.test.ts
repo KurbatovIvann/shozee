@@ -722,6 +722,50 @@ describe("customers.updateCustomer", () => {
     });
   });
 
+  it("keeps the stored name when the update names none, and replays once", async () => {
+    const created = await kit.invoke(createCustomer, {
+      name: "Іван Петренко",
+      phone: "+380501000081",
+      notes: "стара нотатка",
+    });
+    const idempotencyKey = randomUUID();
+    const noted = await kit.invoke(
+      updateCustomer,
+      { id: created.id, notes: "бере тільки оптом" },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(noted).toMatchObject({
+      name: "Іван Петренко",
+      phone: "+380501000081",
+      notes: "бере тільки оптом",
+    });
+
+    const replay = await kit.invoke(
+      updateCustomer,
+      { id: created.id, notes: "бере тільки оптом" },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(replay).toEqual(noted);
+    expect((await customerRow(created.id))?.name).toBe("Іван Петренко");
+  });
+
+  it("leaves a foreign customer untouched when the update names no name", async () => {
+    await expect(
+      kit.invoke(updateCustomer, {
+        id: fixtures.customerUpdateB,
+        notes: "чужа нотатка",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    const foreign = await customerRow(fixtures.customerUpdateB);
+    expect(foreign).toMatchObject({
+      name: "Update Bravo",
+      companyId: kitIdentities.companies.b,
+    });
+  });
+
   it("refuses to clear the last contact while the others stay omitted", async () => {
     const created = await kit.invoke(createCustomer, {
       name: "Last contact",
@@ -844,11 +888,16 @@ describe("customers.updateCustomer", () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it("rejects blank names, missing contacts, and companyId", async () => {
+  it("rejects a blank or null name, missing contacts, and companyId", async () => {
     const invalidInputs: unknown[] = [
       {
         id: fixtures.customerUpdateA,
         name: "   ",
+        phone: "1",
+      },
+      {
+        id: fixtures.customerUpdateA,
+        name: null,
         phone: "1",
       },
       {

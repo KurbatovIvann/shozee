@@ -293,9 +293,15 @@ async function customerLines(
 ): Promise<ActionPreviewLine[]> {
   const named = (field: keyof CustomerPreviewFields): boolean =>
     stored === null || input[field] !== undefined;
-  const lines: ActionPreviewLine[] = [
-    changeLine(CUSTOMER_LABELS.name, stored?.name ?? null, input.name),
-  ];
+  const lines: ActionPreviewLine[] = named("name")
+    ? [
+        changeLine(
+          CUSTOMER_LABELS.name,
+          stored?.name ?? null,
+          input.name ?? null,
+        ),
+      ]
+    : [];
   for (const field of CUSTOMER_TEXT_FIELDS) {
     if (named(field)) {
       lines.push(

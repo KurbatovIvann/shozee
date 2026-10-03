@@ -132,10 +132,21 @@ whole record can call it safely. The assistant holds a compact list row, so
 - Required fields stay required. An upsert (`companies.updateLegal`) treats
   an omitted field as unchanged when the row exists and as null when it does
   not.
+  **Amended 2026-10-03 ([SHO-848](https://linear.app/showzy-v2/issue/SHO-848)):**
+  "required" means the field cannot be *cleared* — it rejects `null` — not
+  that every update must carry it. On a staff update a required field is
+  `.optional()` and never `.nullable()`; omitted means unchanged, like every
+  other field, and the handler merges it with the locked row. Reading it as
+  "must be sent" forced a caller holding a partial reference to re-send a
+  value it had only guessed, which is the state reconstruction this ADR
+  retires.
 - New staff updates follow this rule. No read-merge-write façade in
   `packages/ai` and no "get before update" prompt rule: both reconstruct
   state a contract decision threw away.
 
-**Consequences.** Any client may send a partial update. A form that sends
-the whole record with explicit nulls behaves as before; a form that relied
-on omission to clear must send `null`.
+**Consequences.** Any client may send a partial update, naming no field it
+does not mean to change — including a required one. A form that sends the
+whole record with explicit nulls behaves as before; a form that relied on
+omission to clear must send `null`. A required field sent as `null` is a
+validation failure, and a required field a caller cannot name is simply
+omitted rather than guessed.
