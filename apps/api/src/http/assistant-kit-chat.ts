@@ -27,6 +27,7 @@ import {
   assistantTurnMessageId,
   matchAssistantPauseAnswer,
   readAssistantChatWindow,
+  shoMayReadCard,
   type AssistantChatWindowWithTurn,
 } from "@showzy/assistant-runtime";
 import type { Context } from "hono";
@@ -235,7 +236,10 @@ export async function handleAssistantKitChat(
     );
   }
   const bySho =
-    open === null || body.answering === undefined
+    open === null ||
+    body.answering === undefined ||
+    read === null ||
+    !shoMayReadCard(read)
       ? null
       : await shoCardAnswerTurn({
           runtime,

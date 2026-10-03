@@ -18,12 +18,10 @@ import type { ShoEngine } from "./sho-turn.js";
 
 export const SHO_UI_PICK = "ui.pick";
 export const SHO_UI_CONFIRM = "ui.confirm";
-export const SHO_UI_REFINE = "ui.refine";
 
 export const SHO_CARD_ANSWER_ACTIONS: readonly string[] = [
   SHO_UI_PICK,
   SHO_UI_CONFIRM,
-  SHO_UI_REFINE,
 ];
 
 export const SHO_CARD_ANSWER_WORDS = 3;
@@ -32,18 +30,30 @@ export const SHO_PICK_TEXT_PARAM = "pick_text";
 
 const saidParamSchema = z.object({ text: z.string().min(1) });
 
+export function shoMayReadCard(read: AssistantPauseMatch): boolean {
+  return read.kind === "supersede";
+}
+
+export function shoIsBareCardAnswer(text: string): boolean {
+  return foldNameWords(text).length <= SHO_CARD_ANSWER_WORDS;
+}
+
+function wholeUtterance(command: ShoCommand): boolean {
+  return !command.needs.some(
+    (need) => need.blocking || need.reason === "ignored",
+  );
+}
+
 function answersTheCard(command: ShoCommand): boolean {
   return (
-    command.kind === "ui" &&
-    SHO_CARD_ANSWER_ACTIONS.includes(command.action) &&
-    foldNameWords(command.text).length <= SHO_CARD_ANSWER_WORDS
+    SHO_CARD_ANSWER_ACTIONS.includes(command.action) && wholeUtterance(command)
   );
 }
 
 function saidOptions(command: ShoCommand): readonly string[] {
   const picked = saidParamSchema.safeParse(command.params[SHO_PICK_TEXT_PARAM]);
   return picked.success && picked.data.text !== command.text
-    ? [picked.data.text, command.text]
+    ? [command.text, picked.data.text]
     : [command.text];
 }
 
@@ -51,13 +61,17 @@ function choiceAnswer(
   options: readonly AssistantChoiceOption[],
   said: readonly string[],
 ): AssistantPauseMatch | null {
+  let hinted: AssistantPauseMatch | null = null;
   for (const text of said) {
     const picked = matchAssistantChoiceText(options, text);
-    if (picked.kind !== "supersede") {
+    if (picked.kind === "answer") {
       return picked;
     }
+    if (picked.kind === "hint" && hinted === null) {
+      hinted = picked;
+    }
   }
-  return null;
+  return hinted;
 }
 
 export function shoCardAnswerFor(
@@ -92,6 +106,9 @@ export interface ShoCardAnswerInput {
 export async function runShoCardAnswer(
   input: ShoCardAnswerInput,
 ): Promise<AssistantPauseMatch | null> {
+  if (!shoIsBareCardAnswer(input.text)) {
+    return null;
+  }
   const previous = shoOpenCardPrevious(input.history);
   const plan = await input.engine.plan({
     text: input.text,

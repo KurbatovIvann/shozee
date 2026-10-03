@@ -3,7 +3,12 @@ import { shoCommandSchema, type ShoCommand } from "@showzy/sho-protocol";
 import type { AssistantPause } from "@showzy/validation/assistant-chat";
 import { describe, expect, it, vi } from "vitest";
 
-import { runShoCardAnswer, shoCardAnswerFor } from "./sho-card-answer.js";
+import { matchAssistantPauseAnswer } from "./assistant-pause-match.js";
+import {
+  runShoCardAnswer,
+  shoCardAnswerFor,
+  shoMayReadCard,
+} from "./sho-card-answer.js";
 import { shoLogOptions } from "./sho-focus.js";
 import type { ShoEngine, ShoPlan, ShoTurnRequest } from "./sho-turn.js";
 
@@ -16,23 +21,43 @@ interface Said {
   readonly kind?: string;
   readonly effect?: string;
   readonly confirm?: string;
+  readonly needs?: readonly {
+    readonly path: string;
+    readonly reason: string;
+    readonly blocking: boolean;
+  }[];
 }
+
+const UI_INTENT_KINDS: Readonly<Record<string, string>> = {
+  "ui.pick": "ui",
+  "ui.confirm": "ui",
+  "ui.refine": "read-modifier",
+};
 
 function commandOf(said: Said): ShoCommand {
   return shoCommandSchema.parse({
     text: said.text,
     action: said.action,
-    kind: said.kind ?? "ui",
+    kind: said.kind ?? UI_INTENT_KINDS[said.action] ?? "read",
     effect: said.effect ?? "ui",
     confirm: said.confirm ?? "none",
     params:
       said.pickText === undefined ? {} : { pick_text: { text: said.pickText } },
-    needs: [],
+    needs: said.needs ?? [],
     ready: true,
     catalogued: false,
     confidence: { action: 0.99, margin: 0.8, certainty: 0.9, spans: 0.9 },
     refPrevious: {},
   });
+}
+
+function routedToTheCard(
+  command: ShoCommand,
+  pause: AssistantPause,
+  text: string,
+): { readonly kind: string } | null {
+  const read = matchAssistantPauseAnswer(pause, text);
+  return shoMayReadCard(read) ? shoCardAnswerFor(command, pause) : read;
 }
 
 function choiceCard(
@@ -188,13 +213,14 @@ describe("a Шо ui answer resolves against the open card", () => {
   it.each(SHO_740_ANSWERS)(
     "routes «$phrase» to the open card, not to the model",
     ({ phrase, action, pickText, card, answer, hints }) => {
-      const match = shoCardAnswerFor(
+      const match = routedToTheCard(
         commandOf({
           text: phrase,
           action,
           ...(pickText === undefined ? {} : { pickText }),
         }),
         card,
+        phrase,
       );
       expect(match).not.toBeNull();
       if (hints === true) {
@@ -205,11 +231,47 @@ describe("a Шо ui answer resolves against the open card", () => {
     },
   );
 
-  it("leaves the abandoned-question trap to the server matcher", () => {
+  it("leaves the abandoned-question trap to the server matcher", async () => {
+    expect(
+      await runShoCardAnswer({
+        text: ABANDONED_QUESTION,
+        sessionId: "session-1",
+        now: NOW,
+        history: [],
+        pause: previewCard("card"),
+        engine: engineReturning(
+          {
+            kind: "fallback",
+            reason: "ui_answer",
+            command: commandOf({
+              text: ABANDONED_QUESTION,
+              action: "ui.confirm",
+            }),
+          },
+          () => undefined,
+        ),
+      }),
+    ).toBeNull();
+  });
+
+  it("leaves a ui.refine to the server matcher: the parse merges it into the card's own command", () => {
     expect(
       shoCardAnswerFor(
-        commandOf({ text: ABANDONED_QUESTION, action: "ui.confirm" }),
-        previewCard("card"),
+        commandOf({ text: "0987654321", action: "ui.refine" }),
+        choiceCard("Який у неї номер?", ["0987654321", "0501112233"]),
+      ),
+    ).toBeNull();
+  });
+
+  it("leaves a pick whose words the parse did not all read to the server matcher", () => {
+    expect(
+      shoCardAnswerFor(
+        commandOf({
+          text: "Так, Петренко",
+          action: "ui.pick",
+          needs: [{ path: "text", reason: "ignored", blocking: false }],
+        }),
+        choiceCard("Знайшов двох клієнтів", ["Олена Петренко", "Олена Петрів"]),
       ),
     ).toBeNull();
   });
@@ -348,6 +410,45 @@ describe("the open card is the parse's previous command (D93)", () => {
     });
   });
 
+  it("passes no previous when a later turn opened the card the person is answering", async () => {
+    const seen = vi.fn<(request: ShoTurnRequest) => void>();
+    const abandoned = [
+      ...pausedTurn(opened),
+      { role: "user" as const, content: "покажи клієнтів" },
+      {
+        role: "assistant" as const,
+        content: [
+          {
+            type: "tool-call" as const,
+            toolCallId: "toolu_llm",
+            toolName: "customers_list_customers",
+            input: {},
+          },
+        ],
+      },
+      {
+        role: "tool" as const,
+        content: [
+          {
+            type: "tool-result" as const,
+            toolCallId: "toolu_llm",
+            toolName: "customers_list_customers",
+            output: { type: "json" as const, value: { status: "paused" } },
+          },
+        ],
+      },
+    ];
+    await runShoCardAnswer({
+      text: "Петренко",
+      sessionId: "session-1",
+      now: NOW,
+      history: abandoned,
+      pause: choiceCard("Знайшов двох", ["Олена Петренко", "Олена Петрів"]),
+      engine: engineReturning({ kind: "fallback", reason: "ui_answer" }, seen),
+    });
+    expect(seen.mock.calls[0]?.[0].previous).toBeUndefined();
+  });
+
   it("passes no previous when the latest Шо turn is not the open card", async () => {
     const seen = vi.fn<(request: ShoTurnRequest) => void>();
     const settled = pausedTurn(opened).map((message) =>
@@ -374,6 +475,27 @@ describe("the open card is the parse's previous command (D93)", () => {
       engine: engineReturning({ kind: "fallback", reason: "ui_answer" }, seen),
     });
     expect(seen.mock.calls[0]?.[0].previous).toBeUndefined();
+  });
+
+  it("refuses an utterance longer than a bare card answer, whatever the parse kept of it", async () => {
+    const seen = vi.fn<(request: ShoTurnRequest) => void>();
+    const match = await runShoCardAnswer({
+      text: "Так, для Зоряни Білик",
+      sessionId: "session-1",
+      now: NOW,
+      history: pausedTurn(opened),
+      pause: previewCard("card"),
+      engine: engineReturning(
+        {
+          kind: "fallback",
+          reason: "ui_answer",
+          command: commandOf({ text: "Так", action: "ui.confirm" }),
+        },
+        seen,
+      ),
+    });
+    expect(match).toBeNull();
+    expect(seen).not.toHaveBeenCalled();
   });
 
   it("answers nothing when the parse read no single command", async () => {

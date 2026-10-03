@@ -289,7 +289,6 @@ interface Touched {
   readonly log: ShoTurnLog;
   readonly records: readonly ShoFocusRecord[];
   readonly turns: number;
-  readonly paused: boolean;
 }
 
 function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
@@ -314,7 +313,6 @@ function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
     touched.push({
       log: parsed.data,
       turns,
-      paused,
       records: recordsOf(parsed.data.command, ran.toolName, result, paused),
     });
   }
@@ -359,10 +357,24 @@ export function shoPreviousFrom(
 export function shoOpenCardPrevious(
   history: readonly ModelMessage[],
 ): ShoPrevious | undefined {
-  const [newest] = shoLogs(history);
-  if (newest === undefined || !newest.paused) {
-    return undefined;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index];
+    if (message === undefined) {
+      continue;
+    }
+    const ran = calledIn(message);
+    if (ran === null) {
+      continue;
+    }
+    const parsed = shoTurnLogSchema.safeParse(written(message));
+    if (
+      !parsed.success ||
+      !stillPaused(resultIn(history, index, ran.toolCallId))
+    ) {
+      return undefined;
+    }
+    const { command, at } = parsed.data;
+    return { command, at };
   }
-  const { command, at } = newest.log;
-  return { command, at };
+  return undefined;
 }

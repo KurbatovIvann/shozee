@@ -2935,3 +2935,74 @@ describe("a Шо ui answer while a card is open (SHO-776)", () => {
     ).toBe("open");
   });
 });
+
+describe("the server matcher decides before Шо reads the card (SHO-776)", () => {
+  function shoConfirming(seen: { calls: number }): ShoEngineFor {
+    return () => ({
+      plan: () => {
+        seen.calls += 1;
+        return Promise.resolve({
+          kind: "fallback",
+          reason: "ui_answer",
+          command: {
+            text: "Так",
+            action: "ui.confirm",
+            kind: "ui",
+            effect: "ui",
+            confirm: "none",
+            params: {},
+            needs: [],
+            ready: true,
+            catalogued: false,
+            confidence: {
+              action: 0.99,
+              margin: 0.8,
+              certainty: 0.9,
+              spans: 0.9,
+            },
+            refPrevious: {},
+          },
+        });
+      },
+    });
+  }
+
+  it("declines on «ні» without asking the parser at all", async () => {
+    const seen = { calls: 0 };
+    const { app, kit, queue, bind } = harness({ sho: shoConfirming(seen) });
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "ні"),
+    );
+
+    expect(((await response.json()) as KitBody).status).toBe("abandoned");
+    expect(seen.calls).toBe(0);
+    expect(await kit.peek({ conversationId: CONVERSATION, bind })).toBeNull();
+    expect(queue.added).toEqual([]);
+  });
+
+  it("does not approve an open write from «Так, для Зоряни Білик»", async () => {
+    const seen = { calls: 0 };
+    const { app, kit, queue, bind } = harness({ sho: shoConfirming(seen) });
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "Так, для Зоряни Білик"),
+    );
+
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as KitBody;
+    expect(traceOf(body.window?.messages.at(-1)?.parts ?? [])).toMatchObject({
+      interactionId: pause.interactionId,
+      outcome: "superseded",
+    });
+    expect(queue.added).toEqual([
+      { kind: "chat", conversationId: CONVERSATION, commandId: COMMAND },
+    ]);
+  });
+});
