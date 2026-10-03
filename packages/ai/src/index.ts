@@ -115,6 +115,7 @@ export {
   staffAssistantSystemPrompt,
 } from "./system-prompt.js";
 export {
+  STAFF_ASSISTANT_CREATE_ACTIONS,
   STAFF_ASSISTANT_RECORDLESS_TOOLS,
   STAFF_ASSISTANT_RECORD_SHAPES,
   type StaffAssistantRecordShape,

@@ -139,26 +139,44 @@ function ranOf(
     : [{ type, id: only.id, name: only.name, how: "listed" }];
 }
 
+interface Creates {
+  readonly type: ShoRecordType;
+  readonly name: string | null;
+}
+
+function madeBy(
+  creates: Creates,
+  toolName: string,
+  result: unknown,
+): ShoFocusRecord {
+  const shape = STAFF_ASSISTANT_RECORD_SHAPES[toolName];
+  const made = shape === undefined ? null : viewOf(result, shape);
+  return {
+    type: creates.type,
+    id: made?.id ?? "",
+    name: creates.name ?? made?.name ?? "",
+    how: "created",
+  };
+}
+
+const createsOf = (command: ShoCommand): Creates | null => {
+  const creates = command.creates;
+  return creates === undefined || creates.type === SHO_UNRECOGNIZED
+    ? null
+    : { type: creates.type, name: creates.name };
+};
+
 export function shoTurnRecords(
   command: ShoCommand,
   toolName: string,
   result: unknown,
 ): readonly ShoFocusRecord[] {
-  const records: ShoFocusRecord[] = [];
-  const creates = command.creates;
-  const ran = ranOf(toolName, result);
-  if (creates !== undefined && creates.type !== SHO_UNRECOGNIZED) {
-    const made = ran?.[0];
-    records.push({
-      type: creates.type,
-      id: made?.type === creates.type ? made.id : "",
-      name: creates.name ?? made?.name ?? "",
-      how: "created",
-    });
-  } else if (ran !== null) {
-    records.push(...ran);
-  }
-  return [...records, ...namedIn(command)].slice(0, SHO_MOST_FOCUS);
+  const creates = createsOf(command);
+  const ran =
+    creates === null
+      ? (ranOf(toolName, result) ?? [])
+      : [madeBy(creates, toolName, result)];
+  return [...ran, ...namedIn(command)].slice(0, SHO_MOST_FOCUS);
 }
 
 export function shoLogOptions(log: ShoTurnLog): {

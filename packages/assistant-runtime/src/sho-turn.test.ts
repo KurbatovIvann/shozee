@@ -1,4 +1,5 @@
 import type { ModelMessage, ToolSet } from "@showzy/assistant-kit";
+import { toProviderToolName } from "@showzy/ai";
 import { shoCommandSchema, type ShoCommand } from "@showzy/sho-protocol";
 import {
   assistantConfirmationPromptSchema,
@@ -313,6 +314,7 @@ describe("runShoTurn", () => {
 
 describe("runShoTurn over the stored log", () => {
   const CREATED = "11111111-1111-4111-8111-111111111111";
+  const CREATE_TOOL = toProviderToolName("customers.createCustomer");
 
   const createKate: ShoCommand = shoCommandSchema.parse({
     text: "створи клієнта Катя",
@@ -329,6 +331,15 @@ describe("runShoTurn over the stored log", () => {
     creates: { type: "customer", name: "Катя" },
   });
 
+  const createPlan: ShoPlan = {
+    kind: "call",
+    toolName: CREATE_TOOL,
+    input: { name: "Катя" },
+    reply: "Створив Катю.",
+    writes: true,
+    command: createKate,
+  };
+
   const recordingEngine = (
     plan: ShoPlan,
   ): { readonly engine: ShoEngine; readonly asked: ShoTurnRequest[] } => {
@@ -344,37 +355,75 @@ describe("runShoTurn over the stored log", () => {
     };
   };
 
-  const createPlan: ShoPlan = {
-    kind: "call",
-    toolName: TOOL,
-    input: { name: "Катя" },
-    reply: "Створив Катю.",
-    command: createKate,
-  };
+  const pausing = (): ToolSet => ({
+    [CREATE_TOOL]: {
+      execute: () =>
+        Promise.resolve({
+          kind: "pause",
+          interaction: "confirmation",
+          prompt: { summary: "Створити Катю?" },
+          secret: null,
+        }),
+    } as ToolSet[string],
+  });
 
-  const created = async (): Promise<readonly ModelMessage[]> => {
+  const openCard = async (): Promise<readonly ModelMessage[]> => {
     const { engine } = recordingEngine(createPlan);
     const outcome = await runShoTurn({
-      ...turnWith(readPlan, () =>
-        Promise.resolve({ kind: "ok", result: { id: CREATED, name: "Катя" } }),
-      ),
       text: "створи клієнта Катя",
+      commandId: COMMAND,
+      sessionId: SESSION,
+      now: NOW,
+      history: [],
+      tools: () => Promise.resolve(pausing()),
       engine,
     });
-    return outcome.kind === "settled" ? outcome.appended : [];
+    return outcome.kind === "ask" ? outcome.continuation.messages : [];
   };
 
-  it("stores the Шо turn beside the tool call it ran", async () => {
-    const appended = await created();
+  const answered = (
+    messages: readonly ModelMessage[],
+    result: unknown,
+  ): readonly ModelMessage[] =>
+    messages.map((message) =>
+      message.role !== "tool"
+        ? message
+        : {
+            ...message,
+            content: message.content.map((part) =>
+              part.type === "tool-result"
+                ? {
+                    ...part,
+                    output: { type: "json", value: result as never } as const,
+                  }
+                : part,
+            ),
+          },
+    );
 
-    expect(shoFocusFrom(appended, SESSION)).toEqual([
+  it("holds the open card's command and no id while the person has not answered", async () => {
+    const paused = await openCard();
+
+    expect(shoFocusFrom(paused, SESSION)).toEqual([
+      { type: "customer", id: "", name: "Катя", how: "created", turns: 0 },
+    ]);
+    expect(shoPreviousFrom(paused)).toEqual({
+      command: createKate,
+      at: NOW.toISOString(),
+    });
+  });
+
+  it("takes the created id and drops previous once the write settles", async () => {
+    const settled = answered(await openCard(), { id: CREATED, name: "Катя" });
+
+    expect(shoFocusFrom(settled, SESSION)).toEqual([
       { type: "customer", id: CREATED, name: "Катя", how: "created", turns: 0 },
     ]);
-    expect(shoPreviousFrom(appended)).toBeUndefined();
+    expect(shoPreviousFrom(settled)).toBeUndefined();
   });
 
   it("asks Шо with the focus the stored log holds, never with what a client sent", async () => {
-    const appended = await created();
+    const settled = answered(await openCard(), { id: CREATED, name: "Катя" });
     const { engine, asked } = recordingEngine(readPlan);
 
     await runShoTurn({
@@ -382,7 +431,7 @@ describe("runShoTurn over the stored log", () => {
         Promise.resolve({ kind: "ok", result: { items: [] } }),
       ),
       text: "створи для неї замовлення",
-      history: appended,
+      history: settled,
       engine,
     });
 

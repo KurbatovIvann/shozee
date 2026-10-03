@@ -11,6 +11,7 @@ import {
   createShoPlanner,
   shoLocatorFor,
   shoNeedRoute,
+  shoRefLocator,
   shoWrites,
   SHO_ACTION_CONFIDENCE_FLOOR,
   type ShoActionPlan,
@@ -155,7 +156,13 @@ describe("createShoPlanner routes to the dialogue model", () => {
       text: "те саме для Олі",
       action: "orders.list",
       needs: [{ path: "customer", reason: "reference" }],
-      expected: "blocking_need",
+      expected: "needs_reference",
+    },
+    {
+      text: "а по ньому що",
+      action: "orders.get",
+      needs: [{ path: "order", reason: "check_reference", blocking: false }],
+      expected: "needs_reference",
     },
     {
       text: "Ручку, стрілочку наверху. Создай мне.",
@@ -500,8 +507,6 @@ describe("shoNeedRoute", () => {
   const needs: readonly (RecordedNeed & { readonly route: string })[] = [
     { path: "customer", reason: "ambiguous", route: "card" },
     { path: "product", reason: "unknown", route: "card" },
-    { path: "customer", reason: "check_reference", route: "resolver" },
-    { path: "customer", reason: "reference", route: "dialogue" },
     { path: "action", reason: "read_as_find", route: "dialogue" },
     { path: "action", reason: "language", route: "dialogue" },
     { path: "items.0.quantity", reason: "missing", route: "dialogue" },
@@ -629,6 +634,18 @@ describe("shoLocatorFor", () => {
     expect(
       shoLocatorFor(ref({ text: "неї", status: "context", focus: 0 })),
     ).toEqual({ kind: "fallback", reason: "unresolved_reference" });
+  });
+
+  it("gives a write planner the focus id only when it is shaped like one", () => {
+    const bound = (id: string): ShoRef =>
+      ref({ text: "неї", status: "context", id, name: "Катя", focus: 0 });
+    expect(
+      shoRefLocator(bound("11111111-1111-4111-8111-111111111111")),
+    ).toEqual({
+      by: "id",
+      id: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(shoRefLocator(bound("c-1"))).toBe("unsupported_param");
   });
 
   it("refuses a reference that only the conversation explains", () => {

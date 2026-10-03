@@ -1,3 +1,5 @@
+import { toProviderToolName } from "../action-tool.js";
+
 import { CATALOG_GET_PRODUCT_TOOL_NAME } from "./catalog-get-product.js";
 import { CATALOG_LIST_PRODUCTS_TOOL_NAME } from "./catalog-list-products.js";
 import { CUSTOMERS_GET_CUSTOMER_TOOL_NAME } from "./customers-get-customer.js";
@@ -34,9 +36,26 @@ const ONE_ORDER: StaffAssistantRecordShape = {
   nameKey: "orderNumber",
 };
 
+export const STAFF_ASSISTANT_CREATE_ACTIONS: readonly string[] = [
+  "catalog.createProduct",
+  "customers.createCounterparty",
+  "customers.createCustomer",
+  "customers.createGroup",
+  "pricing.createPriceList",
+];
+
+const createdViews = (): Record<string, StaffAssistantRecordShape> =>
+  Object.fromEntries(
+    STAFF_ASSISTANT_CREATE_ACTIONS.map((action) => [
+      toProviderToolName(action),
+      ONE_VIEW,
+    ]),
+  );
+
 export const STAFF_ASSISTANT_RECORD_SHAPES: Readonly<
   Record<string, StaffAssistantRecordShape>
 > = {
+  ...createdViews(),
   [CATALOG_GET_PRODUCT_TOOL_NAME]: ONE_VIEW,
   [CATALOG_LIST_PRODUCTS_TOOL_NAME]: PAGE_OF_VIEWS,
   [CUSTOMERS_GET_CUSTOMER_TOOL_NAME]: ONE_VIEW,

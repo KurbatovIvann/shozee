@@ -1,3 +1,10 @@
+import {
+  CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
+  CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+  ORDERS_CREATE_TOOL_NAME,
+  ORDERS_LIST_PAGE_TOOL_NAME,
+  toProviderToolName,
+} from "@showzy/ai";
 import type { ModelMessage } from "@showzy/assistant-kit";
 import {
   shoCommandSchema,
@@ -11,13 +18,16 @@ import {
   shoLogOptions,
   shoPreviousFrom,
   shoTurnRecords,
-  type ShoFocusRecord,
   type ShoTurnLog,
 } from "./sho-focus.js";
 
 const SESSION = "6a1d0f72-2c44-4a0b-9f31-5d8e2b7c4a10";
 const OTHER_SESSION = "0b9c7e55-13aa-4f28-8c60-9e4d1a3f7b22";
 const AT = "2026-10-02T09:00:00.000Z";
+const KATE = "11111111-1111-4111-8111-111111111111";
+const OLHA = "22222222-2222-4222-8222-222222222222";
+const ORDER = "33333333-3333-4333-8333-333333333333";
+const CREATE_CUSTOMER_TOOL = toProviderToolName("customers.createCustomer");
 
 function commandOf(fields: Readonly<Record<string, unknown>>): ShoCommand {
   return shoCommandSchema.parse({
@@ -36,115 +46,128 @@ function commandOf(fields: Readonly<Record<string, unknown>>): ShoCommand {
   });
 }
 
+const createKate = commandOf({
+  text: "створи клієнта Катя",
+  action: "customers.createCustomer",
+  kind: "write",
+  effect: "write",
+  confirm: "card",
+  params: { new_name: { text: "Катя" } },
+  creates: { type: "customer", name: "Катя" },
+});
+
 const asked = (text: string): ModelMessage => ({ role: "user", content: text });
 
-function logged(log: ShoTurnLog): ModelMessage {
-  return {
-    role: "assistant",
-    providerOptions: shoLogOptions(log),
-    content: [
-      {
-        type: "tool-call",
-        toolCallId: "sho-1-tool-command",
-        toolName: "customers_list_customers",
-        input: {},
-      },
-    ],
-  };
+interface Ran {
+  readonly command: ShoCommand;
+  readonly toolName: string;
+  readonly result: unknown;
+  readonly sessionId?: string;
 }
 
-function turn(
-  text: string,
-  log: Omit<ShoTurnLog, "sessionId" | "at"> &
-    Partial<Pick<ShoTurnLog, "sessionId" | "at">>,
-): readonly ModelMessage[] {
+function turn(text: string, ran: Ran): readonly ModelMessage[] {
+  const toolCallId = `sho-1-${ran.toolName}-${text.length.toString()}`;
+  const log: ShoTurnLog = {
+    command: ran.command,
+    sessionId: ran.sessionId ?? SESSION,
+    at: AT,
+  };
   return [
     asked(text),
-    logged({ sessionId: SESSION, at: AT, ...log }),
+    {
+      role: "assistant",
+      providerOptions: shoLogOptions(log),
+      content: [
+        {
+          type: "tool-call",
+          toolCallId,
+          toolName: ran.toolName,
+          input: {},
+        },
+      ],
+    },
+    {
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId,
+          toolName: ran.toolName,
+          output: { type: "json", value: ran.result as never },
+        },
+      ],
+    },
     { role: "assistant", content: "Готово." },
   ];
 }
 
-const KATE: ShoFocusRecord = {
-  type: "customer",
-  id: "11111111-1111-4111-8111-111111111111",
-  name: "Катя",
-  how: "created",
-};
-
-const OLHA: ShoFocusRecord = {
-  type: "customer",
-  id: "22222222-2222-4222-8222-222222222222",
-  name: "Оля",
-  how: "shown",
-};
+const PAUSED = { status: "paused", reason: "confirmation" };
 
 describe("shoTurnRecords", () => {
-  it("takes a created record's id from what the write returned", () => {
-    const records = shoTurnRecords(
-      commandOf({
-        action: "customers.createCustomer",
-        kind: "write",
-        effect: "write",
-        confirm: "card",
-        creates: { type: "customer", name: "Катя" },
+  it("takes a created record's id from what the façade returned", () => {
+    expect(
+      shoTurnRecords(createKate, CREATE_CUSTOMER_TOOL, {
+        id: KATE,
+        name: "Катя Самбука",
+        phone: "+380501112233",
       }),
-      { id: KATE.id, name: "Катя Самбука", phone: "+380501112233" },
-    );
-
-    expect(records).toEqual([
-      { type: "customer", id: KATE.id, name: "Катя", how: "created" },
-    ]);
+    ).toEqual([{ type: "customer", id: KATE, name: "Катя", how: "created" }]);
   });
 
-  it("keeps a create the action refused as a marker with no id", () => {
-    const records = shoTurnRecords(
-      commandOf({
-        action: "customers.createCustomer",
-        kind: "write",
-        effect: "write",
-        confirm: "card",
-        creates: { type: "customer", name: "Катя" },
-      }),
-      null,
+  it("keeps a create still waiting on its card as a marker with no id", () => {
+    expect(shoTurnRecords(createKate, CREATE_CUSTOMER_TOOL, undefined)).toEqual(
+      [{ type: "customer", id: "", name: "Катя", how: "created" }],
     );
+  });
 
-    expect(records).toEqual([
-      { type: "customer", id: "", name: "Катя", how: "created" },
-    ]);
+  it("reads an order out of the page the façade answers a get with", () => {
+    expect(
+      shoTurnRecords(
+        commandOf({ action: "orders.get", text: "покажи замовлення SHZ-1K4" }),
+        ORDERS_LIST_PAGE_TOOL_NAME,
+        {
+          kind: "page.summary",
+          requestedLimit: 20,
+          rows: [{ orderId: ORDER, orderNumber: "SHZ-1K4", status: "new" }],
+          hasMore: false,
+          nextCursor: null,
+        },
+      ),
+    ).toEqual([{ type: "order", id: ORDER, name: "SHZ-1K4", how: "listed" }]);
+  });
+
+  it("reads the created order out of the façade's own keys", () => {
+    expect(
+      shoTurnRecords(
+        commandOf({
+          action: "orders.create",
+          kind: "write",
+          effect: "write",
+          confirm: "card",
+          creates: { type: "order", name: null },
+        }),
+        ORDERS_CREATE_TOOL_NAME,
+        { orderId: ORDER, orderNumber: "SHZ-1K4" },
+      ),
+    ).toEqual([{ type: "order", id: ORDER, name: "SHZ-1K4", how: "created" }]);
   });
 
   it("reads the record a card showed", () => {
     expect(
-      shoTurnRecords(commandOf({ action: "customers.getCustomer" }), {
-        id: OLHA.id,
-        name: "Оля",
-      }),
-    ).toEqual([{ type: "customer", id: OLHA.id, name: "Оля", how: "shown" }]);
-  });
-
-  it("reads an order by its number rather than its uuid field", () => {
-    expect(
-      shoTurnRecords(commandOf({ action: "orders.get" }), {
-        orderId: "33333333-3333-4333-8333-333333333333",
-        orderNumber: "SHZ-1K4",
-      }),
-    ).toEqual([
-      {
-        type: "order",
-        id: "33333333-3333-4333-8333-333333333333",
-        name: "SHZ-1K4",
-        how: "shown",
-      },
-    ]);
+      shoTurnRecords(
+        commandOf({ action: "customers.getCustomer" }),
+        CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
+        { id: OLHA, name: "Оля" },
+      ),
+    ).toEqual([{ type: "customer", id: OLHA, name: "Оля", how: "shown" }]);
   });
 
   it("keeps a long list as a marker so a later pronoun is offered, not bound", () => {
     expect(
-      shoTurnRecords(commandOf({ action: "customers.listCustomers" }), {
+      shoTurnRecords(commandOf({}), CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME, {
         items: [
-          { id: KATE.id, name: "Катя" },
-          { id: OLHA.id, name: "Оля" },
+          { id: KATE, name: "Катя" },
+          { id: OLHA, name: "Оля" },
         ],
         nextCursor: null,
       }),
@@ -155,137 +178,159 @@ describe("shoTurnRecords", () => {
 
   it("keeps the one row a list found as that record", () => {
     expect(
-      shoTurnRecords(commandOf({ action: "catalog.listProducts" }), {
-        items: [{ id: "p-1", name: "Кава" }],
+      shoTurnRecords(commandOf({}), CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME, {
+        items: [{ id: KATE, name: "Катя" }],
         nextCursor: null,
       }),
-    ).toEqual([{ type: "product", id: "p-1", name: "Кава", how: "listed" }]);
+    ).toEqual([{ type: "customer", id: KATE, name: "Катя", how: "listed" }]);
   });
 
   it("holds the records the command itself named", () => {
-    const records = shoTurnRecords(
-      commandOf({
-        action: "orders.list",
-        params: {
-          customer: {
-            text: "Каті",
-            status: "resolved",
-            id: KATE.id,
-            name: "Катя",
+    expect(
+      shoTurnRecords(
+        commandOf({
+          action: "orders.list",
+          params: {
+            customer: {
+              text: "Каті",
+              status: "resolved",
+              id: KATE,
+              name: "Катя",
+            },
+            status: { value: "new" },
           },
-          status: { value: "new" },
-        },
-      }),
-      { items: [], nextCursor: null },
-    );
-
-    expect(records).toContainEqual({
+        }),
+        ORDERS_LIST_PAGE_TOOL_NAME,
+        { kind: "page.summary", rows: [], hasMore: false, nextCursor: null },
+      ),
+    ).toContainEqual({
       type: "customer",
-      id: KATE.id,
+      id: KATE,
       name: "Катя",
       how: "named",
     });
   });
 
-  it("names nothing for a reference the parse did not resolve", () => {
-    expect(
-      shoTurnRecords(
-        commandOf({
-          action: "orders.list",
-          params: { customer: { text: "Катя", status: "ambiguous" } },
-        }),
-        { items: [], nextCursor: null },
-      ),
-    ).toEqual([{ type: "order", id: "", name: "", how: "listed", count: 0 }]);
+  it("reads nothing out of a tool whose records it does not know", () => {
+    expect(shoTurnRecords(commandOf({}), "orders_list_counts", {})).toEqual([]);
   });
 });
 
 describe("shoFocusFrom", () => {
-  it("gives the records of the stored log, newest first, with the commands since", () => {
-    const history = [
-      ...turn("створи клієнта Катя", {
-        command: commandOf({}),
-        records: [KATE],
-        open: false,
-      }),
-      ...turn("знайди Олю", {
-        command: commandOf({}),
-        records: [OLHA],
-        open: false,
-      }),
-    ];
+  const createdKate = turn("створи клієнта Катя", {
+    command: createKate,
+    toolName: CREATE_CUSTOMER_TOOL,
+    result: { id: KATE, name: "Катя" },
+  });
+  const shownOlha = turn("знайди Олю", {
+    command: commandOf({ action: "customers.getCustomer" }),
+    toolName: CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
+    result: { id: OLHA, name: "Оля" },
+  });
 
-    expect(shoFocusFrom(history, SESSION)).toEqual([
-      { ...OLHA, turns: 0 },
-      { ...KATE, turns: 1 },
+  it("gives the records of the stored log, newest first, with the commands since", () => {
+    expect(shoFocusFrom([...createdKate, ...shownOlha], SESSION)).toEqual([
+      { type: "customer", id: OLHA, name: "Оля", how: "shown", turns: 0 },
+      { type: "customer", id: KATE, name: "Катя", how: "created", turns: 1 },
     ]);
   });
 
   it("holds one entry per record, the newest touch of it", () => {
-    const history = [
-      ...turn("створи клієнта Катя", {
-        command: commandOf({}),
-        records: [KATE],
-        open: false,
-      }),
-      ...turn("знайди Катю", {
-        command: commandOf({}),
-        records: [{ ...KATE, how: "shown" }],
-        open: false,
-      }),
-    ];
+    const shownKate = turn("знайди Катю", {
+      command: commandOf({ action: "customers.getCustomer" }),
+      toolName: CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
+      result: { id: KATE, name: "Катя" },
+    });
 
-    expect(shoFocusFrom(history, SESSION)).toEqual([
-      { ...KATE, how: "shown", turns: 0 },
+    expect(shoFocusFrom([...createdKate, ...shownKate], SESSION)).toEqual([
+      { type: "customer", id: KATE, name: "Катя", how: "shown", turns: 0 },
+    ]);
+  });
+
+  it("keeps one marker per kind, so markers cannot crowd out records", () => {
+    const listed = (text: string): readonly ModelMessage[] =>
+      turn(text, {
+        command: commandOf({}),
+        toolName: CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+        result: {
+          items: [
+            { id: KATE, name: "Катя" },
+            { id: OLHA, name: "Оля" },
+          ],
+          nextCursor: null,
+        },
+      });
+
+    expect(
+      shoFocusFrom(
+        [...createdKate, ...listed("покажи клієнтів"), ...listed("ще раз")],
+        SESSION,
+      ),
+    ).toEqual([
+      { type: "customer", id: "", name: "", how: "listed", count: 2, turns: 0 },
+      { type: "customer", id: KATE, name: "Катя", how: "created", turns: 2 },
     ]);
   });
 
   it("marks what another session touched, so it is offered and never bound", () => {
-    const history = turn("знайди Олю", {
-      command: commandOf({}),
-      records: [OLHA],
-      open: false,
+    const earlier = turn("знайди Олю", {
+      command: commandOf({ action: "customers.getCustomer" }),
+      toolName: CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
+      result: { id: OLHA, name: "Оля" },
       sessionId: OTHER_SESSION,
     });
 
-    expect(shoFocusFrom(history, SESSION)).toEqual([
-      { ...OLHA, turns: 0, earlier: true },
+    expect(shoFocusFrom(earlier, SESSION)).toEqual([
+      {
+        type: "customer",
+        id: OLHA,
+        name: "Оля",
+        how: "shown",
+        turns: 0,
+        earlier: true,
+      },
     ]);
   });
 
   it("sends at most the records the protocol allows", () => {
-    const many = Array.from({ length: 12 }, (_, index) => ({
-      type: "customer" as const,
-      id: `c-${String(index)}`,
-      name: `Клієнт ${String(index)}`,
-      how: "listed" as const,
-    }));
-    const history = turn("покажи клієнтів", {
-      command: commandOf({}),
-      records: many.slice(0, SHO_MOST_FOCUS),
-      open: false,
+    const many = Array.from({ length: SHO_MOST_FOCUS + 3 }, (_, index) =>
+      turn(`знайди ${String(index)}`, {
+        command: commandOf({ action: "customers.getCustomer" }),
+        toolName: CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
+        result: { id: `c-${String(index)}`, name: `Клієнт ${String(index)}` },
+      }),
+    ).flat();
+
+    expect(shoFocusFrom(many, SESSION)).toHaveLength(SHO_MOST_FOCUS);
+  });
+
+  it("holds the order a card showed, so «скасуй його» has an id", () => {
+    const shown = turn("покажи замовлення SHZ-1K4", {
+      command: commandOf({
+        action: "orders.get",
+        text: "покажи замовлення SHZ-1K4",
+      }),
+      toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+      result: {
+        kind: "page.summary",
+        requestedLimit: 20,
+        rows: [{ orderId: ORDER, orderNumber: "SHZ-1K4", status: "new" }],
+        hasMore: false,
+        nextCursor: null,
+      },
     });
 
-    expect(shoFocusFrom(history, SESSION)).toHaveLength(SHO_MOST_FOCUS);
+    expect(shoFocusFrom([...shown, asked("скасуй його")], SESSION)).toEqual([
+      { type: "order", id: ORDER, name: "SHZ-1K4", how: "listed", turns: 1 },
+    ]);
   });
 
   it("reads nothing from a conversation it was not given", () => {
-    const mine = turn("створи клієнта Катя", {
-      command: commandOf({}),
-      records: [KATE],
-      open: false,
-    });
-    const theirs = turn("створи клієнта Оля", {
-      command: commandOf({}),
-      records: [OLHA],
-      open: false,
-    });
-
-    expect(shoFocusFrom(mine, SESSION).map((entry) => entry.id)).toEqual([
-      KATE.id,
+    expect(shoFocusFrom(createdKate, SESSION).map((one) => one.id)).toEqual([
+      KATE,
     ]);
-    expect(shoFocusFrom(theirs, SESSION).map((entry) => entry.id)).toEqual([
-      OLHA.id,
+    expect(shoFocusFrom(shownOlha, SESSION).map((one) => one.id)).toEqual([
+      OLHA,
     ]);
   });
 
@@ -303,39 +348,45 @@ describe("shoFocusFrom", () => {
       asked("покажи клієнтів"),
       {
         role: "assistant",
-        providerOptions: { sho: { turn: '{"records":[]}' } },
+        providerOptions: { sho: { turn: '{"sessionId":"s"}' } },
         content: "Ось.",
       },
     ];
 
     expect(shoFocusFrom(history, SESSION)).toEqual([]);
   });
+
+  it("holds no id for a write still waiting on its card", () => {
+    const waiting = turn("створи клієнта Катя", {
+      command: createKate,
+      toolName: CREATE_CUSTOMER_TOOL,
+      result: PAUSED,
+    });
+
+    expect(shoFocusFrom(waiting, SESSION)).toEqual([
+      { type: "customer", id: "", name: "Катя", how: "created", turns: 0 },
+    ]);
+  });
 });
 
 describe("shoPreviousFrom", () => {
   const read = commandOf({ action: "orders.list" });
-  const write = commandOf({
-    action: "customers.createCustomer",
-    kind: "write",
-    effect: "write",
-    confirm: "card",
-  });
 
   it("gives the last read, so a refinement has something to refine", () => {
     const history = turn("покажи замовлення", {
       command: read,
-      records: [],
-      open: false,
+      toolName: ORDERS_LIST_PAGE_TOOL_NAME,
+      result: { kind: "page.summary", rows: [], nextCursor: null },
     });
 
     expect(shoPreviousFrom(history)).toEqual({ command: read, at: AT });
   });
 
-  it("gives nothing after a write", () => {
+  it("gives nothing after a write the person confirmed", () => {
     const history = turn("створи клієнта Катя", {
-      command: write,
-      records: [KATE],
-      open: false,
+      command: createKate,
+      toolName: CREATE_CUSTOMER_TOOL,
+      result: { id: KATE, name: "Катя" },
     });
 
     expect(shoPreviousFrom(history)).toBeUndefined();
@@ -343,12 +394,12 @@ describe("shoPreviousFrom", () => {
 
   it("gives the command of a card that is still open", () => {
     const history = turn("створи клієнта Катя", {
-      command: write,
-      records: [KATE],
-      open: true,
+      command: createKate,
+      toolName: CREATE_CUSTOMER_TOOL,
+      result: PAUSED,
     });
 
-    expect(shoPreviousFrom(history)).toEqual({ command: write, at: AT });
+    expect(shoPreviousFrom(history)).toEqual({ command: createKate, at: AT });
   });
 
   it("gives nothing when the conversation holds no Шо turn", () => {
