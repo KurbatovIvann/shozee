@@ -192,6 +192,7 @@ describe("composition root identity", () => {
         .map((edge) => edge.callee)
         .toSorted(),
     ).toEqual([
+      "companies.get",
       "docGeneration.getArtifact",
       "docSigning.get",
       "files.issueShareDownloadUrl",
@@ -300,12 +301,17 @@ describe("composition root identity", () => {
         .filter((edge) => edge.caller === "documents.requestSign")
         .map((edge) => edge.callee)
         .toSorted(),
-    ).toEqual(["docGeneration.getArtifact", "docSigning.get"]);
+    ).toEqual([
+      "companies.get",
+      "docGeneration.getArtifact",
+      "docSigning.get",
+    ]);
     expect(
       edges
         .filter((edge) => edge.caller === "documents.cancel")
-        .map((edge) => edge.callee),
-    ).toEqual(["docSigning.get"]);
+        .map((edge) => edge.callee)
+        .toSorted(),
+    ).toEqual(["companies.get", "docSigning.get"]);
     expect(edges.map((edge) => `${edge.caller}->${edge.callee}`)).not.toContain(
       "docSigning.get->documents.get",
     );

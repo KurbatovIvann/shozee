@@ -1,4 +1,5 @@
 import { toProviderToolName } from "@showzy/ai";
+import type { ShoParam } from "@showzy/sho-protocol";
 
 import {
   shoIsRef,
@@ -9,6 +10,7 @@ import {
 import { SHOZEE_DOCUMENT_TYPES } from "./reads.js";
 import {
   shoIdOnly,
+  shoSpanText,
   shoSpokenText,
   shoWriteActions,
   shoWritePlanners,
@@ -41,6 +43,26 @@ const focusHeldId =
       : "unresolved_reference";
   };
 
+const spokenDocumentNumber = (param: ShoParam): string | null =>
+  Array.isArray(param) || "status" in param ? null : shoSpanText(param);
+
+const documentReference: ShoWriteParamMapper = (param) => {
+  if (!shoIsRef(param)) {
+    const spoken = spokenDocumentNumber(param);
+    return spoken === null ? "unsupported_param" : { documentNumber: spoken };
+  }
+  if (param.status !== "context") {
+    return "unsupported_param";
+  }
+  const locator = shoRefLocator(param);
+  if (shoRefused(locator)) {
+    return locator;
+  }
+  return locator.by === "id"
+    ? { documentId: locator.id }
+    : "unresolved_reference";
+};
+
 const documentType: ShoWriteParamMapper = (param) => {
   const value = shoSpokenText(param);
   return value !== null && SHOZEE_DOCUMENT_TYPES.includes(value)
@@ -51,7 +73,7 @@ const documentType: ShoWriteParamMapper = (param) => {
 const onDocument = (action: string, reply: string): ShoWritePlan => ({
   toolName: toProviderToolName(action),
   reply,
-  params: { document_ref: focusHeldId("documentId") },
+  params: { document_ref: documentReference },
   required: ["document_ref"],
 });
 
