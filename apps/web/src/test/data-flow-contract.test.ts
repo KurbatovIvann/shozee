@@ -22,9 +22,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const webSrc = join(here, "..");
 const webSrcPosix = toPosix(webSrc);
 
+const TRANSIENT_LINT_PROBE_DIR = "__boundary-probe__";
+
 function listFiles(root: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.name === TRANSIENT_LINT_PROBE_DIR) {
+      continue;
+    }
     const full = join(root, entry.name);
     if (entry.isDirectory()) {
       out.push(...listFiles(full));

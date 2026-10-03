@@ -1,5 +1,14 @@
 /// <reference types="node" />
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -79,6 +88,8 @@ const PROMPT_LINE_CONSTANTS = [
   "SEARCH_RESULTS_PROMPT_LINE",
 ] as const;
 
+const TRANSIENT_LINT_PROBE_DIR = "__boundary-probe__";
+
 const SKIP_DIR = new Set([
   "node_modules",
   ".git",
@@ -86,6 +97,7 @@ const SKIP_DIR = new Set([
   ".turbo",
   "coverage",
   ".next",
+  TRANSIENT_LINT_PROBE_DIR,
 ]);
 
 function walkTs(directory: string): string[] {
@@ -178,6 +190,25 @@ describe("promptLine definitions (SHO-457)", () => {
           join("packages", "validation", "src", "assistant-surfaces") + sep,
         ),
       ).toBe(true);
+    }
+  });
+});
+
+describe("repo walk and transient lint probes (SHO-863)", () => {
+  it("never reads a file the web boundary suite writes and deletes", () => {
+    const root = mkdtempSync(join(tmpdir(), "showzy-walk-"));
+    try {
+      mkdirSync(join(root, "nested", TRANSIENT_LINT_PROBE_DIR), {
+        recursive: true,
+      });
+      writeFileSync(
+        join(root, "nested", TRANSIENT_LINT_PROBE_DIR, "probe.ts"),
+        "export const PROBE_ONLY = 1;\n",
+      );
+      writeFileSync(join(root, "nested", "kept.ts"), "export const Y = 1;\n");
+      expect(walkTs(root)).toEqual([join(root, "nested", "kept.ts")]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

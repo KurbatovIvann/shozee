@@ -14,10 +14,16 @@ const WEB_FORM = "apps/web/src/features/orders/form";
 const CLASSIFY_DECL =
   /(?:export\s+)?function\s+classifyProductSellability\b|(?:export\s+)?const\s+classifyProductSellability\s*=/;
 
+const TRANSIENT_LINT_PROBE_DIR = "__boundary-probe__";
+
 function walkTs(directory: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "dist") {
+    if (
+      entry.name === "node_modules" ||
+      entry.name === "dist" ||
+      entry.name === TRANSIENT_LINT_PROBE_DIR
+    ) {
       continue;
     }
     const full = join(directory, entry.name);

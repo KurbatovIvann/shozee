@@ -160,9 +160,15 @@ describe("sidebarNavSection", () => {
   });
 });
 
+const TRANSIENT_LINT_PROBE_DIR = "__boundary-probe__";
+
 function walkTsFiles(dir: string, acc: string[]): string[] {
   for (const name of readdirSync(dir)) {
-    if (name.endsWith(".test.ts") || name.endsWith(".test.tsx")) {
+    if (
+      name.endsWith(".test.ts") ||
+      name.endsWith(".test.tsx") ||
+      name === TRANSIENT_LINT_PROBE_DIR
+    ) {
       continue;
     }
     const full = join(dir, name);

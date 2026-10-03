@@ -8,12 +8,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "../../..");
 
 const SOURCE_ROOTS = ["packages", "apps"];
+const TRANSIENT_LINT_PROBE_DIR = "__boundary-probe__";
 const SKIPPED_DIRECTORIES = new Set([
   "node_modules",
   "dist",
   "build",
   "coverage",
   ".turbo",
+  TRANSIENT_LINT_PROBE_DIR,
 ]);
 
 const SHARED_SOURCE = join("packages", "validation", "src", "entity-ref.ts");
