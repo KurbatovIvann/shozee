@@ -30,6 +30,7 @@ export interface ShoWritePlan {
   readonly params: Readonly<Record<string, ShoWriteParamMapper>>;
   readonly required: readonly string[];
   readonly oneOf?: readonly (readonly string[])[];
+  readonly constants?: ShoWriteFields;
   readonly notes?: Readonly<Record<string, string>>;
 }
 
@@ -132,6 +133,12 @@ function inputFor(plan: ShoWritePlan, command: ShoCommand): ShoWriteMapped {
       }
       input[field] = value;
     }
+  }
+  for (const [field, value] of Object.entries(plan.constants ?? {})) {
+    if (Object.hasOwn(input, field)) {
+      return "unsupported_param";
+    }
+    input[field] = value;
   }
   const said = (name: string): boolean => Object.hasOwn(command.params, name);
   return plan.required.every(said) &&
