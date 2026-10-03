@@ -160,7 +160,7 @@ describe("catalog preview cards", () => {
     ]);
   });
 
-  it("SHO-840: catalog.createProduct stays within its declared lines per variant", async () => {
+  it("SHO-840: catalog.createProduct cards its fixed lines plus the declared lines per variant", async () => {
     const variants = ["50 г", "100 г", "250 г", "500 г"].map((name) => ({
       name,
     }));
@@ -169,8 +169,11 @@ describe("catalog preview cards", () => {
       basePriceMinor: "24050",
       variants,
     });
-    expect(preview.lines.length).toBeGreaterThanOrEqual(variants.length);
-    expect(preview.lines.length).toBeLessThanOrEqual(
+    expect(preview.lines.slice(0, CREATE_PRODUCT_FIXED_LINES)).toEqual([
+      { label: "Назва", value: "Чай Молочний Улун" },
+      { label: "Базова ціна", value: "240,50 грн" },
+    ]);
+    expect(preview.lines).toHaveLength(
       CREATE_PRODUCT_FIXED_LINES +
         variants.length *
           PREVIEW_CARD_LINES_PER_INPUT_ITEM["catalog.createProduct.variants"],

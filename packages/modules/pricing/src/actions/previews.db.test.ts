@@ -53,7 +53,7 @@ const fixtures = {
 };
 
 const SET_ENTRIES_FIXED_LINES = 0;
-const REMOVE_ENTRIES_FIXED_LINES = 1;
+const REMOVE_ENTRIES_FIXED_LINES = 0;
 
 const pinnedEntryKeys: readonly {
   readonly productId: string;
@@ -414,7 +414,7 @@ describe("pricing preview cards", () => {
     ]);
   });
 
-  it("SHO-840: pricing.setPriceListEntries stays within its declared lines per entry", async () => {
+  it("SHO-840: pricing.setPriceListEntries cards exactly its declared lines per entry", async () => {
     const entries = pinnedEntryKeys.map((entry) => ({
       ...entry,
       priceMinor: "13000",
@@ -423,8 +423,7 @@ describe("pricing preview cards", () => {
       priceListId: fixtures.listPin,
       entries,
     });
-    expect(preview.lines.length).toBeGreaterThanOrEqual(entries.length);
-    expect(preview.lines.length).toBeLessThanOrEqual(
+    expect(preview.lines).toHaveLength(
       SET_ENTRIES_FIXED_LINES +
         entries.length *
           PREVIEW_CARD_LINES_PER_INPUT_ITEM[
@@ -433,19 +432,28 @@ describe("pricing preview cards", () => {
     );
   });
 
-  it("SHO-840: pricing.removePriceListEntries stays within its declared lines per entry", async () => {
+  it("SHO-840: pricing.removePriceListEntries cards exactly its declared lines per matched entry", async () => {
     const preview = await previewOf(removePriceListEntries, {
       priceListId: fixtures.listPin,
       entries: pinnedEntryKeys,
     });
-    expect(preview.lines.length).toBeGreaterThanOrEqual(pinnedEntryKeys.length);
-    expect(preview.lines.length).toBeLessThanOrEqual(
+    expect(preview.lines).toHaveLength(
       REMOVE_ENTRIES_FIXED_LINES +
         pinnedEntryKeys.length *
           PREVIEW_CARD_LINES_PER_INPUT_ITEM[
             "pricing.removePriceListEntries.entries"
           ],
     );
+  });
+
+  it("SHO-840: the removal placeholder card is one line whatever the entry count", async () => {
+    const preview = await previewOf(removePriceListEntries, {
+      priceListId: fixtures.listIdle,
+      entries: pinnedEntryKeys,
+    });
+    expect(preview.lines).toEqual([
+      { label: "Ціни", value: "нічого не знайдено" },
+    ]);
   });
 
   it("leaves the stored rows untouched while the cards are issued", async () => {

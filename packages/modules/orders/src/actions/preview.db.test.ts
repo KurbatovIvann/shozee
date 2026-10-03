@@ -257,7 +257,7 @@ describe("orders preview cards (SHO-750)", () => {
     expect(created[0]?.id).toBe(fixtures.orderA);
   });
 
-  it("SHO-840: orders.create stays within its declared lines per item", async () => {
+  it("SHO-840: orders.create cards its fixed lines plus the declared lines per item", async () => {
     const items = [
       fixtures.cake,
       fixtures.box,
@@ -280,8 +280,11 @@ describe("orders preview cards (SHO-750)", () => {
       ),
     );
 
-    expect(preview.lines.length).toBeGreaterThanOrEqual(items.length);
-    expect(preview.lines.length).toBeLessThanOrEqual(
+    expect(preview.lines.slice(items.length)).toEqual([
+      { label: "Разом", value: "377,50 грн" },
+      { label: "Коментар", value: ORDER_COMMENT },
+    ]);
+    expect(preview.lines).toHaveLength(
       CREATE_ORDER_FIXED_LINES +
         items.length * PREVIEW_CARD_LINES_PER_INPUT_ITEM["orders.create.items"],
     );
