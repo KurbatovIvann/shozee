@@ -13,6 +13,7 @@ import {
   shoNeedRoute,
   shoWrites,
   SHO_ACTION_CONFIDENCE_FLOOR,
+  type ShoActionPlan,
   type ShoActionPlanners,
 } from "./sho-plan.js";
 import type { ShoPlan } from "./sho-turn.js";
@@ -79,7 +80,7 @@ function resultOf(recorded: Recorded): ShoResult {
 
 const readPlanner = (toolName: string): ShoActionPlanners[string] => ({
   writes: false,
-  plan: (command): ShoPlan => ({
+  plan: (command): ShoActionPlan => ({
     kind: "call",
     toolName,
     input: { said: command.text },
@@ -89,7 +90,7 @@ const readPlanner = (toolName: string): ShoActionPlanners[string] => ({
 
 const writePlanner = (toolName: string): ShoActionPlanners[string] => ({
   writes: true,
-  plan: (): ShoPlan => ({
+  plan: (): ShoActionPlan => ({
     kind: "call",
     toolName,
     input: {},
@@ -344,7 +345,7 @@ describe("the SHO-740 wrong-write recordings never become a write", () => {
       planners: {
         "orders.confirm": {
           writes: true,
-          plan: (command): ShoPlan => {
+          plan: (command): ShoActionPlan => {
             seen.push(command.action);
             return {
               kind: "call",
@@ -366,7 +367,11 @@ describe("the SHO-740 wrong-write recordings never become a write", () => {
       }),
       NOW,
     );
-    expect(plan).toMatchObject({ kind: "call", toolName: "orders_confirm" });
+    expect(plan).toMatchObject({
+      kind: "call",
+      writes: true,
+      toolName: "orders_confirm",
+    });
     expect(seen).toEqual(["orders.confirm"]);
   });
 });
@@ -385,6 +390,7 @@ describe("the whitelist and the effect agreement", () => {
     );
     expect(plan).toMatchObject({
       kind: "call",
+      writes: false,
       toolName: "orders_list_page",
       reply: "Ось вони.",
     });

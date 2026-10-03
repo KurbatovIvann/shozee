@@ -20,14 +20,13 @@ import {
   SHO_UNRECOGNIZED,
   type ShoCommand,
   type ShoFocusEntry,
-  type ShoParam,
   type ShoPrevious,
   type ShoRecordType,
-  type ShoRef,
 } from "@showzy/sho-protocol";
 import { z } from "zod";
 
 import { shoWrites } from "./sho-plan.js";
+import { shoIsRef } from "./sho-planners/kit.js";
 
 export const SHO_LOG_NAMESPACE = "sho";
 export const SHO_LOG_FIELD = "turn";
@@ -101,21 +100,14 @@ function rowsOf(
   return Array.isArray(rows) ? rows : null;
 }
 
-function refOf(param: ShoParam): ShoRef | null {
-  if (Array.isArray(param) || !("status" in param) || "attrs" in param) {
-    return null;
-  }
-  return "text" in param ? param : null;
-}
-
 function namedIn(command: ShoCommand): readonly ShoFocusRecord[] {
   const named: ShoFocusRecord[] = [];
   for (const [path, param] of Object.entries(command.params)) {
     const type = FOCUS_PARAM_TYPES[path];
-    const ref = type === undefined ? null : refOf(param);
-    if (type === undefined || ref === null || ref.status !== "resolved") {
+    if (type === undefined || !shoIsRef(param) || param.status !== "resolved") {
       continue;
     }
+    const ref = param;
     const id = ref.id;
     if (typeof id !== "string" || id.length === 0) {
       continue;

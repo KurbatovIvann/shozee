@@ -48,6 +48,7 @@ const UPDATE_TOOL = "customers_updateCustomer";
 
 const READS_CUSTOMERS: ShoPlan = {
   kind: "call",
+  writes: false,
   toolName: LIST_TOOL,
   input: {},
   reply: "Ось клієнти.",
@@ -461,6 +462,7 @@ describe("a Шо turn that has to ask", () => {
       sho: enginePlanning(() =>
         Promise.resolve({
           kind: "call",
+          writes: false,
           toolName: UPDATE_TOOL,
           input: { id: customerId, name: "Катерина Самбука" },
           reply: "Перейменувати?",
@@ -535,6 +537,7 @@ describe("a Шо turn that has to ask", () => {
       sho: enginePlanning(() =>
         Promise.resolve({
           kind: "call",
+          writes: false,
           toolName: UPDATE_TOOL,
           input: { id: customerId, name: "Катерина Самбука" },
           reply: "Перейменувати?",
@@ -578,6 +581,7 @@ describe("a Шо turn that has to ask", () => {
       sho: enginePlanning(() =>
         Promise.resolve({
           kind: "call",
+          writes: false,
           toolName: UPDATE_TOOL,
           input: { id: customerId, name: "Катерина Самбука" },
           reply: "Перейменувати?",
@@ -588,6 +592,7 @@ describe("a Шо turn that has to ask", () => {
         enginePlanning(() =>
           Promise.resolve({
             kind: "call",
+            writes: false,
             toolName: UPDATE_TOOL,
             input: { id: customerId, name: "Катерина Самбука" },
             reply: "Перейменувати?",

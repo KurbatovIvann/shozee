@@ -1,5 +1,8 @@
 import { kyivCalendarDate, kyivNamedPeriodRange } from "@showzy/ai";
-import { SHO_READ_PLANNER_PARAMS } from "@showzy/assistant-runtime";
+import {
+  SHO_READ_PLANNER_PARAMS,
+  SHO_WRITE_PLANNER_PARAMS,
+} from "@showzy/assistant-runtime";
 import { loadV3Bundle, periodDates, type Bundle, type Day } from "@showzy/sho";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -61,6 +64,36 @@ describe("the read planners name only catalogue params", () => {
         names: names.filter((name) => !known.includes(name)),
       }).toEqual({ action, names: [] });
     }
+  });
+});
+
+describe("the write planners name only catalogue params", () => {
+  it("knows every planned action as a write intent", () => {
+    for (const action of Object.keys(SHO_WRITE_PLANNER_PARAMS)) {
+      expect({ action, kind: intentOf(action)?.kind }).toEqual({
+        action,
+        kind: "write",
+      });
+    }
+  });
+
+  it("maps only params the bundle gives that intent", () => {
+    for (const [action, names] of Object.entries(SHO_WRITE_PLANNER_PARAMS)) {
+      const known = Object.keys(intentOf(action)?.params ?? {});
+      expect({
+        action,
+        names: names.filter((name) => !known.includes(name)),
+      }).toEqual({ action, names: [] });
+    }
+  });
+
+  it("plans no action as both a read and a write", () => {
+    const reads = Object.keys(SHO_READ_PLANNER_PARAMS);
+    expect(
+      Object.keys(SHO_WRITE_PLANNER_PARAMS).filter((action) =>
+        reads.includes(action),
+      ),
+    ).toEqual([]);
   });
 });
 

@@ -12,18 +12,17 @@ import {
 import { LIST_PRODUCTS_QUERY_MAX } from "@showzy/catalog/contract";
 import { LIST_CUSTOMERS_SEARCH_MAX } from "@showzy/customers/contract";
 import { LIST_PRICE_LISTS_QUERY_MAX } from "@showzy/pricing/contract";
-import type { ShoCommand, ShoParam, ShoRef } from "@showzy/sho-protocol";
+import type { ShoCommand, ShoParam } from "@showzy/sho-protocol";
 import { ENTITY_REF_QUERY_MAX } from "@showzy/validation/entity-ref";
 import { isCanonicalOrderNumberToken } from "@showzy/validation/search";
 
-import type { ShoPlan } from "../sho-turn.js";
-
 import {
-  shoLocatorFor,
   shoPlanFallback,
+  shoRefLocator,
+  shoRefused,
+  type ShoActionPlan,
   type ShoActionPlanner,
   type ShoActionPlanners,
-  type ShoLocator,
   type ShoPlanFallbackReason,
 } from "./kit.js";
 
@@ -45,8 +44,6 @@ const RECORD_STATUSES = ["active", "archived", "all"];
 
 const COUNT_GROUPS = ["status", "product", "customer"];
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 type Fields = Record<string, unknown>;
 
 type Mapped = Fields | ShoPlanFallbackReason;
@@ -55,12 +52,7 @@ type ParamMapper = (param: ShoParam, now: Date) => Mapped;
 
 type ParamMappers = Readonly<Record<string, ParamMapper>>;
 
-const refused = (mapped: Mapped): mapped is ShoPlanFallbackReason =>
-  typeof mapped === "string";
-
-function isRef(param: ShoParam): param is ShoRef {
-  return !Array.isArray(param) && "status" in param && !("attrs" in param);
-}
+const refused = shoRefused;
 
 function enumValue(param: ShoParam): string | null {
   if (Array.isArray(param)) {
@@ -90,19 +82,7 @@ function clipped(param: ShoParam, max: number): string | null {
   return spokenText(param)?.slice(0, max) ?? null;
 }
 
-function locatorOf(param: ShoParam): ShoLocator | ShoPlanFallbackReason {
-  if (!isRef(param)) {
-    return "unsupported_param";
-  }
-  const outcome = shoLocatorFor(param);
-  if (outcome.kind === "fallback") {
-    return outcome.reason;
-  }
-  const locator = outcome.locator;
-  return locator.by === "id" && !UUID.test(locator.id)
-    ? "unsupported_param"
-    : locator;
-}
+const locatorOf = shoRefLocator;
 
 const period: ParamMapper = (param, now) => {
   const token = enumValue(param);
@@ -306,11 +286,16 @@ function inputFor(
 function plannerFor(read: ReadPlan): ShoActionPlanner {
   return {
     writes: false,
-    plan: (command, now): ShoPlan => {
+    plan: (command, now): ShoActionPlan => {
       const input = inputFor(read, command, now);
       return refused(input)
         ? shoPlanFallback(input)
-        : { kind: "call", toolName: read.toolName, input, reply: read.reply };
+        : {
+            kind: "call",
+            toolName: read.toolName,
+            input,
+            reply: read.reply,
+          };
     },
   };
 }

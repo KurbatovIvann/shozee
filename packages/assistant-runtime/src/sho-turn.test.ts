@@ -1,5 +1,9 @@
 import type { ModelMessage, ToolSet } from "@showzy/assistant-kit";
 import { shoCommandSchema, type ShoCommand } from "@showzy/sho-protocol";
+import {
+  assistantConfirmationPromptSchema,
+  ASSISTANT_PREVIEW_LIST_MAX,
+} from "@showzy/validation/assistant-chat";
 import { describe, expect, it, vi } from "vitest";
 
 import { shoFocusFrom, shoPreviousFrom } from "./sho-focus.js";
@@ -50,6 +54,7 @@ function turnWith(
 
 const readPlan = calls({
   kind: "call",
+  writes: false,
   toolName: TOOL,
   input: { status: "active" },
   reply: "Ось клієнти.",
@@ -219,6 +224,90 @@ describe("runShoTurn", () => {
       turnWith(readPlan, () => Promise.reject(new Error("boom"))),
     );
     expect(threw).toEqual({ kind: "fallback", reason: "tool_failed" });
+  });
+
+  const notedPlan = calls({
+    kind: "call",
+    writes: true,
+    toolName: TOOL,
+    input: { customerQuery: "оксани" },
+    reply: "Замовлення створено.",
+    notes: ["Прочитано як нове замовлення."],
+  });
+
+  const pauseWith = (prompt: unknown) => () =>
+    Promise.resolve({
+      kind: "pause",
+      interaction: "confirmation",
+      prompt,
+      secret: { challengeId: "c" },
+    });
+
+  const confirmationPrompt = {
+    summary: "Створити замовлення?",
+    preview: { title: "Нове замовлення", lines: [], notes: ["Оксана"] },
+    also: [],
+    level: "card",
+  };
+
+  it("falls back when a declared write comes back without a pause", async () => {
+    const outcome = await runShoTurn(
+      turnWith(notedPlan, () =>
+        Promise.resolve({ kind: "ok", result: { orderId: "o" } }),
+      ),
+    );
+
+    expect(outcome).toEqual({
+      kind: "fallback",
+      reason: "write_did_not_pause",
+    });
+  });
+
+  it("adds the plan's notes to the preview the card shows", async () => {
+    const outcome = await runShoTurn(
+      turnWith(notedPlan, pauseWith(confirmationPrompt)),
+    );
+
+    expect(outcome.kind).toBe("ask");
+    if (outcome.kind !== "ask") return;
+    expect(outcome.prompt).toEqual({
+      ...confirmationPrompt,
+      preview: {
+        ...confirmationPrompt.preview,
+        notes: ["Прочитано як нове замовлення.", "Оксана"],
+      },
+    });
+  });
+
+  it("keeps the plan's note when the preview's own list is already full", async () => {
+    const full = Array.from({ length: ASSISTANT_PREVIEW_LIST_MAX }, (_, at) =>
+      String(at),
+    );
+    const outcome = await runShoTurn(
+      turnWith(
+        notedPlan,
+        pauseWith({
+          ...confirmationPrompt,
+          preview: { ...confirmationPrompt.preview, notes: full },
+        }),
+      ),
+    );
+
+    expect(outcome.kind).toBe("ask");
+    if (outcome.kind !== "ask") return;
+    const prompt = assistantConfirmationPromptSchema.parse(outcome.prompt);
+    expect(prompt.preview.notes).toHaveLength(ASSISTANT_PREVIEW_LIST_MAX);
+    expect(prompt.preview.notes[0]).toBe("Прочитано як нове замовлення.");
+  });
+
+  it("leaves a pause that is not a preview card untouched", async () => {
+    const outcome = await runShoTurn(
+      turnWith(notedPlan, pauseWith({ summary: "Кого саме?" })),
+    );
+
+    expect(outcome.kind).toBe("ask");
+    if (outcome.kind !== "ask") return;
+    expect(outcome.prompt).toEqual({ summary: "Кого саме?" });
   });
 });
 
