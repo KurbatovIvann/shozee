@@ -13,8 +13,6 @@ import type {
   ShoFocusEntry,
   ShoPrevious,
 } from "@showzy/sho-protocol";
-import { assistantConfirmationPromptSchema } from "@showzy/validation/assistant-chat";
-
 import type { ShoPlanFallbackReason } from "./sho-plan.js";
 
 import {
@@ -38,7 +36,7 @@ import {
   emptyStaffAssistantBudgetHold,
   type StaffAssistantBudgetHold,
 } from "./assistant-budget-guard.js";
-import { previewNoting } from "./assistant-kit-confirmation.js";
+import { promptNoting } from "./assistant-kit-confirmation.js";
 import {
   assistantAskedMessage,
   assistantTurnEarnedCard,
@@ -151,20 +149,6 @@ function fellBackOn(
       ...(gaps === undefined ? {} : { gaps }),
       ...(trap === undefined ? {} : { trap }),
     }),
-  };
-}
-
-function promptWithNotes(prompt: unknown, notes: readonly string[]): unknown {
-  if (notes.length === 0) {
-    return prompt;
-  }
-  const parsed = assistantConfirmationPromptSchema.safeParse(prompt);
-  if (!parsed.success) {
-    return prompt;
-  }
-  return {
-    ...parsed.data,
-    preview: previewNoting(parsed.data.preview, notes),
   };
 }
 
@@ -290,6 +274,7 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
   }
 
   if (outcome.kind === "pause") {
+    const notes = plan.notes ?? [];
     const messages = conversationThrough(
       input,
       toolCallId,
@@ -300,11 +285,12 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
     return {
       kind: "ask",
       interaction: outcome.interaction,
-      prompt: promptWithNotes(outcome.prompt, plan.notes ?? []),
+      prompt: promptNoting(outcome.prompt, notes),
       secret: outcome.secret,
       continuation: {
         messages,
         pausedToolCall: { id: sendableId.id, name: plan.toolName },
+        ...(notes.length === 0 ? {} : { promptNotes: notes }),
       },
       appended: messages.slice(input.history.length),
     };

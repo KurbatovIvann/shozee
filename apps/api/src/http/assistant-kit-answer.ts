@@ -36,6 +36,7 @@ import {
   assistantRejectedTrace,
   assistantTurnEarnedCard,
   assistantTurnMessageId,
+  promptNoting,
   readAssistantChatWindow,
   type AssistantChatWindowWithTurn,
   type AssistantKitFor,
@@ -384,7 +385,10 @@ export async function handleAssistantKitAnswer(
       conversationId: body.conversationId,
       bind: caller.bind,
       kind: nextKind,
-      prompt: resolvedOutcome.prompt,
+      prompt: promptNoting(
+        resolvedOutcome.prompt,
+        claimed.record.continuation.promptNotes ?? [],
+      ),
       secret: resolvedOutcome.secret,
       continuation: claimed.record.continuation,
     });

@@ -28,7 +28,10 @@ import type {
   AssistantPreview,
   AssistantPreviewLevel,
 } from "@showzy/validation/assistant-chat";
-import { ASSISTANT_PREVIEW_LIST_MAX } from "@showzy/validation/assistant-chat";
+import {
+  ASSISTANT_PREVIEW_LIST_MAX,
+  assistantConfirmationPromptSchema,
+} from "@showzy/validation/assistant-chat";
 
 import type {
   ConfirmationAlsoSecret,
@@ -133,6 +136,23 @@ export function previewNoting(
   return {
     ...preview,
     notes: [...notes, ...preview.notes].slice(0, ASSISTANT_PREVIEW_LIST_MAX),
+  };
+}
+
+export function promptNoting(
+  prompt: unknown,
+  notes: readonly string[],
+): unknown {
+  if (notes.length === 0) {
+    return prompt;
+  }
+  const parsed = assistantConfirmationPromptSchema.safeParse(prompt);
+  if (!parsed.success) {
+    return prompt;
+  }
+  return {
+    ...parsed.data,
+    preview: previewNoting(parsed.data.preview, notes),
   };
 }
 
