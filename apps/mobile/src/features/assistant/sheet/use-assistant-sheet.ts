@@ -259,7 +259,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     input,
     changeInput: setInput,
     send,
-    sendExample: sendText,
+    sendExample: (text: string) => void sendText(text),
     answer,
     pendingOptionId,
     dismiss: conversation.dismiss,

@@ -237,7 +237,9 @@ describe("assistant example chips and reply tones (SHO-748)", () => {
     expect(sheetView).toContain("model.sendExample");
     expect(composer).toContain('layout="scroll"');
     expect(composer).toContain("props.onSendExample");
-    expect(hook).toContain("sendExample: sendText,");
+    expect(hook).toContain(
+      "sendExample: (text: string) => void sendText(text)",
+    );
   });
 
   it("leaves a typed draft alone when a chip is tapped", () => {

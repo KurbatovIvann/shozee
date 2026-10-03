@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Pressable, View } from "react-native";
-import { MicIcon, MicOffIcon } from "lucide-react-native";
+import { MicIcon } from "lucide-react-native";
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -70,11 +70,7 @@ export function AssistantMicButton(props: {
           pressed ? styles.pressed : null,
         ]}
       >
-        {denied ? (
-          <MicOffIcon size={theme.iconSize.md} color={tint} />
-        ) : (
-          <MicIcon size={theme.iconSize.md} color={tint} />
-        )}
+        <MicIcon size={theme.iconSize.md} color={tint} />
       </Pressable>
     </View>
   );

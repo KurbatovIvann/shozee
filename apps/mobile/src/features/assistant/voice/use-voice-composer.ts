@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { AssistantKitCall } from "../api/assistant-kit-client";
 import { useVoiceCapture, type VoiceLevelListener } from "./use-voice-capture";
 import type { VoiceCaptureFailure } from "./voice-capture-state";
 import {
@@ -17,14 +18,8 @@ import {
 } from "./voice-session-chrome";
 import type { VoiceWebSocketFactory } from "./voice-socket";
 
-export interface VoiceComposerCall {
-  readonly apiUrl: string;
-  readonly getCookie: () => string | null;
-  readonly getCompanyId: () => string | null;
-}
-
 export interface VoiceComposerRequest {
-  readonly call: VoiceComposerCall | null;
+  readonly call: AssistantKitCall | null;
   readonly send: (text: string) => Promise<boolean>;
   readonly blocked: boolean;
   readonly announcements: VoiceComposerAnnouncements;

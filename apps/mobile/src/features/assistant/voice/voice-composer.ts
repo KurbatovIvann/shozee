@@ -51,20 +51,15 @@ export function voiceComposerPlaceholder(input: {
     : input.idle;
 }
 
-export function voiceCountdownVisible(mode: VoiceMicMode): boolean {
-  return mode === "listening" || mode === "recognizing";
-}
-
 export function voiceRemainingSeconds(
   elapsedMs: number,
   sessionMs: number,
 ): number {
   const limit = Math.ceil(sessionMs / 1000);
-  return Math.max(0, Math.min(limit, Math.ceil((sessionMs - elapsedMs) / 1000)));
-}
-
-export function voiceCountdownText(seconds: number): string {
-  return `0:${String(Math.max(0, seconds)).padStart(2, "0")}`;
+  return Math.max(
+    0,
+    Math.min(limit, Math.ceil((sessionMs - elapsedMs) / 1000)),
+  );
 }
 
 export function voiceAnnouncementKey(input: {
@@ -89,17 +84,9 @@ export function rememberSpoken(
   if (key.length === 0) {
     return spoken;
   }
-  const next = new Set(spoken);
-  next.delete(key);
-  next.add(key);
-  while (next.size > VOICE_SPOKEN_MEMORY) {
-    const [oldest] = next;
-    if (oldest === undefined) {
-      break;
-    }
-    next.delete(oldest);
-  }
-  return next;
+  const kept = [...spoken].filter((item) => item !== key);
+  kept.push(key);
+  return new Set(kept.slice(-VOICE_SPOKEN_MEMORY));
 }
 
 export function voiceRowSpoken(input: {

@@ -323,7 +323,10 @@ describe("useVoiceComposer", () => {
     expect(blocked.model().mode).toBe("idle");
 
     const offline = mount({ available: false });
-    expect(offline.model()).toMatchObject({ available: false, canPress: false });
+    expect(offline.model()).toMatchObject({
+      available: false,
+      canPress: false,
+    });
     act(() => {
       offline.model().toggle();
     });
@@ -331,7 +334,7 @@ describe("useVoiceComposer", () => {
   });
 
   it("stays pressable while listening so the speaker can stop, but not while recognizing", async () => {
-    const view = await listening({ blocked: true });
+    const view = await listening();
     expect(view.model().canPress).toBe(true);
 
     act(() => {

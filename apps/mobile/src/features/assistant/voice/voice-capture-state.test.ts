@@ -60,6 +60,7 @@ describe("voiceCaptureReducer", () => {
       transcript: "дві пачки",
       endedBy: "limit",
       failure: null,
+      sessionMs: 15_000,
     });
   });
 

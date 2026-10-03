@@ -6,8 +6,6 @@ import {
   voiceAnnouncementKey,
   voiceComposerPlaceholder,
   voiceComposerValue,
-  voiceCountdownText,
-  voiceCountdownVisible,
   voiceMicActive,
   voiceMicMode,
   voiceRemainingSeconds,
@@ -82,13 +80,6 @@ describe("voice composer field", () => {
 });
 
 describe("voice countdown", () => {
-  it("shows only once the session is running", () => {
-    expect(voiceCountdownVisible("listening")).toBe(true);
-    expect(voiceCountdownVisible("recognizing")).toBe(true);
-    expect(voiceCountdownVisible("pending")).toBe(false);
-    expect(voiceCountdownVisible("idle")).toBe(false);
-  });
-
   it("counts the server's own session limit down to zero and no further", () => {
     const limit = VOICE_MAX_SESSION_MS;
     expect(voiceRemainingSeconds(0, limit)).toBe(15);
@@ -99,12 +90,6 @@ describe("voice countdown", () => {
     expect(voiceRemainingSeconds(-1_000, limit)).toBe(15);
     expect(voiceRemainingSeconds(0, 8_000)).toBe(8);
     expect(voiceRemainingSeconds(3_000, 8_000)).toBe(5);
-  });
-
-  it("pads the clock", () => {
-    expect(voiceCountdownText(15)).toBe("0:15");
-    expect(voiceCountdownText(9)).toBe("0:09");
-    expect(voiceCountdownText(0)).toBe("0:00");
   });
 });
 

@@ -2,8 +2,6 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   voiceAnnouncementKey,
-  voiceCountdownText,
-  voiceCountdownVisible,
   voiceRemainingSeconds,
   type VoiceAnnouncementKey,
   type VoiceMicMode,
@@ -26,7 +24,7 @@ export function useVoiceCountdown(input: {
   readonly mode: VoiceMicMode;
   readonly sessionMs: number;
 }): VoiceCountdown {
-  const counting = voiceCountdownVisible(input.mode);
+  const counting = input.mode === "listening" || input.mode === "recognizing";
   const [elapsedMs, setElapsedMs] = useState(0);
 
   useEffect(() => {
@@ -45,7 +43,7 @@ export function useVoiceCountdown(input: {
 
   const remaining = voiceRemainingSeconds(elapsedMs, input.sessionMs);
   return {
-    countdown: counting ? voiceCountdownText(remaining) : null,
+    countdown: counting ? `0:${String(remaining).padStart(2, "0")}` : null,
     remaining,
   };
 }
