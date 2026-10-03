@@ -231,6 +231,17 @@ registry is injected into `createAssistantRuntime`; this package never imports
   risk, so they pause on the same ADR-0050 preview as every other write and
   carry their `read_as_focus_type` misread as a note on the card. The parity
   test reads a planned write intent as `write` or `high` for that reason.
+  The counterparty writes (SHO-860) sit in the same table:
+  `customers.createCounterparty` takes `new_name`, `customers.updateCounterparty`
+  the resolved `counterparty` as `id` plus at least one field, and
+  `customers.deleteCounterparty` — `kind: "high"`, `risk: "high"` — the record
+  alone. `address` is the legal address span, `bank_name` the bank the staff
+  said and `comment` the action's `notes`; `edrpou`, `iban` and `mfo` are taken
+  only from the runtime's typed value and refused when they outrun the
+  action's cap, because clipping an identifier would store a different firm,
+  and an identifier the runtime failed its own check on arrives as a blocking
+  `invalid_value` need, which is the LLM. No identifier, phone or e-mail ever
+  reaches the Шо context: a counterparty enters it as an id and a name.
 - `sho-planners/documents-writes.ts` — the document write planners (SHO-861):
   `documents.createFromOrder`, `documents.cancel`, `documents.share` and
   `documents.requestSign` onto their own action tools, `writes: true`, so each
@@ -244,8 +255,8 @@ registry is injected into `createAssistantRuntime`; this package never imports
   context `document_ref`. A spoken document or order number is therefore
   `unsupported_param`, which is the LLM, until those actions take an
   id-or-reference input as the lifecycle four did at SHO-853 (SHO-869).
-  `document_type`
-  maps to the two types Shozee issues and `counterparty` to a resolved uuid;
+  `document_type` maps to the two types Shozee issues and `counterparty` to a
+  resolved uuid;
   `customer`, `period`, `status`, `amount`, `basis`, `channel`, `email` and
   `phone` are the LLM's — a `basis` span is a bare document number («57»),
   never the «Підстава» sentence the action stores.
