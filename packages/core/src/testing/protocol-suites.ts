@@ -29,7 +29,7 @@ import {
 } from "../runtime/events/delivery.js";
 import type { EventSubscription } from "../runtime/events/define-event-handler.js";
 import type { PipelineRequestMeta } from "../runtime/pipeline/types.js";
-import { challengeIdFor } from "./confirmation-gate.js";
+import { challengeIdFor, invokeConfirmedAction } from "./confirmation-gate.js";
 import { invokeAction, type IsolationActor, type TestKit } from "./kit.js";
 import type { SuiteAction } from "./suites.js";
 
@@ -105,15 +105,7 @@ async function invokeThroughGate(
   if (!action.contract.requiresConfirmation) {
     return await invokeAction(kit, action, input, actor, { request });
   }
-  const challengeId = await challengeIdFor(
-    action.contract.name,
-    invokeAction(kit, action, input, actor, {
-      request: { ...request, requestId: randomUUID() },
-    }),
-  );
-  return await invokeAction(kit, action, input, actor, {
-    request: { ...request, confirmationChallengeId: challengeId },
-  });
+  return await invokeConfirmedAction(kit, action, input, actor, { request });
 }
 
 async function replayWithoutChallenge(

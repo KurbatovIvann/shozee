@@ -233,7 +233,11 @@ atomicCallSuite(
 describe("idempotencySuite drives the confirmation gate", () => {
   it("leaves the kit's shared hooks untouched and frozen", async () => {
     const hooks = kit.pipeline.hooks;
-    const confirmation = hooks?.confirmation;
+    expect(hooks).not.toBeUndefined();
+    if (hooks === undefined) {
+      throw new Error("the test kit composed no protocol hooks");
+    }
+    const confirmation = hooks.confirmation;
     await runIdempotencyCase(kit, {
       action: isolation.accountConfirmFollow,
       input: { companyId: gatedFollows.guard },
@@ -244,9 +248,9 @@ describe("idempotencySuite drives the confirmation gate", () => {
     expect(kit.pipeline.hooks).toBe(hooks);
     expect(kit.pipeline.hooks?.confirmation).toBe(confirmation);
     expect(Object.isFrozen(hooks)).toBe(true);
-    expect(() =>
-      Object.assign(hooks as object, { confirmation: undefined }),
-    ).toThrow(TypeError);
+    expect(() => Object.assign(hooks, { confirmation: undefined })).toThrow(
+      TypeError,
+    );
   });
 
   it("replays a completed key without issuing a second card", async () => {
