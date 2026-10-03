@@ -238,6 +238,16 @@ describe("SHO_CUSTOMER_WRITE_PLANNERS maps the conformance update parses", () =>
     });
   });
 
+  it("asks rather than plan an empty card when the parse names only the customer", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d95-named-update", {
+          params: { customer: reId(paramsOf("d95-named-update")["customer"]) },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "blocking_need" });
+  });
+
   it("plans the d79-group-update group as the customer's groupId", () => {
     const plan = planOf(
       renaming("d95-named-update", {
