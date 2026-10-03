@@ -1,15 +1,11 @@
 import { toProviderToolName } from "@showzy/ai";
 import { PRICE_LIST_NAME_MAX } from "@showzy/pricing/contract";
-import type { ShoParam } from "@showzy/sho-protocol";
 
+import type { ShoActionPlanners } from "./kit.js";
 import {
-  shoPlanFallback,
-  type ShoActionPlan,
-  type ShoActionPlanner,
-  type ShoActionPlanners,
-} from "./kit.js";
-import {
+  shoCreatedName,
   shoIdOnly,
+  shoRenamedName,
   shoSpokenText,
   shoWriteActions,
   shoWritePlanners,
@@ -43,25 +39,9 @@ const FOCUS_PRICE_LIST_NOTES: Readonly<Record<string, string>> = {
   read_as_focus_type: SHO_READ_AS_FOCUS_PRICE_LIST_NOTE,
 };
 
-const clipped = (param: ShoParam): string | null =>
-  shoSpokenText(param)?.slice(0, PRICE_LIST_NAME_MAX) ?? null;
+const createdName = shoCreatedName("price_list", PRICE_LIST_NAME_MAX);
 
-const createdName: ShoWriteParamMapper = (param, command) => {
-  const nominative =
-    command.creates?.type === "price_list"
-      ? (command.creates.name ?? "").trim()
-      : "";
-  const text =
-    nominative.length > 0
-      ? nominative.slice(0, PRICE_LIST_NAME_MAX)
-      : clipped(param);
-  return text === null ? "unsupported_param" : { name: text };
-};
-
-const renamedTo: ShoWriteParamMapper = (param) => {
-  const text = clipped(param);
-  return text === null ? "unsupported_param" : { name: text };
-};
+const renamedTo = shoRenamedName(PRICE_LIST_NAME_MAX);
 
 const flag =
   (field: string): ShoWriteParamMapper =>
@@ -127,34 +107,21 @@ const SHO_PRICING_WRITES: ShoWritePlans = {
     "Прайс-лист видалено.",
     "id",
   ),
+  [SHO_CLEAR_DEFAULT_PRICE_LIST]: {
+    toolName: toProviderToolName(SHO_SET_DEFAULT_PRICE_LIST),
+    reply: SHO_DEFAULT_PRICE_LIST_CLEARED_REPLY,
+    params: {},
+    constants: { priceListId: null },
+    required: [],
+  },
 };
 
-const clearsDefault: ShoActionPlanner = {
-  writes: true,
-  plan: (command): ShoActionPlan =>
-    Object.keys(command.params).length > 0
-      ? shoPlanFallback("unsupported_param")
-      : {
-          kind: "call",
-          toolName: toProviderToolName(SHO_SET_DEFAULT_PRICE_LIST),
-          input: { priceListId: null },
-          reply: SHO_DEFAULT_PRICE_LIST_CLEARED_REPLY,
-        },
-};
-
-export const SHO_PRICING_WRITE_ACTIONS: readonly string[] = Object.freeze([
-  ...shoWriteActions(SHO_PRICING_WRITES),
-  SHO_CLEAR_DEFAULT_PRICE_LIST,
-]);
+export const SHO_PRICING_WRITE_ACTIONS: readonly string[] =
+  shoWriteActions(SHO_PRICING_WRITES);
 
 export const SHO_PRICING_WRITE_PLANNER_PARAMS: Readonly<
   Record<string, readonly string[]>
-> = Object.freeze({
-  ...shoWritePlannerParams(SHO_PRICING_WRITES),
-  [SHO_CLEAR_DEFAULT_PRICE_LIST]: Object.freeze([] as readonly string[]),
-});
+> = shoWritePlannerParams(SHO_PRICING_WRITES);
 
-export const SHO_PRICING_WRITE_PLANNERS: ShoActionPlanners = Object.freeze({
-  ...shoWritePlanners(SHO_PRICING_WRITES),
-  [SHO_CLEAR_DEFAULT_PRICE_LIST]: clearsDefault,
-});
+export const SHO_PRICING_WRITE_PLANNERS: ShoActionPlanners =
+  shoWritePlanners(SHO_PRICING_WRITES);

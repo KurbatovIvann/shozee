@@ -34,6 +34,7 @@ import {
   SHO_PRICING_WRITE_ACTIONS,
   SHO_PRICING_WRITE_PLANNERS,
   SHO_PRICING_WRITE_PLANNER_PARAMS,
+  SHO_READ_AS_FOCUS_PRICE_LIST_NOTE,
   SHO_SET_DEFAULT_PRICE_LIST,
   SHO_UPDATE_PRICE_LIST,
 } from "./pricing-writes.js";
@@ -313,6 +314,34 @@ describe("activate, deactivate, set default and delete take the id alone", () =>
         }),
       ),
     ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("notes a non-blocking read_as_focus_type on the card", () => {
+    expect(
+      planOf(
+        commandOf({
+          ...parseOf("d88-unplaced"),
+          action: SHO_DEACTIVATE_PRICE_LIST,
+          verb: "status",
+          params: { price_list: contextPriceList(OUR_PRICE_LIST) },
+          needs: [
+            {
+              path: "price_list",
+              reason: "read_as_focus_type",
+              blocking: false,
+              span: { text: "його" },
+            },
+          ],
+          ready: true,
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "pricing_deactivatePriceList",
+      reply: "Прайс-лист деактивовано.",
+      input: { id: OUR_PRICE_LIST },
+      notes: [`${SHO_READ_AS_FOCUS_PRICE_LIST_NOTE}: «його».`],
+    });
   });
 
   it("refuses an id that is not shaped like one of ours", () => {

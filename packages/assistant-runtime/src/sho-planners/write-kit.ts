@@ -1,4 +1,9 @@
-import type { ShoCommand, ShoNeed, ShoParam } from "@showzy/sho-protocol";
+import type {
+  ShoCommand,
+  ShoNeed,
+  ShoParam,
+  ShoRecordType,
+} from "@showzy/sho-protocol";
 
 import {
   shoPlanFallback,
@@ -25,6 +30,7 @@ export interface ShoWritePlan {
   readonly params: Readonly<Record<string, ShoWriteParamMapper>>;
   readonly required: readonly string[];
   readonly oneOf?: readonly (readonly string[])[];
+  readonly constants?: ShoWriteFields;
   readonly notes?: Readonly<Record<string, string>>;
 }
 
@@ -70,6 +76,26 @@ export function shoSpokenText(param: ShoParam): string | null {
     : shoSpanText(param);
 }
 
+const clipped = (param: ShoParam, max: number): string | null =>
+  shoSpokenText(param)?.slice(0, max) ?? null;
+
+export const shoCreatedName =
+  (type: ShoRecordType, max: number): ShoWriteParamMapper =>
+  (param, command) => {
+    const nominative =
+      command.creates?.type === type ? (command.creates.name ?? "").trim() : "";
+    const text =
+      nominative.length > 0 ? nominative.slice(0, max) : clipped(param, max);
+    return text === null ? "unsupported_param" : { name: text };
+  };
+
+export const shoRenamedName =
+  (max: number): ShoWriteParamMapper =>
+  (param) => {
+    const text = clipped(param, max);
+    return text === null ? "unsupported_param" : { name: text };
+  };
+
 function noteOf(prefix: string, need: ShoNeed): string {
   const span = need.span?.text.trim() ?? "";
   return span.length === 0 ? `${prefix}.` : `${prefix}: «${span}».`;
@@ -107,6 +133,12 @@ function inputFor(plan: ShoWritePlan, command: ShoCommand): ShoWriteMapped {
       }
       input[field] = value;
     }
+  }
+  for (const [field, value] of Object.entries(plan.constants ?? {})) {
+    if (Object.hasOwn(input, field)) {
+      return "unsupported_param";
+    }
+    input[field] = value;
   }
   const said = (name: string): boolean => Object.hasOwn(command.params, name);
   return plan.required.every(said) &&
