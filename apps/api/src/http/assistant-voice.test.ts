@@ -536,6 +536,38 @@ describe("assistant voice per-user session limit", () => {
     expect(recognizer.streams).toHaveLength(0);
   });
 
+  it("still refuses with 429 when the slot cannot be released during an outage", async () => {
+    const recognizer = trackingRecognizer();
+    const releases: string[] = [];
+    const voice = createAssistantVoiceApp(
+      runtime({
+        recognizer,
+        slots: {
+          acquire: () => Promise.resolve(true),
+          release: (_userId, streamId) => {
+            releases.push(streamId);
+            return Promise.reject(new Error("redis down"));
+          },
+        },
+        rateLimit: {
+          store: {
+            consume: () => Promise.reject(new Error("redis down")),
+          },
+          sessionsPerMinutePerUser: 5,
+        },
+      }),
+    );
+
+    const response = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(response.status).toBe(429);
+    expect(releases).toHaveLength(1);
+    expect(recognizer.streams).toHaveLength(0);
+  });
+
   it("spends no session when concurrency refuses the handshake", async () => {
     const bucket = countingStore();
     const slots = countingSlots(1);

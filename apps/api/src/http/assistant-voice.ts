@@ -183,7 +183,12 @@ export function createAssistantVoiceApp(
       return rateLimited(requestId, "RATE_LIMITED", VOICE_SLOT_RETRY_AFTER_SEC);
     }
     const releaseSlot = (): void => {
-      void runtime.slots.release(caller.userId, streamId);
+      runtime.slots.release(caller.userId, streamId).catch((error: unknown) => {
+        runtime.logger.error(
+          { err: error, request_id: requestId, user_id: caller.userId },
+          "assistant voice could not release a stream slot",
+        );
+      });
     };
 
     const admission = await admitVoiceSession({
