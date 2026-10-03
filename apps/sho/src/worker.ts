@@ -4,8 +4,10 @@ import {
   loadSho,
   manifest,
   parseContext,
+  parseFocus,
   parsePrevious,
   runtimeVersion,
+  type FocusEntry,
   type Previous,
   type Sho,
 } from "@showzy/sho";
@@ -61,6 +63,8 @@ async function answer(
   if (entry === null) return { kind: "context_required" };
   const previous: Previous | null =
     job.previous === null ? null : parsePrevious(job.previous);
+  const focus: FocusEntry[] | null =
+    job.focus === null ? null : parseFocus(job.focus);
   const started = performance.now();
   const result = await sho.run(
     { raw: job.text },
@@ -68,6 +72,7 @@ async function answer(
       context: entry.compiled,
       now: job.now,
       previous,
+      focus,
       debug: job.debug,
     },
   );

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  SHO_CONTEXT_LIMITS,
   SHO_CONTEXT_LIST_NAMES,
+  SHO_MOST_FOCUS,
   shoContextSchema,
+  shoParseRequestSchema,
   type ShoContextListName,
 } from "./endpoints.js";
 
@@ -98,5 +101,75 @@ describe("shoContextSchema partial", () => {
     if (!parsed.success) return;
     const names: ShoContextListName[] = [...(parsed.data.partial ?? [])];
     expect(names).toEqual(["products"]);
+  });
+});
+
+describe("the focus a parse request may carry", () => {
+  const entry = {
+    type: "customer",
+    id: "11111111-1111-4111-8111-111111111111",
+    name: "Катя",
+    how: "created",
+    turns: 0,
+  };
+
+  const asked = (focus: unknown) =>
+    shoParseRequestSchema.safeParse({
+      requestId: "r1",
+      companyId: "c1",
+      contextKey: "c1:abc",
+      fingerprint: "f1",
+      text: "створи для неї замовлення",
+      now: { year: 2026, month: 10, day: 2, hour: 9, minute: 0 },
+      focus,
+      deadlineMs: 900,
+      debug: false,
+    });
+
+  it("is optional, so a host that derives none still parses", () => {
+    const parsed = shoParseRequestSchema.safeParse({
+      requestId: "r1",
+      companyId: "c1",
+      contextKey: "c1:abc",
+      fingerprint: "f1",
+      text: "покажи клієнтів",
+      now: { year: 2026, month: 10, day: 2, hour: 9, minute: 0 },
+      deadlineMs: 900,
+      debug: false,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("takes a record with its list kind, its id, its name and how it was touched", () => {
+    expect(asked([entry]).success).toBe(true);
+    expect(asked([{ ...entry, earlier: true }]).success).toBe(true);
+    expect(
+      asked([{ type: "customer", id: "", name: "", how: "listed", count: 7 }])
+        .success,
+    ).toBe(true);
+  });
+
+  it("carries no contact of the person it names", () => {
+    expect(asked([{ ...entry, phone: "+380501112233" }]).success).toBe(false);
+    expect(asked([{ ...entry, email: "kate@ukr.net" }]).success).toBe(false);
+  });
+
+  it("holds at most the records the runtime reads", () => {
+    const many = Array.from({ length: SHO_MOST_FOCUS }, (_, index) => ({
+      ...entry,
+      id: `c-${String(index)}`,
+    }));
+    expect(asked(many).success).toBe(true);
+    expect(asked([...many, { ...entry, id: "c-last" }]).success).toBe(false);
+  });
+
+  it("refuses a kind, a touch or a name the runtime would not take", () => {
+    expect(asked([{ ...entry, type: "invoice" }]).success).toBe(false);
+    expect(asked([{ ...entry, how: "whispered" }]).success).toBe(false);
+    expect(asked([{ ...entry, turns: -1 }]).success).toBe(false);
+    expect(
+      asked([{ ...entry, name: "n".repeat(SHO_CONTEXT_LIMITS.name + 1) }])
+        .success,
+    ).toBe(false);
   });
 });

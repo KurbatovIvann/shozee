@@ -58,7 +58,7 @@ where it runs and what it is given.
 | --- | --- | --- |
 | `GET /v1/model` | — | `{model:{id,md5,catalogue,labelsMd5,runtime}, actions, workers}`; the API checks `labelsMd5` against its own mapping table |
 | `PUT /v1/contexts/{contextKey}` | `{fingerprint, context}`, gzip, ≤ 8 MB | 204 · 413 `context_limit` · 503 `busy` |
-| `POST /v1/parse` | `{requestId, companyId, contextKey, fingerprint, text, now, previous?, deadlineMs, debug}` | 200 `{model, contextRevision, result, ms}` · 409 `context_required` · 400 `input` · 503 `busy` · 504 `deadline` |
+| `POST /v1/parse` | `{requestId, companyId, contextKey, fingerprint, text, now, previous?, focus?, deadlineMs, debug}` | 200 `{model, contextRevision, result, ms}` · 409 `context_required` · 400 `input` · 503 `busy` · 504 `deadline` |
 | `GET /v1/contexts/{contextKey}/phrases?limit=1000` | — | customer, product and variant names, for speech hints |
 | `GET /v1/health`, `GET /v1/ready` | — | `ready` only once the model is loaded and the workers are warm |
 
@@ -68,6 +68,12 @@ where it runs and what it is given.
   - `text` is raw, ≤ 400 characters. `now` is the company's local time.
     `previous` is held by the API in the conversation; the client never sends
     it.
+  - **Amendment, owner 2026-10-02 (SHO-770).** `/v1/parse` also takes an
+    optional `focus`: at most 8 records the conversation touched, newest
+    first, each `{type, id, name, how, turns?, earlier?, count?}` — the
+    record's list kind, the API's own id and the stored name, and nothing
+    else: no phone, no email, no address. Like `previous` it is derived by
+    the API from the stored conversation log and never sent by a client.
   - An unknown action, need kind or reason never breaks the API's parse of the
     response — it falls through to the LLM — so the two deploy in any order.
     Every response carries `model.md5`.

@@ -1,5 +1,9 @@
 import type { Now, ResultV2 } from "@showzy/sho";
-import type { ShoModelStamp, ShoPrevious } from "@showzy/sho-protocol";
+import type {
+  ShoFocusEntry,
+  ShoModelStamp,
+  ShoPrevious,
+} from "@showzy/sho-protocol";
 
 export const SHO_LABELS_FILE = "labels.json";
 
@@ -28,6 +32,7 @@ export interface ShoParseJob {
   readonly text: string;
   readonly now: Now;
   readonly previous: ShoPrevious | null;
+  readonly focus: readonly ShoFocusEntry[] | null;
   readonly debug: boolean;
   readonly deadlineMs: number;
 }

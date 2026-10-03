@@ -7,10 +7,22 @@ import {
   type ToolOutcome,
   type ToolSet,
 } from "@showzy/assistant-kit";
-import type { ShoFallbackReason } from "@showzy/sho-protocol";
+import type {
+  ShoCommand,
+  ShoFallbackReason,
+  ShoFocusEntry,
+  ShoPrevious,
+} from "@showzy/sho-protocol";
 import { assistantConfirmationPromptSchema } from "@showzy/validation/assistant-chat";
 
 import type { ShoPlanFallbackReason } from "./sho-plan.js";
+
+import {
+  shoFocusFrom,
+  shoLogOptions,
+  shoPreviousFrom,
+  type ShoTurnLog,
+} from "./sho-focus.js";
 
 import {
   emptyStaffAssistantBudgetHold,
@@ -43,12 +55,17 @@ export interface ShoToolCall {
 }
 
 export type ShoPlan =
-  | ({ readonly kind: "call" } & ShoToolCall)
+  | ({
+      readonly kind: "call";
+      readonly command?: ShoCommand;
+    } & ShoToolCall)
   | { readonly kind: "fallback"; readonly reason: ShoTurnFallbackReason };
 
 export interface ShoTurnRequest {
   readonly text: string;
   readonly now: Date;
+  readonly focus: readonly ShoFocusEntry[];
+  readonly previous?: ShoPrevious;
 }
 
 export interface ShoEngine {
@@ -80,6 +97,7 @@ export type ShoTurnOutcome = ShoTurnSettled | ShoTurnAsk | ShoTurnFallback;
 export interface ShoTurnInput {
   readonly text: string;
   readonly commandId: string;
+  readonly sessionId: string;
   readonly now: Date;
   readonly history: readonly ModelMessage[];
   readonly tools: () => Promise<ToolSet>;
@@ -124,12 +142,14 @@ function conversationThrough(
   toolCallId: string,
   call: ShoToolCall,
   output: unknown,
+  log: ShoTurnLog | null,
 ): ModelMessage[] {
   return [
     ...input.history,
     assistantAskedMessage(input.text),
     {
       role: "assistant",
+      ...(log === null ? {} : { providerOptions: shoLogOptions(log) }),
       content: [
         {
           type: "tool-call",
@@ -154,15 +174,31 @@ function conversationThrough(
 }
 
 export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
+  const focus = shoFocusFrom(input.history, input.sessionId);
+  const previous = shoPreviousFrom(input.history);
   let plan: ShoPlan;
   try {
-    plan = await input.engine.plan({ text: input.text, now: input.now });
+    plan = await input.engine.plan({
+      text: input.text,
+      now: input.now,
+      focus,
+      ...(previous === undefined ? {} : { previous }),
+    });
   } catch {
     return failed("engine_failed");
   }
   if (plan.kind === "fallback") {
     return failed(plan.reason);
   }
+  const planned = plan.command;
+  const log: ShoTurnLog | null =
+    planned === undefined
+      ? null
+      : {
+          command: planned,
+          sessionId: input.sessionId,
+          at: input.now.toISOString(),
+        };
 
   const toolCallId = shoToolCallId(input.commandId, 1, plan.toolName);
   const sendableId = providerToolCallId(toolCallId);
@@ -199,10 +235,13 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
   }
 
   if (outcome.kind === "pause") {
-    const messages = conversationThrough(input, toolCallId, plan, {
-      status: "paused",
-      reason: outcome.interaction,
-    });
+    const messages = conversationThrough(
+      input,
+      toolCallId,
+      plan,
+      { status: "paused", reason: outcome.interaction },
+      log,
+    );
     return {
       kind: "ask",
       interaction: outcome.interaction,
@@ -216,7 +255,13 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
     };
   }
 
-  const whole = conversationThrough(input, toolCallId, plan, outcome.result);
+  const whole = conversationThrough(
+    input,
+    toolCallId,
+    plan,
+    outcome.result,
+    log,
+  );
   return {
     kind: "settled",
     parts: [

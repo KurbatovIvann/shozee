@@ -231,6 +231,7 @@ export function createShoApp(options: ShoAppOptions): Hono {
         text: asked.text,
         now: asked.now,
         previous: asked.previous ?? null,
+        focus: asked.focus ?? null,
         debug: asked.debug,
         deadlineMs: asked.deadlineMs,
       });

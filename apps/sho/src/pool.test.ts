@@ -33,6 +33,7 @@ const jobOf = (
   text,
   now: NOW,
   previous: null,
+  focus: null,
   debug: false,
   deadlineMs: 5_000,
   ...overrides,

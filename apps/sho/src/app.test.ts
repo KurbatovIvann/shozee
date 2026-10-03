@@ -242,6 +242,31 @@ describe("apps/sho /v1", () => {
     expect(recorded.jobs[0]?.previous?.at).toBe("2026-10-02T11:00:00Z");
   });
 
+  it("passes the focus from the request and none when it carries none", async () => {
+    await store();
+    const focus = [
+      { type: "customer", id: "c-1", name: "Катя", how: "created", turns: 0 },
+    ];
+    const response = await app.fetch(
+      new Request("http://sho.test/v1/parse", {
+        method: "POST",
+        headers: { ...authorized, "content-type": "application/json" },
+        body: JSON.stringify(parseBody({ focus })),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(recorded.jobs[0]?.focus).toEqual(focus);
+
+    await app.fetch(
+      new Request("http://sho.test/v1/parse", {
+        method: "POST",
+        headers: { ...authorized, "content-type": "application/json" },
+        body: JSON.stringify(parseBody()),
+      }),
+    );
+    expect(recorded.jobs[1]?.focus).toBeNull();
+  });
+
   it("serves phrases for a stored context", async () => {
     await store();
     const response = await app.fetch(
