@@ -442,16 +442,44 @@ describe("SHO_READ_PLANNERS plans only a surfaced read", () => {
         ? plan.reason
         : plan.kind;
 
+  const PLANNABLE: Readonly<Record<string, Said>> = {
+    "customers.getCustomer": {
+      text: "покажи клієнта цукерню",
+      action: "customers.getCustomer",
+      params: { customer: resolved(CUSTOMER_ID, "цукерню") },
+    },
+    "catalog.getProduct": {
+      text: "покажи американо",
+      action: "catalog.getProduct",
+      params: { product: resolved(PRODUCT_ID, "американо") },
+    },
+    "customers.getGroup": borrowed("d79-group-case", "customers.getGroup", [
+      "group",
+    ]),
+    "customers.getCounterparty": borrowed(
+      "d79-counterparty-rest",
+      "customers.getCounterparty",
+      ["counterparty"],
+    ),
+    "pricing.getPriceList": gold("d89-open-price-list"),
+    "pricing.listPriceListEntries": gold("d79-price-list-noun"),
+    "search.query": borrowed("d72-stock-list", "search.query", ["search_text"]),
+  };
+
   it.each([...SHO_READ_ACTIONS])(
     "%s plans a call only where its tool composes a surface",
     (action) => {
-      const command = commandOf({ text: "покажи", action });
+      const command = commandOf(
+        PLANNABLE[action] ?? { text: "покажи", action },
+      );
       const open = shoReadPlanners(everySurfaced)[action]?.plan(command, NOW);
       const live = SHO_READ_PLANNERS[action]?.plan(command, NOW);
-      const surfaced = SHO_SURFACED_READ_ACTIONS.includes(action);
-      expect({ action, live: outcome(live) }).toEqual({
+      expect({ action, open: outcome(open), live: outcome(live) }).toEqual({
         action,
-        live: open?.kind === "call" && !surfaced ? "no_surface" : outcome(open),
+        open: "call",
+        live: SHO_SURFACED_READ_ACTIONS.includes(action)
+          ? "call"
+          : "no_surface",
       });
     },
   );
