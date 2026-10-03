@@ -554,6 +554,22 @@ describe("a variant write names the parent product the parse bound", () => {
     });
   });
 
+  it("creates a variant on the product the focus holds: no variant is scoped by it", () => {
+    expect(
+      planOf(
+        onTheVariant(SHO_CREATE_VARIANT, {
+          product: productRef(OUR_PRODUCT),
+          new_name: suggestedCreate()["new_name"],
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "catalog_createVariant",
+      reply: "Варіант створено.",
+      input: { productId: OUR_PRODUCT, name: "куртку шкіряну" },
+    });
+  });
+
   it("asks rather than guess the parent of a created variant", () => {
     expect(
       planOf(
@@ -768,17 +784,6 @@ describe("a variant write binds no variant the parse did not resolve", () => {
         plan: { kind: "fallback", reason: "unsupported_param" },
       });
     }
-  });
-
-  it("refuses a focus-held parent for a created variant", () => {
-    expect(
-      planOf(
-        onTheVariant(SHO_CREATE_VARIANT, {
-          product: productRef(OUR_PRODUCT),
-          new_name: suggestedCreate()["new_name"],
-        }),
-      ),
-    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
   });
 
   it("never guesses between the variants the attrs name", () => {

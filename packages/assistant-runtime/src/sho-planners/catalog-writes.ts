@@ -187,7 +187,7 @@ const SHO_CATALOG_WRITES: ShoWritePlans = {
     toolName: toProviderToolName(SHO_CREATE_VARIANT),
     reply: "Варіант створено.",
     params: {
-      product: resolvedProduct,
+      product,
       new_name: variantName,
       price: basePrice,
     },

@@ -289,13 +289,15 @@ registry is injected into `createAssistantRuntime`; this package never imports
   binds only as a **resolved** uuid — ambiguous, unknown, unspecified and
   `none` are all `unsupported_param`, because nothing here may guess between
   two variants and the four actions take no query.
-  The parent product is **only** a `status: "resolved"` ref here, unlike the
-  product planners, which take a focus-held one too: a pronoun parent is no
-  product index for the runtime (`command.ts` `productIndex`), so
-  `resolveVariant` matches the attrs across every product in the company and
-  can come back `resolved` on a variant of a product the person never named —
-  archiving it would be the wrong write. A `status: "context"` parent beside
-  a variant is therefore the LLM.
+  On the three plans that carry a `variant`, the parent product is **only** a
+  `status: "resolved"` ref, unlike the product planners, which take a
+  focus-held one too: a pronoun parent is no product index for the runtime
+  (`command.ts` `productIndex`), so `resolveVariant` matches the attrs across
+  every product in the company and can come back `resolved` on a variant of a
+  product the person never named — archiving it would be the wrong write. A
+  `status: "context"` parent beside a variant is therefore the LLM.
+  `createVariant` scopes no variant, so it takes the focus-held parent like
+  the product planners do.
   The catalogue marks `product` optional on all four, and so is it here: only
   a **said** parent must bind. `createVariant` and `updateVariant` send it as
   `productId` — `catalog.updateVariant` takes a uuid `productId` beside the
