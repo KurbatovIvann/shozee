@@ -2,12 +2,14 @@ import type { PauseScope, PublicPause } from "@showzy/assistant-kit";
 import {
   AssistantKitConversationGoneError,
   readAssistantChatWindow,
+  runShoCardAnswer,
   runShoTurn,
   shoFreeBudgetHold,
   SHO_INVOCATION_CHANNEL,
   type AssistantHistoryPort,
   type AssistantKitCommandRef,
   type AssistantKitFor,
+  type AssistantPauseMatch,
   type AssistantSettledTurn,
   type AssistantToolContext,
   type AssistantTurnAcceptResult,
@@ -38,6 +40,52 @@ async function openShoPause(
     continuation: ask.continuation,
   });
   return opened.kind === "opened" ? opened.pause : null;
+}
+
+export interface ShoCardAnswerEnv {
+  readonly runtime: AssistantKitRuntime;
+  readonly caller: {
+    readonly userId: string;
+    readonly companySelector: string;
+    readonly sessionId: string;
+  };
+  readonly verifiedCompanyId: string;
+  readonly history: AssistantHistoryPort;
+  readonly scope: PauseScope;
+  readonly pause: PublicPause;
+  readonly requestId: string;
+  readonly clientIp?: string;
+  readonly text: string;
+}
+
+export async function shoCardAnswerTurn(
+  env: ShoCardAnswerEnv,
+): Promise<AssistantPauseMatch | null> {
+  const engineFor = env.runtime.sho;
+  if (engineFor === undefined) {
+    return null;
+  }
+  try {
+    return await runShoCardAnswer({
+      text: env.text,
+      sessionId: env.caller.sessionId,
+      now: new Date(),
+      history: await env.history.load(env.scope),
+      pause: env.pause,
+      engine: engineFor({
+        verifiedCompanyId: env.verifiedCompanyId,
+        userId: env.caller.userId,
+        requestId: env.requestId,
+        ...(env.clientIp === undefined ? {} : { clientIp: env.clientIp }),
+      }),
+    });
+  } catch (error) {
+    env.runtime.logger.warn(
+      { request_id: env.requestId, err: error },
+      "Шо did not read the open card and the server matcher answers it",
+    );
+    return null;
+  }
 }
 
 export interface ShoChatTurnEnv {

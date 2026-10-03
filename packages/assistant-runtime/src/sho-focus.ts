@@ -280,16 +280,16 @@ function recordsOf(
   command: ShoCommand,
   toolName: string,
   result: unknown,
+  paused: boolean,
 ): readonly ShoFocusRecord[] {
-  return stillPaused(result)
-    ? namedIn(command)
-    : shoTurnRecords(command, toolName, result);
+  return paused ? namedIn(command) : shoTurnRecords(command, toolName, result);
 }
 
 interface Touched {
   readonly log: ShoTurnLog;
   readonly records: readonly ShoFocusRecord[];
   readonly turns: number;
+  readonly paused: boolean;
 }
 
 function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
@@ -309,14 +309,13 @@ function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
     if (!parsed.success || ran === null) {
       continue;
     }
+    const result = resultIn(history, index, ran.toolCallId);
+    const paused = stillPaused(result);
     touched.push({
       log: parsed.data,
       turns,
-      records: recordsOf(
-        parsed.data.command,
-        ran.toolName,
-        resultIn(history, index, ran.toolCallId),
-      ),
+      paused,
+      records: recordsOf(parsed.data.command, ran.toolName, result, paused),
     });
   }
   return touched;
@@ -355,4 +354,15 @@ export function shoPreviousFrom(
   }
   const { command, at } = newest.log;
   return shoWrites(command) ? undefined : { command, at };
+}
+
+export function shoOpenCardPrevious(
+  history: readonly ModelMessage[],
+): ShoPrevious | undefined {
+  const [newest] = shoLogs(history);
+  if (newest === undefined || !newest.paused) {
+    return undefined;
+  }
+  const { command, at } = newest.log;
+  return { command, at };
 }

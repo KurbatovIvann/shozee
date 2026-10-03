@@ -286,6 +286,15 @@ registry is injected into `createAssistantRuntime`; this package never imports
   A turn writes under the token the accept stored rather than deriving one
   again, and the placeholder must still be the conversation's latest message —
   only the latest message can be written to.
+- `sho-card-answer.ts` — a send while a card is open (SHO-776, ADR-0049):
+  the route passes the open pause in, the parse runs with that card as
+  `previous`, and a `ui.pick` / `ui.confirm` / `ui.refine` of at most
+  `SHO_CARD_ANSWER_WORDS` words resolves against the card's **own** options
+  through the same `assistant-pause-match.ts` rules a typed answer takes —
+  one answer path, so a confirmation still means what a typed «так» means
+  and a strong preview still wants its button. Everything else, including a
+  longer utterance that abandons the question, is `null` and the SHO-753
+  matcher answers as before.
 - `sho-focus.ts` — `focus` and `previous`, derived from the stored
   conversation log on every parse and never taken from a client (SHO-770,
   D78/D88–D90). A Шо turn writes one entry — the command, the session and the
@@ -298,10 +307,12 @@ registry is injected into `createAssistantRuntime`; this package never imports
   is still `{status: "paused"}` wrote no record, so it holds no `created`
   entry and is never `previous`, whether the person answered that card later
   or walked away from it. The kit's resume puts the real result in the
-  paused one's place, so a confirmed write hands back its created id. Шо
-  never runs while a card is open (`shoChatTurn` is reached only with no open
-  pause), so the open card D93 wants is the route's fact to pass in, not
-  something this file re-derives (SHO-776). The walk is newest first, counts the person's commands since
+  paused one's place, so a confirmed write hands back its created id. That a
+  card is open is the route's fact, never this file's: the route hands the
+  pause to `sho-card-answer.ts`, and only then does `shoOpenCardPrevious`
+  name the command D93 wants — the newest log whose stored result is still
+  paused, write or not. `shoPreviousFrom` is the no-card rule and still
+  withholds a write (SHO-776). The walk is newest first, counts the person's commands since
   each entry for `turns`, marks another session's entries `earlier`, keeps one
   entry per record and one marker per kind, and sends at most
   `SHO_MOST_FOCUS`.
