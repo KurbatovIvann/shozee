@@ -120,11 +120,7 @@ registry is injected into `createAssistantRuntime`; this package never imports
   kilogram product is not half a piece; a quantity that is not a whole
   milli; a `due`, `payment_method` or `discount` the façade cannot take,
   which would otherwise be dropped from what the staff member said; and a
-  resolved id that is not shaped like a uuid. The order lifecycle
-  (`orders.confirm`, `start`, `complete`, `cancel`) is **not** here: those
-  actions take `orderId` and nothing else, and Шо names an order by a code
-  or a focus pronoun, never by a uuid — SHO-845 plans them on focus
-  (SHO-770) and the order-code resolver.
+  resolved id that is not shaped like a uuid.
   A non-blocking `read_as_create` need becomes a note on the plan, and
   `runShoTurn` prepends the plan's notes to a confirmation pause's own, so
   a misread is visible on the card before the tap and a full list cannot
@@ -139,6 +135,26 @@ registry is injected into `createAssistantRuntime`; this package never imports
   case id; the tests add only what the gold labels never carry — the
   confidence block, and this company's uuids in place of the catalogue's
   demo record ids.
+- `sho-planners/orders-lifecycle.ts` — the order lifecycle write planners
+  (SHO-845): `orders.confirm`, `orders.start`, `orders.complete` and
+  `orders.cancel` onto their own action tools, `writes: true`, so each pauses
+  on the ADR-0050 preview like every other Шо write. Those actions take
+  `orderId` and nothing else, so the only reference they can follow is the one
+  the parse already bound to a live focus entry (`status: "context"` with a
+  uuid id, SHO-770) — which `createShoEngine` has already checked this turn's
+  focus holds, so an order id from another company never reaches a planner.
+  `status: "context"` is required, not merely sufficient: a `resolved` ref
+  carrying a uuid is `unsupported_param`, because nothing but the focus binds
+  a lifecycle write. Everything else is the LLM too: the spoken digit span
+  «131» (not a canonical `{prefix}-{tail}` code), a canonical code (no uuid to
+  send, and no planner may read first and write second), and an order
+  described by its `customer`, `period` or `amount`. D89's non-blocking
+  `read_as_focus_type` becomes the card's note — the delete family maps a
+  focused `order` to `orders.cancel`, so «видали її» said over an order is a
+  cancel the person must see named before the tap. Resolving a spoken or
+  canonical code to one order needs an order
+  reference on those four contracts — `orders` is not an owner module of
+  SHO-742, so that stays an owner decision.
 - `sho-planners/write-kit.ts`, `sho-planners/customers-writes.ts` — the one
   write-plan machinery every write planner is built from (map each said param
   through its mapper, no field written twice, the required and `one_of` params
