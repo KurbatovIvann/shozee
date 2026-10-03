@@ -1,11 +1,15 @@
 import { toProviderToolName } from "@showzy/ai";
+import { isConfirmableRisk } from "@showzy/core/contract";
 import {
   archiveCustomerContract,
+  createCounterpartyContract,
   createCustomerContract,
   createGroupContract,
+  deleteCounterpartyContract,
   deleteCustomerContract,
   deleteGroupContract,
   restoreCustomerContract,
+  updateCounterpartyContract,
   updateCustomerContract,
   updateGroupContract,
 } from "@showzy/customers/contract";
@@ -27,6 +31,7 @@ import {
   SHO_CUSTOMER_WRITE_PLANNERS,
   SHO_CUSTOMER_WRITE_PLANNER_PARAMS,
   SHO_READ_AS_CUSTOMER_UPDATE_NOTE,
+  SHO_READ_AS_FOCUS_COUNTERPARTY_NOTE,
   SHO_READ_AS_FOCUS_CUSTOMER_NOTE,
   SHO_READ_AS_FOCUS_GROUP_NOTE,
   SHO_READ_AS_UPDATE_NOTE,
@@ -56,6 +61,10 @@ const COMPANY_IDS: Readonly<Record<string, string>> = {
   "new-zlata": "0d26f948-8a71-4b53-91ce-3f807264ad15",
   "new-marta": "6c91a78d-42e0-4f15-bd37-08e5349b716f",
   "pl-partner": "d7420f63-95b8-41ca-8e07-16b3d8205c49",
+  "k-nechyporuk": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "k-sota": "8e2c71b4-0d9a-4f36-95e8-6c1374ab02fd",
+  "k-kovalenko-p": "1b5f90d3-7a46-48c2-80be-f2951d6e4c07",
+  "k-farm": "e4719c20-3b85-4d61-a9f7-50c8b63142de",
 };
 
 type Json = Record<string, unknown>;
@@ -128,6 +137,12 @@ const TOOL_INPUTS: Readonly<Record<string, (input: unknown) => boolean>> = {
     updateGroupContract.input.safeParse(input).success,
   [toProviderToolName(deleteGroupContract.name)]: (input) =>
     deleteGroupContract.input.safeParse(input).success,
+  [toProviderToolName(createCounterpartyContract.name)]: (input) =>
+    createCounterpartyContract.input.safeParse(input).success,
+  [toProviderToolName(updateCounterpartyContract.name)]: (input) =>
+    updateCounterpartyContract.input.safeParse(input).success,
+  [toProviderToolName(deleteCounterpartyContract.name)]: (input) =>
+    deleteCounterpartyContract.input.safeParse(input).success,
 };
 
 function toolAccepts(toolName: string, input: unknown): boolean {
@@ -681,5 +696,285 @@ describe("a lifecycle or group write binds no record the parse did not resolve",
         plan: { kind: "fallback", reason: "unsupported_param" },
       });
     }
+  });
+});
+
+describe("SHO_CUSTOMER_WRITE_PLANNERS maps the conformance counterparty parses", () => {
+  it("plans d70-edrpou-ok as the create with the typed ЄДРПОУ", () => {
+    expect(planOf(commandOf("d70-edrpou-ok"))).toEqual({
+      kind: "call",
+      toolName: "customers_createCounterparty",
+      reply: "Контрагента створено.",
+      input: { name: "приватбанк", edrpou: "14360570" },
+    });
+  });
+
+  it("plans d70-iban-ok on the normalised IBAN, not the spoken span", () => {
+    expect(planOf(commandOf("d70-iban-ok"))).toEqual({
+      kind: "call",
+      toolName: "customers_createCounterparty",
+      reply: "Контрагента створено.",
+      input: { name: "молокія", iban: "UA213223130000026007233566001" },
+    });
+  });
+
+  it("plans d79-counterparty-rest as that counterparty's update", () => {
+    expect(planOf(asCompanyRecords("d79-counterparty-rest"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateCounterparty",
+      reply: "Контрагента оновлено.",
+      input: { id: COMPANY_IDS["k-nechyporuk"], phone: "0501112233" },
+    });
+  });
+
+  it("plans the d79-counterparty-legal address as the legal address said", () => {
+    expect(planOf(asCompanyRecords("d79-counterparty-legal"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateCounterparty",
+      reply: "Контрагента оновлено.",
+      input: { id: COMPANY_IDS["k-sota"], legalAddress: "вулиця бджолина 8" },
+    });
+  });
+
+  it("plans the d93-counterparty-kept bank as the name the staff said", () => {
+    expect(planOf(asCompanyRecords("d93-counterparty-kept"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateCounterparty",
+      reply: "Контрагента оновлено.",
+      input: { id: COMPANY_IDS["k-nechyporuk"], bankName: "монобанк" },
+    });
+  });
+
+  it("plans d79-counterparty-patronymic as that counterparty's delete", () => {
+    expect(planOf(asCompanyRecords("d79-counterparty-patronymic"))).toEqual({
+      kind: "call",
+      toolName: "customers_deleteCounterparty",
+      reply: "Контрагента видалено.",
+      input: { id: COMPANY_IDS["k-kovalenko-p"] },
+    });
+  });
+
+  it("plans the d88-this-counterparty the conversation holds in focus", () => {
+    expect(planOf(asCompanyRecords("d88-this-counterparty"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateCounterparty",
+      reply: "Контрагента оновлено.",
+      input: { id: COMPANY_IDS["k-farm"], phone: "0442223344" },
+    });
+  });
+
+  it("notes the d89-edit-counterparty misread on the card", () => {
+    expect(planOf(asCompanyRecords("d89-edit-counterparty"))).toEqual({
+      kind: "call",
+      toolName: "customers_updateCounterparty",
+      reply: "Контрагента оновлено.",
+      input: { id: COMPANY_IDS["k-farm"], email: "zbut@ferma.ua" },
+      notes: [`${SHO_READ_AS_FOCUS_COUNTERPARTY_NOTE}: «йому».`],
+    });
+  });
+
+  it("notes the d89-delete-counterparty misread on the card", () => {
+    expect(planOf(asCompanyRecords("d89-delete-counterparty"))).toEqual({
+      kind: "call",
+      toolName: "customers_deleteCounterparty",
+      reply: "Контрагента видалено.",
+      input: { id: COMPANY_IDS["k-farm"] },
+      notes: [`${SHO_READ_AS_FOCUS_COUNTERPARTY_NOTE}: «его».`],
+    });
+  });
+
+  it("asks rather than plan an empty card when only the counterparty is said", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d79-counterparty-rest", {
+          params: {
+            counterparty: reId(
+              paramsOf("d79-counterparty-rest")["counterparty"],
+            ),
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "blocking_need" });
+  });
+
+  it("sends d93-own-requisites to the LLM: the shop is no counterparty", () => {
+    expect(
+      whitelisted(resultOf(asCompanyRecords("d93-own-requisites")), NOW),
+    ).toEqual({ kind: "fallback", reason: "unsupported_action" });
+  });
+});
+
+describe("a counterparty write takes an identifier only as Шо typed it", () => {
+  const withRequisite = (field: string, param: Json): ShoCommand =>
+    asCompanyRecords("d79-counterparty-rest", {
+      params: {
+        counterparty: reId(paramsOf("d79-counterparty-rest")["counterparty"]),
+        [field]: param,
+      },
+    });
+
+  it("sends the d70-edrpou-slip the runtime failed the check on to the LLM", () => {
+    expect(whitelisted(resultOf(commandOf("d70-edrpou-slip")), NOW)).toEqual({
+      kind: "fallback",
+      reason: "blocking_need",
+    });
+  });
+
+  it("sends the d70-iban-short the runtime failed the check on to the LLM", () => {
+    expect(whitelisted(resultOf(commandOf("d70-iban-short")), NOW)).toEqual({
+      kind: "fallback",
+      reason: "blocking_need",
+    });
+  });
+
+  it("refuses an identifier span the runtime read no value out of", () => {
+    expect(planOf(withRequisite("edrpou", { text: "14360570" }))).toEqual({
+      kind: "fallback",
+      reason: "unsupported_param",
+    });
+  });
+
+  it("refuses a typed identifier longer than the action stores", () => {
+    expect(
+      planOf(
+        withRequisite("edrpou", { text: "1436057012", value: "143605701234" }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("refuses a typed IBAN longer than the action stores", () => {
+    expect(
+      planOf(withRequisite("iban", { text: "ua21", value: "UA21".repeat(10) })),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+
+  it("plans the six-digit MFO the runtime typed", () => {
+    expect(
+      planOf(withRequisite("mfo", { text: "305299", value: "305299" })),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_updateCounterparty",
+      reply: "Контрагента оновлено.",
+      input: { id: COMPANY_IDS["k-nechyporuk"], bankMfo: "305299" },
+    });
+  });
+
+  it("maps no param beyond the record for the counterparty delete", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d79-counterparty-patronymic", {
+          params: {
+            counterparty: reId(
+              paramsOf("d79-counterparty-patronymic")["counterparty"],
+            ),
+            comment: paramsOf("d95-named-update")["comment"],
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+});
+
+describe("a counterparty write binds no record the parse did not resolve", () => {
+  it("refuses the catalogue's own counterparty ids, which are no uuids", () => {
+    for (const caseId of [
+      "d79-counterparty-rest",
+      "d79-counterparty-patronymic",
+      "d88-this-counterparty",
+    ]) {
+      expect({ caseId, plan: planOf(commandOf(caseId)) }).toEqual({
+        caseId,
+        plan: { kind: "fallback", reason: "unsupported_param" },
+      });
+    }
+  });
+
+  it("writes to no counterparty an unchecked name stands for", () => {
+    expect(planOf(commandOf("d70-rnokpp-ok"))).toEqual({
+      kind: "fallback",
+      reason: "unresolved_reference",
+    });
+  });
+});
+
+describe("a Шо counterparty write only ever reaches the preview", () => {
+  const PLANNED = [
+    createCounterpartyContract,
+    updateCounterpartyContract,
+    deleteCounterpartyContract,
+  ] as const;
+
+  it("plans only actions whose risk the preview confirms", () => {
+    for (const contract of PLANNED) {
+      expect({
+        action: contract.name,
+        pauses: isConfirmableRisk(contract.risk),
+      }).toEqual({ action: contract.name, pauses: true });
+    }
+  });
+
+  it("deletes a counterparty at the high risk the strong preview reads", () => {
+    expect({
+      risk: deleteCounterpartyContract.risk,
+      confirms: deleteCounterpartyContract.requiresConfirmation,
+    }).toEqual({ risk: "high", confirms: true });
+  });
+});
+
+describe("a counterparty write links the CRM customer the parse resolved", () => {
+  const LINKED = paramsOf("d95-named-update")["customer"];
+
+  it("plans the create with the linked customer as customerId", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d70-edrpou-ok", {
+          params: { ...paramsOf("d70-edrpou-ok"), customer: reId(LINKED) },
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_createCounterparty",
+      reply: "Контрагента створено.",
+      input: {
+        name: "приватбанк",
+        edrpou: "14360570",
+        customerId: COMPANY_IDS["c-honchar"],
+      },
+    });
+  });
+
+  it("plans the update with the linked customer as customerId", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d79-counterparty-rest", {
+          params: {
+            ...(reId(paramsOf("d79-counterparty-rest")) as Json),
+            customer: reId(LINKED),
+          },
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_updateCounterparty",
+      reply: "Контрагента оновлено.",
+      input: {
+        id: COMPANY_IDS["k-nechyporuk"],
+        phone: "0501112233",
+        customerId: COMPANY_IDS["c-honchar"],
+      },
+    });
+  });
+
+  it("links no customer the catalogue's own id stands for, which is no uuid", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d79-counterparty-rest", {
+          params: {
+            ...(reId(paramsOf("d79-counterparty-rest")) as Json),
+            customer: LINKED,
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
   });
 });
