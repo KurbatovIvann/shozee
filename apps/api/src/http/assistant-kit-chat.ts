@@ -27,6 +27,7 @@ import {
   assistantTurnMessageId,
   matchAssistantPauseAnswer,
   readAssistantChatWindow,
+  shoEscalatedAskedMessage,
   shoMayReadCard,
   type AssistantChatWindowWithTurn,
 } from "@showzy/assistant-runtime";
@@ -319,7 +320,7 @@ export async function handleAssistantKitChat(
     return await accepted();
   }
 
-  const answeredBySho =
+  const byShoChat =
     open === null
       ? await shoChatTurn({
           runtime,
@@ -335,9 +336,11 @@ export async function handleAssistantKitChat(
           text: body.text,
         })
       : null;
-  if (answeredBySho !== null) {
-    return answeredBySho;
+  if (byShoChat?.kind === "answered") {
+    return byShoChat.response;
   }
+  const escalation =
+    byShoChat?.kind === "escalate" ? byShoChat.escalation : undefined;
 
   const budget = requireBudgetTicket(c);
 
@@ -349,6 +352,11 @@ export async function handleAssistantKitChat(
       commandId: body.commandId,
       text: body.text,
       ...(open === null ? {} : { earned: [assistantSupersededTrace(open)] }),
+      ...(escalation === undefined
+        ? {}
+        : {
+            askedMessage: shoEscalatedAskedMessage(body.text, escalation),
+          }),
       bind: caller.bind,
       sessionId: caller.sessionId,
       budgetHold: budget.handOverToAccept(),
