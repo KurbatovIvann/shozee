@@ -46,6 +46,7 @@ export const PERMISSION_CALL_PREREQUISITES: Readonly<
     "pricing:view",
     "products:view",
   ],
+  "orders:edit": ["companies:view"],
   "orders:view": ["companies:view", "customers:view"],
   "pricing:manage": ["products:view"],
   "pricing:view": ["customers:view", "products:view"],

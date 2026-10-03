@@ -138,23 +138,22 @@ registry is injected into `createAssistantRuntime`; this package never imports
 - `sho-planners/orders-lifecycle.ts` — the order lifecycle write planners
   (SHO-845): `orders.confirm`, `orders.start`, `orders.complete` and
   `orders.cancel` onto their own action tools, `writes: true`, so each pauses
-  on the ADR-0050 preview like every other Шо write. Those actions take
-  `orderId` and nothing else, so the only reference they can follow is the one
-  the parse already bound to a live focus entry (`status: "context"` with a
-  uuid id, SHO-770) — which `createShoEngine` has already checked this turn's
-  focus holds, so an order id from another company never reaches a planner.
-  `status: "context"` is required, not merely sufficient: a `resolved` ref
-  carrying a uuid is `unsupported_param`, because nothing but the focus binds
-  a lifecycle write. Everything else is the LLM too: the spoken digit span
-  «131» (not a canonical `{prefix}-{tail}` code), a canonical code (no uuid to
-  send, and no planner may read first and write second), and an order
-  described by its `customer`, `period` or `amount`. D89's non-blocking
-  `read_as_focus_type` becomes the card's note — the delete family maps a
-  focused `order` to `orders.cancel`, so «видали її» said over an order is a
-  cancel the person must see named before the tap. Resolving a spoken or
-  canonical code to one order needs an order
-  reference on those four contracts — `orders` is not an owner module of
-  SHO-742, so that stays an owner decision.
+  on the ADR-0050 preview like every other Шо write. Since SHO-853 those four
+  actions take an order reference — an `orderId` or an `orderNumber` resolved
+  inside `orders` under the core transaction (ADR-0033) — so the planner sends
+  one of two things and reads nothing first. A ref the parse bound to a live
+  focus entry (`status: "context"` with a uuid id, SHO-770), which
+  `createShoEngine` has already checked this turn's focus holds, becomes
+  `orderId`; the spoken or written number span («131», «KA-7») becomes
+  `orderNumber` verbatim, and `orders` raises the picker when that number
+  prefixes several orders and not-found when it names none. `status: "context"`
+  stays required of a ref, not merely sufficient: a `resolved` ref carrying a
+  uuid is `unsupported_param`, because nothing but the focus binds a lifecycle
+  write to an id. An order described by its `customer`, `period` or `amount`
+  is still the LLM. D89's non-blocking `read_as_focus_type` becomes the card's
+  note — the delete family maps a focused `order` to `orders.cancel`, so
+  «видали її» said over an order is a cancel the person must see named before
+  the tap.
 - `sho-planners/write-kit.ts`, `sho-planners/customers-writes.ts` — the one
   write-plan machinery every write planner is built from (map each said param
   through its mapper, no field written twice, the required and `one_of` params

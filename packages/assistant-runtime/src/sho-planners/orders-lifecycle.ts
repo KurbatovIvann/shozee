@@ -1,4 +1,5 @@
 import { toProviderToolName } from "@showzy/ai";
+import type { ShoParam } from "@showzy/sho-protocol";
 
 import {
   shoIsRef,
@@ -7,6 +8,7 @@ import {
   type ShoActionPlanners,
 } from "./kit.js";
 import {
+  shoSpanText,
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
@@ -26,8 +28,15 @@ export const SHO_CANCEL_ORDER = "orders.cancel";
 export const SHO_READ_AS_FOCUS_ORDER_NOTE =
   "Прочитано як дію над замовленням з розмови";
 
-const focusedOrder: ShoWriteParamMapper = (param) => {
-  if (!shoIsRef(param) || param.status !== "context") {
+const spokenOrderNumber = (param: ShoParam): string | null =>
+  Array.isArray(param) || "status" in param ? null : shoSpanText(param);
+
+const orderReference: ShoWriteParamMapper = (param) => {
+  if (!shoIsRef(param)) {
+    const spoken = spokenOrderNumber(param);
+    return spoken === null ? "unsupported_param" : { orderNumber: spoken };
+  }
+  if (param.status !== "context") {
     return "unsupported_param";
   }
   const locator = shoRefLocator(param);
@@ -40,7 +49,7 @@ const focusedOrder: ShoWriteParamMapper = (param) => {
 const lifecycle = (action: string, reply: string): ShoWritePlan => ({
   toolName: toProviderToolName(action),
   reply,
-  params: { order_number: focusedOrder },
+  params: { order_number: orderReference },
   required: ["order_number"],
   notes: { read_as_focus_type: SHO_READ_AS_FOCUS_ORDER_NOTE },
 });
