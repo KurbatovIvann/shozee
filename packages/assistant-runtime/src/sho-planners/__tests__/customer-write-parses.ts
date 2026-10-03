@@ -296,6 +296,37 @@ export const SHO_CUSTOMER_WRITE_PARSES: Readonly<Record<string, unknown>> =
       domain: "customers",
       verb: "update",
     },
+    "d88-there-group": {
+      text: "закинь туди ігоря литвина",
+      action: "customers.setGroup",
+      kind: "write",
+      effect: "write",
+      confirm: "card",
+      params: {
+        customers: [
+          {
+            text: "ігоря литвина",
+            status: "resolved",
+            id: "c-lytvyn",
+            name: "Ігор Литвин",
+            match: "form",
+          },
+        ],
+        group: {
+          text: "туди",
+          status: "context",
+          id: "new-wedding",
+          name: "Весільні",
+          focus: 1,
+        },
+      },
+      needs: [],
+      ready: true,
+      refPrevious: {},
+      catalogued: false,
+      domain: "customers",
+      verb: "update",
+    },
   });
 
 export function shoCustomerWriteParse(caseId: string): unknown {

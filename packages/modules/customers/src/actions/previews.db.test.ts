@@ -277,6 +277,17 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
     ]);
   });
 
+  it("shows no name line when the update names no name", async () => {
+    const preview = await previewOf(updateCustomer, {
+      id: fixtures.customerA,
+      notes: "бере тільки оптом",
+    });
+    expect(preview.title).toBe("Змінити клієнта: Анна Коваль");
+    expect(preview.lines).toEqual([
+      { label: "Нотатки", value: "VIP → бере тільки оптом" },
+    ]);
+  });
+
   it("treats an empty string as a clear on the card", async () => {
     const preview = await previewOf(updateCustomer, {
       id: fixtures.customerA,

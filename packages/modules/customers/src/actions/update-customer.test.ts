@@ -80,6 +80,22 @@ describe("customers.updateCustomer contract", () => {
     ).toBe(false);
   });
 
+  it("omits the name to keep it and refuses to clear it with null", () => {
+    expect(
+      updateCustomerInputSchema.safeParse({
+        id: validUpdate.id,
+        notes: "бере тільки оптом",
+      }),
+    ).toMatchObject({ success: true });
+    expect(
+      updateCustomerInputSchema.safeParse({ id: validUpdate.id }).success,
+    ).toBe(true);
+    expect(
+      updateCustomerInputSchema.safeParse({ ...validUpdate, name: null })
+        .success,
+    ).toBe(false);
+  });
+
   it("rejects identifier extras — the input is strict", () => {
     for (const extra of [
       { companyId: "c" },

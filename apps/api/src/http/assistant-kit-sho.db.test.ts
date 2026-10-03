@@ -495,6 +495,46 @@ describe("a Шо turn that has to ask", () => {
     expect(stored?.name).toBe("Катя Самбука");
   });
 
+  it("pauses a notes-only update that names no name and keeps the stored one", async () => {
+    const conversationId = await newConversation({
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+    });
+    const customerId = await seedCustomer("Віталій Гончар");
+    const {
+      response,
+      kit: paused,
+      scope,
+    } = await runTurn({
+      caller: anna,
+      conversationId,
+      pipeline: withChallenges(),
+      sho: enginePlanning(() =>
+        Promise.resolve({
+          kind: "call",
+          writes: false,
+          toolName: UPDATE_TOOL,
+          input: { id: customerId, notes: "бере тільки оптом" },
+          reply: "Клієнта оновлено.",
+        }),
+      ),
+    });
+
+    expect(response?.status).toBe(200);
+    expect(await paused.peek(scope)).not.toBeNull();
+
+    const stored = (
+      await kit.db.runtime.db
+        .select({
+          name: companyCustomers.name,
+          notes: companyCustomers.notes,
+        })
+        .from(companyCustomers)
+        .where(eq(companyCustomers.id, customerId))
+    )[0];
+    expect(stored).toMatchObject({ name: "Віталій Гончар", notes: null });
+  });
+
   it("withdraws the question when another turn already holds the conversation", async () => {
     const conversationId = await newConversation({
       companyId: kitIdentities.companies.a,

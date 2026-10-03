@@ -68,8 +68,14 @@ const byQuery = (value: string): ShoLocatorOutcome =>
 export const SHO_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function shoIsRef(param: ShoParam): param is ShoRef {
-  return !Array.isArray(param) && "status" in param && !("attrs" in param);
+export function shoIsRef(param: unknown): param is ShoRef {
+  return (
+    typeof param === "object" &&
+    param !== null &&
+    !Array.isArray(param) &&
+    "status" in param &&
+    !("attrs" in param)
+  );
 }
 
 export function shoLocatorFor(ref: ShoRef): ShoLocatorOutcome {
