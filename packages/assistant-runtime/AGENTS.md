@@ -296,8 +296,11 @@ registry is injected into `createAssistantRuntime`; this package never imports
   still means what a typed «так» means and a strong preview still wants its
   button. The gate is the **person's** utterance, not the segment the parse
   kept of it: at most `SHO_CARD_ANSWER_WORDS` words, and no command carrying
-  a blocking or `ignored` need, because a refinement merged into a leading
-  «Так» would otherwise confirm the write and drop the correction. Selection
+  a blocking need or words the parse did not read (`ignored`, and D81's
+  `unparsed` leftover, which is how «так і скасуй» stays three words and two
+  intentions), because a refinement merged into a leading «Так» would
+  otherwise confirm the write and drop the correction. Both halves of the
+  gate are inside `shoCardAnswerFor`, which takes the utterance. Selection
   is by `action` alone — `ui.refine`'s intent kind is `read-modifier`, not
   `ui`. `ui.refine` itself is **not** here: with `previous` passed, the
   runtime rewrites a refinement into the card's own command, so there is

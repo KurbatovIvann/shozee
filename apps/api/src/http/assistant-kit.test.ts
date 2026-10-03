@@ -3006,3 +3006,63 @@ describe("the server matcher decides before Шо reads the card (SHO-776)", () =
     ]);
   });
 });
+
+describe("a leftover command is no card answer (SHO-776)", () => {
+  function shoConfirmingWithLeftover(): ShoEngineFor {
+    return () => ({
+      plan: () =>
+        Promise.resolve({
+          kind: "fallback",
+          reason: "ui_answer",
+          command: {
+            text: "так і скасуй",
+            action: "ui.confirm",
+            kind: "ui",
+            effect: "ui",
+            confirm: "none",
+            params: {},
+            needs: [
+              {
+                path: "text",
+                reason: "unparsed",
+                blocking: false,
+                span: { text: "і скасуй" },
+              },
+            ],
+            ready: true,
+            catalogued: false,
+            confidence: {
+              action: 0.99,
+              margin: 0.8,
+              certainty: 0.9,
+              spans: 0.9,
+            },
+            refPrevious: {},
+          },
+        }),
+    });
+  }
+
+  it("does not approve an open write from «так і скасуй»", async () => {
+    const { app, kit, queue, bind } = harness({
+      sho: shoConfirmingWithLeftover(),
+    });
+    const pause = await openConfirmation(kit, bind);
+
+    const response = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так і скасуй"),
+    );
+
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as KitBody;
+    expect(traceOf(body.window?.messages.at(-1)?.parts ?? [])).toMatchObject({
+      interactionId: pause.interactionId,
+      outcome: "superseded",
+    });
+    expect(queue.added).toEqual([
+      { kind: "chat", conversationId: CONVERSATION, commandId: COMMAND },
+    ]);
+  });
+});

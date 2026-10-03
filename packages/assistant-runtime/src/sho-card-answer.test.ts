@@ -57,7 +57,7 @@ function routedToTheCard(
   text: string,
 ): { readonly kind: string } | null {
   const read = matchAssistantPauseAnswer(pause, text);
-  return shoMayReadCard(read) ? shoCardAnswerFor(command, pause) : read;
+  return shoMayReadCard(read) ? shoCardAnswerFor(command, pause, text) : read;
 }
 
 function choiceCard(
@@ -259,6 +259,21 @@ describe("a Шо ui answer resolves against the open card", () => {
       shoCardAnswerFor(
         commandOf({ text: "0987654321", action: "ui.refine" }),
         choiceCard("Який у неї номер?", ["0987654321", "0501112233"]),
+        "0987654321",
+      ),
+    ).toBeNull();
+  });
+
+  it("leaves a bare «так і скасуй» to the server matcher: a leftover is unread words", () => {
+    expect(
+      shoCardAnswerFor(
+        commandOf({
+          text: "так і скасуй",
+          action: "ui.confirm",
+          needs: [{ path: "text", reason: "unparsed", blocking: false }],
+        }),
+        previewCard("card"),
+        "так і скасуй",
       ),
     ).toBeNull();
   });
@@ -272,6 +287,7 @@ describe("a Шо ui answer resolves against the open card", () => {
           needs: [{ path: "text", reason: "ignored", blocking: false }],
         }),
         choiceCard("Знайшов двох клієнтів", ["Олена Петренко", "Олена Петрів"]),
+        "Так, Петренко",
       ),
     ).toBeNull();
   });
@@ -281,6 +297,7 @@ describe("a Шо ui answer resolves against the open card", () => {
       shoCardAnswerFor(
         commandOf({ text: "ну давай роби", action: "ui.confirm" }),
         previewCard("card"),
+        "ну давай роби",
       ),
     ).toEqual({ kind: "answer", answer: { approved: true } });
   });
@@ -289,6 +306,7 @@ describe("a Шо ui answer resolves against the open card", () => {
     const match = shoCardAnswerFor(
       commandOf({ text: "ну давай роби", action: "ui.confirm" }),
       previewCard("strong"),
+      "ну давай роби",
     );
     expect(match?.kind).toBe("hint");
   });
@@ -298,6 +316,7 @@ describe("a Шо ui answer resolves against the open card", () => {
       shoCardAnswerFor(
         commandOf({ text: "65 гривень", action: "ui.pick" }),
         previewCard("card"),
+        "65 гривень",
       ),
     ).toBeNull();
   });
@@ -312,6 +331,7 @@ describe("a Шо ui answer resolves against the open card", () => {
           effect: "read",
         }),
         choiceCard("Знайшов двох", ["Олена Петренко", "Олена Петрів"]),
+        "покажи нові замовлення",
       ),
     ).toBeNull();
   });
@@ -321,6 +341,7 @@ describe("a Шо ui answer resolves against the open card", () => {
       shoCardAnswerFor(
         commandOf({ text: "Савченко", action: "ui.pick" }),
         choiceCard("Знайшов двох", ["Олена Петренко", "Олена Петрів"]),
+        "Савченко",
       ),
     ).toBeNull();
   });
@@ -478,7 +499,6 @@ describe("the open card is the parse's previous command (D93)", () => {
   });
 
   it("refuses an utterance longer than a bare card answer, whatever the parse kept of it", async () => {
-    const seen = vi.fn<(request: ShoTurnRequest) => void>();
     const match = await runShoCardAnswer({
       text: "Так, для Зоряни Білик",
       sessionId: "session-1",
@@ -491,11 +511,10 @@ describe("the open card is the parse's previous command (D93)", () => {
           reason: "ui_answer",
           command: commandOf({ text: "Так", action: "ui.confirm" }),
         },
-        seen,
+        () => undefined,
       ),
     });
     expect(match).toBeNull();
-    expect(seen).not.toHaveBeenCalled();
   });
 
   it("answers nothing when the parse read no single command", async () => {

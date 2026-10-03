@@ -34,19 +34,23 @@ export function shoMayReadCard(read: AssistantPauseMatch): boolean {
   return read.kind === "supersede";
 }
 
-export function shoIsBareCardAnswer(text: string): boolean {
+function shoIsBareCardAnswer(text: string): boolean {
   return foldNameWords(text).length <= SHO_CARD_ANSWER_WORDS;
 }
 
+const SHO_UNREAD_WORDS: readonly string[] = ["ignored", "unparsed"];
+
 function wholeUtterance(command: ShoCommand): boolean {
   return !command.needs.some(
-    (need) => need.blocking || need.reason === "ignored",
+    (need) => need.blocking || SHO_UNREAD_WORDS.includes(need.reason),
   );
 }
 
-function answersTheCard(command: ShoCommand): boolean {
+function answersTheCard(command: ShoCommand, text: string): boolean {
   return (
-    SHO_CARD_ANSWER_ACTIONS.includes(command.action) && wholeUtterance(command)
+    shoIsBareCardAnswer(text) &&
+    SHO_CARD_ANSWER_ACTIONS.includes(command.action) &&
+    wholeUtterance(command)
   );
 }
 
@@ -77,8 +81,9 @@ function choiceAnswer(
 export function shoCardAnswerFor(
   command: ShoCommand,
   pause: AssistantPause,
+  text: string,
 ): AssistantPauseMatch | null {
-  if (!answersTheCard(command)) {
+  if (!answersTheCard(command, text)) {
     return null;
   }
   const interaction = assistantInteractionFromPause(pause);
@@ -106,9 +111,6 @@ export interface ShoCardAnswerInput {
 export async function runShoCardAnswer(
   input: ShoCardAnswerInput,
 ): Promise<AssistantPauseMatch | null> {
-  if (!shoIsBareCardAnswer(input.text)) {
-    return null;
-  }
   const previous = shoOpenCardPrevious(input.history);
   const plan = await input.engine.plan({
     text: input.text,
@@ -117,5 +119,7 @@ export async function runShoCardAnswer(
     ...(previous === undefined ? {} : { previous }),
   });
   const command = plan.command;
-  return command === undefined ? null : shoCardAnswerFor(command, input.pause);
+  return command === undefined
+    ? null
+    : shoCardAnswerFor(command, input.pause, input.text);
 }
