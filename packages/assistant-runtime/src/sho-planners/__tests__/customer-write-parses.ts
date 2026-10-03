@@ -262,6 +262,40 @@ export const SHO_CUSTOMER_WRITE_PARSES: Readonly<Record<string, unknown>> =
       domain: "customers",
       verb: "create",
     },
+    "d89-rename-group": {
+      text: "перейменуй її на квітникарі",
+      action: "customers.updateGroup",
+      kind: "write",
+      effect: "write",
+      confirm: "card",
+      params: {
+        rename_to: {
+          text: "квітникарі",
+        },
+        group: {
+          text: "її",
+          status: "context",
+          id: "new-florists",
+          name: "Флористи",
+          focus: 0,
+        },
+      },
+      needs: [
+        {
+          path: "action",
+          reason: "read_as_focus_type",
+          blocking: false,
+          span: {
+            text: "її",
+          },
+        },
+      ],
+      ready: true,
+      refPrevious: {},
+      catalogued: false,
+      domain: "customers",
+      verb: "update",
+    },
   });
 
 export function shoCustomerWriteParse(caseId: string): unknown {

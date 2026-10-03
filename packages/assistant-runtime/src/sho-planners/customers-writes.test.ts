@@ -174,39 +174,59 @@ describe("SHO_CUSTOMER_WRITE_PLANNERS maps the conformance create parses", () =>
   });
 });
 
+const RENAME_TO = paramsOf("d89-rename-group")["rename_to"];
+
+const renaming = (caseId: string, fields: Json = {}): ShoCommand =>
+  asCompanyRecords(caseId, {
+    params: {
+      customer: (reId(paramsOf(caseId)) as Json)["customer"],
+      rename_to: RENAME_TO,
+      ...fields,
+    },
+  });
+
 describe("SHO_CUSTOMER_WRITE_PLANNERS maps the conformance update parses", () => {
-  it("plans the D84 case d95-named-update as that customer's update", () => {
-    expect(planOf(asCompanyRecords("d95-named-update"))).toEqual({
+  it("plans a renaming d95-named-update as that customer's update", () => {
+    expect(planOf(renaming("d95-named-update"))).toEqual({
       kind: "call",
       toolName: "customers_updateCustomer",
       reply: "Клієнта оновлено.",
-      input: {
-        id: COMPANY_IDS["c-honchar"],
-        notes: "бере тільки оптом",
-      },
+      input: { id: COMPANY_IDS["c-honchar"], name: "квітникарі" },
     });
   });
 
   it("plans the Russian d95-named-update-ru the same way", () => {
-    expect(planOf(asCompanyRecords("d95-named-update-ru"))).toEqual({
+    expect(
+      planOf(
+        renaming("d95-named-update-ru", {
+          comment: paramsOf("d95-named-update-ru")["comment"],
+        }),
+      ),
+    ).toEqual({
       kind: "call",
       toolName: "customers_updateCustomer",
       reply: "Клієнта оновлено.",
       input: {
         id: COMPANY_IDS["c-savchuk"],
+        name: "квітникарі",
         notes: "забирает сама после обеда",
       },
     });
   });
 
+  it("sends the D84 notes-only d95-named-update to the LLM", () => {
+    for (const caseId of ["d95-named-update", "d95-named-update-ru"]) {
+      expect({ caseId, plan: planOf(asCompanyRecords(caseId)) }).toEqual({
+        caseId,
+        plan: { kind: "fallback", reason: "unsupported_param" },
+      });
+    }
+  });
+
   it("plans the d79-group-update group as the customer's groupId", () => {
-    const edit = paramsOf("d79-group-update");
     const plan = planOf(
-      asCompanyRecords("d95-named-update", {
-        params: {
-          customer: (reId(paramsOf("d95-named-update")) as Json)["customer"],
-          group: reId(edit["group"]),
-        },
+      renaming("d95-named-update", {
+        group: reId(paramsOf("d79-group-update")["group"]),
       }),
     );
     expect(plan).toEqual({
@@ -215,44 +235,54 @@ describe("SHO_CUSTOMER_WRITE_PLANNERS maps the conformance update parses", () =>
       reply: "Клієнта оновлено.",
       input: {
         id: COMPANY_IDS["c-honchar"],
+        name: "квітникарі",
         groupId: COMPANY_IDS["g-salons"],
       },
     });
   });
 
   it("sends a price_list to the LLM: the planner maps no price list", () => {
-    const edit = paramsOf("d79-group-update");
     expect(
       planOf(
-        asCompanyRecords("d95-named-update", {
-          params: {
-            customer: (reId(paramsOf("d95-named-update")) as Json)["customer"],
-            price_list: reId(edit["price_list"]),
-          },
+        renaming("d95-named-update", {
+          price_list: reId(paramsOf("d79-group-update")["price_list"]),
         }),
       ),
     ).toEqual({ kind: "fallback", reason: "unsupported_param" });
   });
 
   it("sends only what Шо parsed, so an unsaid field keeps its stored value", () => {
-    const plan = planOf(asCompanyRecords("d95-named-update"));
+    const plan = planOf(
+      renaming("d95-named-update", {
+        comment: paramsOf("d95-named-update")["comment"],
+      }),
+    );
     expect(Object.keys(plan.kind === "call" ? plan.input : {}).sort()).toEqual([
       "id",
+      "name",
       "notes",
     ]);
   });
 });
 
+const renamingAsSaid = (caseId: string): ShoCommand =>
+  commandOf(caseId, {
+    params: {
+      customer: paramsOf(caseId)["customer"],
+      rename_to: RENAME_TO,
+    },
+  });
+
 describe("a customer write names only the record the parse resolved", () => {
   it("refuses the catalogue's own record id, which is no uuid", () => {
-    expect(planOf(commandOf("d95-named-update"))).toEqual({
+    expect(planOf(renamingAsSaid("d95-named-update"))).toEqual({
       kind: "fallback",
       reason: "unsupported_param",
     });
   });
 
   it("refuses d95-named-unknown, whose customer the list does not know", () => {
-    expect(planOf(commandOf("d95-named-unknown"))).toEqual({
+    expect(planOf(renamingAsSaid("d95-named-unknown"))).toEqual({
       kind: "fallback",
       reason: "unresolved_reference",
     });
@@ -260,7 +290,7 @@ describe("a customer write names only the record the parse resolved", () => {
 
   it("writes to no record the bare pointer stands for", () => {
     for (const caseId of ["d95-pointer-kept", "d95-noun-with-comment"]) {
-      expect({ caseId, plan: planOf(commandOf(caseId)) }).toEqual({
+      expect({ caseId, plan: planOf(renamingAsSaid(caseId)) }).toEqual({
         caseId,
         plan: { kind: "fallback", reason: "conversation_dependent" },
       });
@@ -315,6 +345,10 @@ describe("the D84 and D85 misreads are carried to the card", () => {
     span: string | null,
   ): ShoCommand =>
     asCompanyRecords("d95-named-update", {
+      params: {
+        customer: (reId(paramsOf("d95-named-update")) as Json)["customer"],
+        rename_to: RENAME_TO,
+      },
       needs: [
         {
           path: "action",
@@ -344,9 +378,7 @@ describe("the D84 and D85 misreads are carried to the card", () => {
   });
 
   it("carries no note when the parse reports no misread", () => {
-    expect(
-      notesOf(planOf(asCompanyRecords("d95-named-update"))),
-    ).toBeUndefined();
+    expect(notesOf(planOf(renaming("d95-named-update")))).toBeUndefined();
   });
 
   it("carries no note for a need the parse marked blocking", () => {

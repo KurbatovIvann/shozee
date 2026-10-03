@@ -108,7 +108,7 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
       group: idOnly("groupId"),
     },
     required: ["customer"],
-    oneOf: [["rename_to", "phone", "email", "comment", "group"]],
+    unsupportedWithout: ["rename_to"],
     notes: MISREAD_NOTES,
   },
 };

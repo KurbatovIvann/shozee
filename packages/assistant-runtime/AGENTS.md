@@ -148,8 +148,15 @@ registry is injected into `createAssistantRuntime`; this package never imports
   company-scoped parse resolved and nothing else — a name the list does not
   know, a bare «клієнту» pointer and a resolved id that is not a uuid are all
   the LLM, since `customers.updateCustomer` takes no query to raise a picker
-  from. Patch semantics hold (SHO-725): a field Шо did not parse is never
-  sent, so it keeps its stored value. `comment` is the action's `notes` and
+  from. An update is planned **only** when the parse carries a new name
+  (`rename_to`): `customers.updateCustomer` requires `name` (ADR-0033,
+  2026-09-19: required fields stay required), and the name the Шо context
+  carries is up to 30 s stale, so sending it would revert a fresh rename and
+  reading it first would be a read-merge-write no planner may do. A
+  notes-only «додай клієнту X коментар …» is therefore `unsupported_param`,
+  which is the LLM, pending an owner decision on an ADR-0033 amendment.
+  Patch semantics hold for every other field (SHO-725): a field Шо did not
+  parse is never sent, so it keeps its stored value. `comment` is the action's `notes` and
   `group` only a resolved uuid; `price_list` and every other param is
   `unsupported_param`. A phone or an e-mail is action input only — never a
   log line and never the focus (D94). The D84 `read_as_update` and D85

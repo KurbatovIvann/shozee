@@ -23,6 +23,7 @@ export interface ShoWritePlan {
   readonly reply: string;
   readonly params: Readonly<Record<string, ShoWriteParamMapper>>;
   readonly required: readonly string[];
+  readonly unsupportedWithout?: readonly string[];
   readonly oneOf?: readonly (readonly string[])[];
   readonly notes?: Readonly<Record<string, string>>;
 }
@@ -88,6 +89,9 @@ function inputFor(plan: ShoWritePlan, command: ShoCommand): ShoWriteMapped {
     }
   }
   const said = (name: string): boolean => Object.hasOwn(command.params, name);
+  if (!(plan.unsupportedWithout ?? []).every(said)) {
+    return "unsupported_param";
+  }
   return plan.required.every(said) &&
     (plan.oneOf ?? []).every((names) => names.some(said))
     ? input

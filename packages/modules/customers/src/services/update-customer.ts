@@ -84,10 +84,7 @@ export async function updateStaffCustomer(env: {
     const updated = (
       await db
         .update(companyCustomers)
-        .set({
-          ...(input.name === undefined ? {} : { name: input.name }),
-          ...merged,
-        })
+        .set({ name: input.name, ...merged })
         .where(
           and(
             eq(companyCustomers.companyId, ctx.companyId),
