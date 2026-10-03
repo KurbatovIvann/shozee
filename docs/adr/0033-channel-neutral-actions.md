@@ -4,7 +4,7 @@
 - **Amended**: 2026-09-19 — a staff update changes only the fields it names
   (SHO-725, see Amendment below)
 - **Amended**: 2026-10-03 — a required field may be omitted on an update
-  (SHO-848, see Amendment below)
+  (SHO-848, SHO-864, see Amendment below)
 - **Date**: 2026-09-02
 - **Deciders**: Ivan Kurbatov
 
@@ -141,10 +141,12 @@ whole record can call it safely. The assistant holds a compact list row, so
   other field, and the handler merges it with the locked row. Reading it as
   "must be sent" forced a caller holding a partial reference to re-send a
   value it had only guessed, which is the state reconstruction this ADR
-  retires. `customers.updateCustomer` carries this rule; its siblings
-  `customers.updateGroup`, `customers.updateCounterparty` and
-  `catalog.updateProduct` still demand their required field and are migrated
-  by [SHO-864](https://linear.app/showzy-v2/issue/SHO-864).
+  retires. `customers.updateCustomer`, `customers.updateGroup`,
+  `customers.updateCounterparty` and `catalog.updateProduct` carry this rule
+  ([SHO-864](https://linear.app/showzy-v2/issue/SHO-864)).
+  `catalog.updateVariant` and `pricing.updatePriceList` still demand `name`,
+  and `catalog.updateProduct` still demands its base-price pair; each is a
+  migration of its own, not a new decision.
 - New staff updates follow this rule. No read-merge-write façade in
   `packages/ai` and no "get before update" prompt rule: both reconstruct
   state a contract decision threw away.

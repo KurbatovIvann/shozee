@@ -170,7 +170,9 @@ export function updateProductPreview(
     return {
       title: `Змінити товар: ${stored.name}`,
       lines: [
-        changeLine(CATALOG_NAME_LABEL, stored.name, input.name),
+        ...(input.name === undefined
+          ? []
+          : [changeLine(CATALOG_NAME_LABEL, stored.name, input.name)]),
         changeLine(
           PRODUCT_PRICE_LABEL,
           formatMoneyMinor(

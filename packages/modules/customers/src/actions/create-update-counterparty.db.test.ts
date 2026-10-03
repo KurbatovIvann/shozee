@@ -629,6 +629,48 @@ describe("customers.updateCounterparty", () => {
     });
   });
 
+  it("keeps the stored name when the update names none, and replays once", async () => {
+    const created = await kit.invoke(createCounterparty, {
+      name: "ТОВ Незмінна",
+      notes: "стара нотатка",
+    });
+    const idempotencyKey = randomUUID();
+    const noted = await kit.invoke(
+      updateCounterparty,
+      { id: created.id, notes: "нова нотатка" },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(noted).toMatchObject({
+      name: "ТОВ Незмінна",
+      notes: "нова нотатка",
+    });
+
+    const replay = await kit.invoke(
+      updateCounterparty,
+      { id: created.id, notes: "нова нотатка" },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(replay).toEqual(noted);
+    expect((await counterpartyRow(created.id))?.name).toBe("ТОВ Незмінна");
+  });
+
+  it("leaves a foreign counterparty untouched when the update names no name", async () => {
+    await expect(
+      kit.invoke(updateCounterparty, {
+        id: fixtures.partyUpdateB,
+        notes: "чужа нотатка",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    const foreign = await counterpartyRow(fixtures.partyUpdateB);
+    expect(foreign).toMatchObject({
+      name: "Update Bravo",
+      companyId: kitIdentities.companies.b,
+    });
+  });
+
   it("denies staff with only customers:view and staff with only customers:delete", async () => {
     await expect(
       kit.invoke(
@@ -717,11 +759,15 @@ describe("customers.updateCounterparty", () => {
     expect(sameEdrpou.edrpou).toBe(occupiedEdrpou);
   });
 
-  it("rejects blank names and companyId", async () => {
+  it("rejects blank or null names and companyId", async () => {
     const invalidInputs: unknown[] = [
       {
         id: fixtures.partyUpdateA,
         name: "   ",
+      },
+      {
+        id: fixtures.partyUpdateA,
+        name: null,
       },
       {
         id: "not-a-uuid",

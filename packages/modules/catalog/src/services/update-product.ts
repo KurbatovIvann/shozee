@@ -2,6 +2,7 @@ import type { ActionCtx } from "@showzy/core";
 import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
 import { products, productVariants } from "@showzy/db/schema/catalog";
 import { moneyFromCanonical } from "@showzy/module-kit/canonical";
+import { keepOmitted } from "@showzy/module-kit/keep-omitted";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -25,7 +26,7 @@ export async function updateStaffProduct(env: {
 
   const existing = (
     await db
-      .select({ id: products.id })
+      .select({ id: products.id, name: products.name })
       .from(products)
       .where(
         and(
@@ -44,7 +45,7 @@ export async function updateStaffProduct(env: {
     await db
       .update(products)
       .set({
-        name: input.name,
+        name: keepOmitted(input.name, existing.name),
         basePriceMinor: moneyFromCanonical(input.basePriceMinor),
         currency: input.currency,
       })

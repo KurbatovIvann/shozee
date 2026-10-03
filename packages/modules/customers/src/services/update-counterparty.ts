@@ -34,6 +34,7 @@ export async function updateStaffCounterparty(env: {
     companyId: ctx.companyId,
     id: input.id,
     columns: {
+      name: counterparties.name,
       edrpou: counterparties.edrpou,
       legalAddress: counterparties.legalAddress,
       iban: counterparties.iban,
@@ -46,7 +47,7 @@ export async function updateStaffCounterparty(env: {
     },
   });
   const fields = storedCounterpartyFields({
-    name: input.name,
+    name: keepOmitted(input.name, current.name),
     edrpou: keepOmitted(input.edrpou, current.edrpou),
     legalAddress: keepOmitted(input.legalAddress, current.legalAddress),
     iban: keepOmitted(input.iban, current.iban),

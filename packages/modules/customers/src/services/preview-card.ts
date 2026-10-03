@@ -48,6 +48,8 @@ type CounterpartyPreviewFields =
 
 export const PREVIEW_ABSENT = "—";
 export const PREVIEW_CLEARED = "очистити";
+export const PREVIEW_CHANGES_LABEL = "Зміни";
+export const PREVIEW_NO_CHANGES = "немає змін";
 export const CUSTOMER_STATUS_LABEL = "Статус";
 export const CUSTOMER_CONTACT_LABEL = "Контакт";
 export const GROUP_MEMBERS_LABEL = "Активні клієнти";
@@ -125,6 +127,12 @@ function changeLine(
     return { label, value: next };
   }
   return { label, value: `${stored} → ${next}` };
+}
+
+function changeLines(lines: ActionPreviewLine[]): ActionPreviewLine[] {
+  return lines.length === 0
+    ? [{ label: PREVIEW_CHANGES_LABEL, value: PREVIEW_NO_CHANGES }]
+    : lines;
 }
 
 function text(value: string | null | undefined): string | null {
@@ -339,9 +347,16 @@ async function groupLines(
   input: GroupPreviewFields,
   stored: StoredGroup | null,
 ): Promise<ActionPreviewLine[]> {
-  const lines: ActionPreviewLine[] = [
-    changeLine(GROUP_LABELS.name, stored?.name ?? null, input.name),
-  ];
+  const lines: ActionPreviewLine[] =
+    stored === null || input.name !== undefined
+      ? [
+          changeLine(
+            GROUP_LABELS.name,
+            stored?.name ?? null,
+            input.name ?? null,
+          ),
+        ]
+      : [];
   if (stored === null || input.description !== undefined) {
     lines.push(
       changeLine(
@@ -371,9 +386,15 @@ async function counterpartyLines(
 ): Promise<ActionPreviewLine[]> {
   const named = (field: keyof CounterpartyPreviewFields): boolean =>
     stored === null || input[field] !== undefined;
-  const lines: ActionPreviewLine[] = [
-    changeLine(COUNTERPARTY_LABELS.name, stored?.name ?? null, input.name),
-  ];
+  const lines: ActionPreviewLine[] = named("name")
+    ? [
+        changeLine(
+          COUNTERPARTY_LABELS.name,
+          stored?.name ?? null,
+          input.name ?? null,
+        ),
+      ]
+    : [];
   for (const field of COUNTERPARTY_TEXT_FIELDS) {
     if (named(field)) {
       lines.push(
@@ -432,7 +453,7 @@ export function updateCustomerPreview(
     const stored = await loadCustomer(env, companyId, input.id);
     return {
       title: `Змінити клієнта: ${stored.name}`,
-      lines: await customerLines(env, companyId, input, stored),
+      lines: changeLines(await customerLines(env, companyId, input, stored)),
     };
   };
 }
@@ -500,7 +521,7 @@ export function updateGroupPreview(
     const stored = await loadGroup(env, companyId, input.id);
     return {
       title: `Змінити групу клієнтів: ${stored.name}`,
-      lines: await groupLines(env, input, stored),
+      lines: changeLines(await groupLines(env, input, stored)),
     };
   };
 }
@@ -546,7 +567,9 @@ export function updateCounterpartyPreview(
     const stored = await loadCounterparty(env, companyId, input.id);
     return {
       title: `Змінити контрагента: ${stored.name}`,
-      lines: await counterpartyLines(env, companyId, input, stored),
+      lines: changeLines(
+        await counterpartyLines(env, companyId, input, stored),
+      ),
     };
   };
 }

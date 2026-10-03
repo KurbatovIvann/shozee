@@ -30,6 +30,7 @@ export async function updateStaffGroup(env: {
     companyId: ctx.companyId,
     id: input.id,
     columns: {
+      name: customerGroups.name,
       description: customerGroups.description,
       priceListId: customerGroups.priceListId,
     },
@@ -41,7 +42,7 @@ export async function updateStaffGroup(env: {
     await db
       .update(customerGroups)
       .set({
-        name: input.name,
+        name: keepOmitted(input.name, current.name),
         description: storedDescription(
           keepOmitted(input.description, current.description),
         ),

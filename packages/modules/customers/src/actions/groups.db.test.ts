@@ -515,6 +515,48 @@ describe("customers.updateGroup", () => {
     });
   });
 
+  it("keeps the stored name when the update names none, and replays once", async () => {
+    const created = await kit.invoke(createGroup, {
+      name: "Гуртовики",
+      description: "Старий опис",
+    });
+    const idempotencyKey = randomUUID();
+    const redescribed = await kit.invoke(
+      updateGroup,
+      { id: created.id, description: "Новий опис" },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(redescribed).toMatchObject({
+      name: "Гуртовики",
+      description: "Новий опис",
+    });
+
+    const replay = await kit.invoke(
+      updateGroup,
+      { id: created.id, description: "Новий опис" },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(replay).toEqual(redescribed);
+    expect((await groupRow(created.id))?.name).toBe("Гуртовики");
+  });
+
+  it("leaves a foreign group untouched when the update names no name", async () => {
+    await expect(
+      kit.invoke(updateGroup, {
+        id: fixtures.groupUpdateB,
+        description: "Чужий опис",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    const foreign = await groupRow(fixtures.groupUpdateB);
+    expect(foreign).toMatchObject({
+      name: "Update Bravo",
+      companyId: kitIdentities.companies.b,
+    });
+  });
+
   it("counts only active members on update", async () => {
     const result = await kit.invoke(updateGroup, {
       id: fixtures.groupUpdateA,
@@ -569,10 +611,11 @@ describe("customers.updateGroup", () => {
     expect(foreignRow?.companyId).toBe(kitIdentities.companies.b);
   });
 
-  it("rejects blank names, over-max fields, companyId, and unknown price lists", async () => {
+  it("rejects blank or null names, over-max fields, companyId, and unknown price lists", async () => {
     const missingList = randomUUID();
     const invalidInputs: unknown[] = [
       { id: fixtures.groupUpdateA, name: "   " },
+      { id: fixtures.groupUpdateA, name: null },
       {
         id: fixtures.groupUpdateA,
         name: "x".repeat(GROUP_NAME_MAX + 1),

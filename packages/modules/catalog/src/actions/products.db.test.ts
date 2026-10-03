@@ -422,6 +422,58 @@ describe("catalog.updateProduct", () => {
     });
   });
 
+  it("keeps the stored name when the update names none, and replays once", async () => {
+    const created = await kit.invoke(createProduct, {
+      name: "Незмінна назва",
+      basePriceMinor: "1000",
+      currency: "UAH",
+    });
+    const idempotencyKey = randomUUID();
+    const repriced = await kit.invoke(
+      updateProduct,
+      {
+        productId: created.productId,
+        basePriceMinor: "1200",
+        currency: "UAH",
+      },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(repriced).toMatchObject({
+      name: "Незмінна назва",
+      basePriceMinor: "1200",
+    });
+
+    const replay = await kit.invoke(
+      updateProduct,
+      {
+        productId: created.productId,
+        basePriceMinor: "1200",
+        currency: "UAH",
+      },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(replay).toEqual(repriced);
+    expect((await productRow(created.productId))?.name).toBe("Незмінна назва");
+  });
+
+  it("leaves a foreign product untouched when the update names no name", async () => {
+    await expect(
+      kit.invoke(updateProduct, {
+        productId: fixtures.productUpdateB,
+        basePriceMinor: "9999",
+        currency: "UAH",
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    const foreign = await productRow(fixtures.productUpdateB);
+    expect(foreign).toMatchObject({
+      name: "Update Bravo",
+      companyId: kitIdentities.companies.b,
+    });
+  });
+
   it("denies staff without products:edit", async () => {
     await expect(
       kit.invoke(
@@ -470,11 +522,17 @@ describe("catalog.updateProduct", () => {
     expect(foreignRow?.companyId).toBe(kitIdentities.companies.b);
   });
 
-  it("rejects blank names, negative prices, and companyId", async () => {
+  it("rejects blank or null names, negative prices, and companyId", async () => {
     const invalidInputs: unknown[] = [
       {
         productId: fixtures.productUpdateA,
         name: "   ",
+        basePriceMinor: "100",
+        currency: "UAH",
+      },
+      {
+        productId: fixtures.productUpdateA,
+        name: null,
         basePriceMinor: "100",
         currency: "UAH",
       },

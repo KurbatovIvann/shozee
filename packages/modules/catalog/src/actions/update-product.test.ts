@@ -97,6 +97,20 @@ describe("catalog.updateProduct contract", () => {
     ).toBe(false);
   });
 
+  it("omits the name to keep it and refuses to clear it with null", () => {
+    expect(
+      updateProductInputSchema.safeParse({
+        productId: validUpdate.productId,
+        basePriceMinor: "1500",
+        currency: "UAH",
+      }),
+    ).toMatchObject({ success: true });
+    expect(
+      updateProductInputSchema.safeParse({ ...validUpdate, name: null })
+        .success,
+    ).toBe(false);
+  });
+
   it("rejects identifier fields — the input is strict", () => {
     for (const extra of [
       { companyId: "c" },
