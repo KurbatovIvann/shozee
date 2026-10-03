@@ -267,7 +267,7 @@ describe("createShoContextSource", () => {
     expect(wire).not.toContain(contact.email);
   });
 
-  it("pushes a context with no phone, e-mail, ЄДРПОУ or IBAN", async () => {
+  it("pushes a context with no customer phone or e-mail, and guards the counterparty ЄДРПОУ, IBAN and contacts against a counterparties list the builder does not send yet", async () => {
     const sent: ShoContextRequest[] = [];
 
     const outcome = await parseWithShoContext(

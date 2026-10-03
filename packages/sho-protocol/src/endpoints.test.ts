@@ -55,7 +55,7 @@ describe("shoContextSchema products", () => {
     ).toBe(false);
   });
 
-  it("rejects a contact or a legal identifier on every context list", () => {
+  it("rejects a contact or a legal identifier on every context list and on a variant", () => {
     const refused = {
       phones: ["+380501112233"],
       emails: ["olya@example.com"],
@@ -78,6 +78,22 @@ describe("shoContextSchema products", () => {
           `${list}.${field}`,
         ).toBe(false);
       }
+    }
+
+    for (const [field, value] of Object.entries(refused)) {
+      expect(
+        parse({
+          ...base,
+          products: [
+            {
+              id: "p1",
+              name: "Фарба",
+              variants: [{ id: "v1", name: "Біла", [field]: value }],
+            },
+          ],
+        }).success,
+        `products.variants.${field}`,
+      ).toBe(false);
     }
   });
 
