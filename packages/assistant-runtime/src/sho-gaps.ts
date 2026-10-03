@@ -8,6 +8,8 @@ import {
 } from "@showzy/sho-protocol";
 import { z } from "zod";
 
+import { SHO_PLANNER_PARAM_NAMES } from "./sho-plan.js";
+
 import {
   shoCommandRefs,
   shoLoggedTurns,
@@ -125,8 +127,11 @@ export function shoEscalationNote(stuck: ShoStuck): string {
   if (stuck.trap === "repeat-text") {
     return "[Шо] Людина повторила те саме прохання, якого попередній хід не завершив. Не став те саме запитання — знайди інший шлях до тієї ж роботи.";
   }
-  const named = stuck.gaps.map((gap) => gap.path).join(", ");
-  return `[Шо] Це вже питали двічі, і досі не з'ясовано: ${named}. Не показуй ту саму картку втретє — спитай про це словами або запропонуй інший спосіб завершити роботу.`;
+  const named = stuck.gaps
+    .map((gap) => gap.path)
+    .filter((path) => SHO_PLANNER_PARAM_NAMES.has(path));
+  const about = named.length === 0 ? "" : `: ${named.join(", ")}`;
+  return `[Шо] Це вже питали двічі, і досі не з'ясовано${about}. Не показуй ту саму картку втретє — спитай про це словами або запропонуй інший спосіб завершити роботу.`;
 }
 
 export function shoEscalatedAskedMessage(
@@ -216,7 +221,8 @@ function askedGaps(
     if (
       escalation === null ||
       escalation.sessionId !== sessionId ||
-      escalation.gaps.length === 0
+      escalation.gaps.length === 0 ||
+      somethingRanAfter(history, index)
     ) {
       continue;
     }
