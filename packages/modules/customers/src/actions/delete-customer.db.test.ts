@@ -1,13 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  CONFIRMATION_TTL_MS,
-  createConfirmationHook,
-  createInMemoryConfirmationStore,
-  type ActionPipelineDeps,
-  type ConfirmationHook,
-} from "@showzy/core";
-import {
   ConfirmationRequiredError,
   NotFoundError,
   PermissionDeniedError,
@@ -17,6 +10,7 @@ import {
   createTestKit,
   crossTenantSuite,
   idempotencySuite,
+  invokeConfirmedAction,
   isolationCase,
   kitIdentities,
   type TestKit,
@@ -62,45 +56,6 @@ const clerks = {
 };
 
 let kit: TestKit;
-
-/**
- * The core test kit omits the confirmation slot (`kitProtocolHooks`).
- * Inherited isolation/idempotency suites invoke once and do not complete
- * a challenge, so this file attaches an auto-grant for those suites.
- * Protocol tests compose the real in-memory store via `deps`.
- */
-function autoConfirmHook(): ConfirmationHook {
-  return {
-    gate: () => {
-      const confirmedAt = new Date();
-      return Promise.resolve({
-        challengeId: randomUUID(),
-        confirmedAt,
-        expiresAt: new Date(confirmedAt.getTime() + CONFIRMATION_TTL_MS),
-      });
-    },
-  };
-}
-
-function attachAutoConfirm(target: TestKit): void {
-  const hooks = target.pipeline.hooks;
-  if (hooks === undefined) {
-    throw new Error("test kit pipeline is missing protocol hooks");
-  }
-  Object.assign(hooks, { confirmation: autoConfirmHook() });
-}
-
-function confirmationPipeline(target: TestKit): ActionPipelineDeps {
-  return {
-    ...target.pipeline,
-    hooks: {
-      ...target.pipeline.hooks,
-      confirmation: createConfirmationHook({
-        store: createInMemoryConfirmationStore(),
-      }),
-    },
-  };
-}
 
 async function countOkDeleteAudits(): Promise<number> {
   const rows = await kit.db.runtime.db
@@ -156,7 +111,6 @@ async function personalPriceRows(customerId: string) {
 
 beforeAll(async () => {
   kit = await createTestKit();
-  attachAutoConfirm(kit);
 
   await kit.db.runtime.db.insert(customerGroups).values({
     id: fixtures.groupKeep,
@@ -314,7 +268,8 @@ idempotencySuite(
 describe("customers.deleteCustomer", () => {
   it("deletes an archived customer, SET NULLs orders and counterparties, cascades personal prices, and leaves the group", async () => {
     const requestId = randomUUID();
-    const result = await kit.invoke(
+    const result = await invokeConfirmedAction(
+      kit,
       deleteCustomer,
       { id: fixtures.happyCustomer },
       {},
@@ -371,9 +326,9 @@ describe("customers.deleteCustomer", () => {
   });
 
   it("rejects deleting an active customer even when confirmation is granted", async () => {
-    const error = await kit
-      .invoke(deleteCustomer, { id: fixtures.activeCustomer })
-      .catch((caught: unknown) => caught);
+    const error = await invokeConfirmedAction(kit, deleteCustomer, {
+      id: fixtures.activeCustomer,
+    }).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ValidationError);
     if (!(error instanceof ValidationError)) {
@@ -397,14 +352,13 @@ describe("customers.deleteCustomer", () => {
       status: "archived",
     });
 
-    const deps = confirmationPipeline(kit);
     const idempotencyKey = randomUUID();
     const unconfirmed = await kit
       .invoke(
         deleteCustomer,
         { id: customerId },
         {},
-        { deps, request: { idempotencyKey } },
+        { request: { idempotencyKey } },
       )
       .then(
         () => {
@@ -437,7 +391,6 @@ describe("customers.deleteCustomer", () => {
       { id: customerId },
       {},
       {
-        deps,
         request: {
           idempotencyKey,
           confirmationChallengeId: unconfirmed.challenge.challengeId,
@@ -458,14 +411,13 @@ describe("customers.deleteCustomer", () => {
       status: "active",
     });
 
-    const deps = confirmationPipeline(kit);
     const idempotencyKey = randomUUID();
     const unconfirmed = await kit
       .invoke(
         deleteCustomer,
         { id: customerId },
         {},
-        { deps, request: { idempotencyKey } },
+        { request: { idempotencyKey } },
       )
       .then(
         () => {
@@ -483,7 +435,6 @@ describe("customers.deleteCustomer", () => {
         { id: customerId },
         {},
         {
-          deps,
           request: {
             idempotencyKey,
             confirmationChallengeId: unconfirmed.challenge.challengeId,
@@ -534,7 +485,7 @@ describe("customers.deleteCustomer", () => {
       email: `second-delete-${secondDeleteId}@example.com`,
       status: "archived",
     });
-    await kit.invoke(deleteCustomer, { id: secondDeleteId });
+    await invokeConfirmedAction(kit, deleteCustomer, { id: secondDeleteId });
 
     const missingError = await kit
       .invoke(deleteCustomer, { id: missingId })

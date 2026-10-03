@@ -18,6 +18,11 @@ export {
   UndeclaredActionError,
 } from "./declared-errors.js";
 export {
+  challengeIdFor,
+  confirmedRequest,
+  invokeConfirmedAction,
+} from "./confirmation-gate.js";
+export {
   buildJobEnvelope,
   buildTestContext,
   createCapturingLogger,

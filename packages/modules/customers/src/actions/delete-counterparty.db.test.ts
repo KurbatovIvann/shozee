@@ -1,13 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  CONFIRMATION_TTL_MS,
-  createConfirmationHook,
-  createInMemoryConfirmationStore,
-  type ActionPipelineDeps,
-  type ConfirmationHook,
-} from "@showzy/core";
-import {
   ConfirmationRequiredError,
   NotFoundError,
   PermissionDeniedError,
@@ -17,6 +10,7 @@ import {
   createTestKit,
   crossTenantSuite,
   idempotencySuite,
+  invokeConfirmedAction,
   isolationCase,
   kitIdentities,
   type TestKit,
@@ -54,45 +48,6 @@ const fixtureEdrpou = "12345678";
 
 let kit: TestKit;
 
-/**
- * The core test kit omits the confirmation slot (`kitProtocolHooks`).
- * Inherited isolation/idempotency suites invoke once and do not complete
- * a challenge, so this file attaches an auto-grant for those suites.
- * Protocol tests compose the real in-memory store via `deps`.
- */
-function autoConfirmHook(): ConfirmationHook {
-  return {
-    gate: () => {
-      const confirmedAt = new Date();
-      return Promise.resolve({
-        challengeId: randomUUID(),
-        confirmedAt,
-        expiresAt: new Date(confirmedAt.getTime() + CONFIRMATION_TTL_MS),
-      });
-    },
-  };
-}
-
-function attachAutoConfirm(target: TestKit): void {
-  const hooks = target.pipeline.hooks;
-  if (hooks === undefined) {
-    throw new Error("test kit pipeline is missing protocol hooks");
-  }
-  Object.assign(hooks, { confirmation: autoConfirmHook() });
-}
-
-function confirmationPipeline(target: TestKit): ActionPipelineDeps {
-  return {
-    ...target.pipeline,
-    hooks: {
-      ...target.pipeline.hooks,
-      confirmation: createConfirmationHook({
-        store: createInMemoryConfirmationStore(),
-      }),
-    },
-  };
-}
-
 async function countOkDeleteAudits(): Promise<number> {
   const rows = await kit.db.runtime.db
     .select({ id: auditLog.id })
@@ -124,7 +79,6 @@ async function customerRow(customerId: string) {
 
 beforeAll(async () => {
   kit = await createTestKit();
-  attachAutoConfirm(kit);
 
   await kit.db.runtime.db.insert(companyCustomers).values([
     {
@@ -242,7 +196,8 @@ idempotencySuite(
 describe("customers.deleteCounterparty", () => {
   it("deletes a standalone counterparty and audits once without IBAN or EDRPOU", async () => {
     const requestId = randomUUID();
-    const result = await kit.invoke(
+    const result = await invokeConfirmedAction(
+      kit,
       deleteCounterparty,
       { id: fixtures.happyStandalone },
       {},
@@ -284,7 +239,7 @@ describe("customers.deleteCounterparty", () => {
     });
     expect(before.linkedCounterpartyCount).toBe(2);
 
-    const result = await kit.invoke(deleteCounterparty, {
+    const result = await invokeConfirmedAction(kit, deleteCounterparty, {
       id: fixtures.happyLinked,
     });
     expect(result).toEqual({ id: fixtures.happyLinked });
@@ -317,14 +272,13 @@ describe("customers.deleteCounterparty", () => {
       name: "Confirm me",
     });
 
-    const deps = confirmationPipeline(kit);
     const idempotencyKey = randomUUID();
     const unconfirmed = await kit
       .invoke(
         deleteCounterparty,
         { id: counterpartyId },
         {},
-        { deps, request: { idempotencyKey } },
+        { request: { idempotencyKey } },
       )
       .then(
         () => {
@@ -358,7 +312,6 @@ describe("customers.deleteCounterparty", () => {
       { id: counterpartyId },
       {},
       {
-        deps,
         request: {
           idempotencyKey,
           confirmationChallengeId: unconfirmed.challenge.challengeId,
@@ -397,7 +350,9 @@ describe("customers.deleteCounterparty", () => {
       companyId: kitIdentities.companies.a,
       name: "Second delete",
     });
-    await kit.invoke(deleteCounterparty, { id: secondDeleteId });
+    await invokeConfirmedAction(kit, deleteCounterparty, {
+      id: secondDeleteId,
+    });
 
     const missingError = await kit
       .invoke(deleteCounterparty, { id: missingId })
