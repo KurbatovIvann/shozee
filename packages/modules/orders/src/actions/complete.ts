@@ -10,6 +10,7 @@ import { and, eq } from "drizzle-orm";
 
 import { ordersCompleted } from "../events/completed.js";
 import { orderTransitionPreview } from "../services/preview-card.js";
+import { resolveOrderReference } from "../services/resolve-order-reference.js";
 import { requireWritable } from "../services/writable.js";
 import { completeOrderContract } from "./complete.contract.js";
 
@@ -17,18 +18,22 @@ const completeAuditTarget = holderAuditTarget({
   type: "order",
   field: "orderId",
   fallback: "unknown",
-  sources: ["input"],
+  sources: ["output", "input"],
 });
 
 export const completeOrder = implementAction(completeOrderContract, {
   handler: async (input, ctx) => {
     const db = requireWritable(ctx.db);
+    const orderId = await resolveOrderReference({
+      db,
+      companyId: ctx.companyId,
+      call: ctx.call,
+      input,
+    });
     const rows = await db
       .select({ id: orders.id, status: orders.status })
       .from(orders)
-      .where(
-        and(eq(orders.companyId, ctx.companyId), eq(orders.id, input.orderId)),
-      )
+      .where(and(eq(orders.companyId, ctx.companyId), eq(orders.id, orderId)))
       .limit(1)
       .for("update");
     const row = rows[0];
@@ -45,9 +50,7 @@ export const completeOrder = implementAction(completeOrderContract, {
     const updated = await db
       .update(orders)
       .set({ status: "done" })
-      .where(
-        and(eq(orders.companyId, ctx.companyId), eq(orders.id, input.orderId)),
-      )
+      .where(and(eq(orders.companyId, ctx.companyId), eq(orders.id, orderId)))
       .returning({
         customerId: orders.customerId,
       });
@@ -57,15 +60,15 @@ export const completeOrder = implementAction(completeOrderContract, {
     }
 
     ctx.emit(ordersCompleted, {
-      aggregate: { type: "order", id: input.orderId },
+      aggregate: { type: "order", id: orderId },
       payload: {
-        orderId: input.orderId,
+        orderId: orderId,
         customerId: saved.customerId,
       },
     });
 
     return {
-      orderId: input.orderId,
+      orderId: orderId,
       customerId: saved.customerId,
       status: "done" as const,
     };

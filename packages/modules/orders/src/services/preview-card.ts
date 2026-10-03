@@ -8,6 +8,7 @@ import {
 import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import type { z } from "zod";
 
+import type { OrderReferenceInput } from "../actions/order-reference.contract.js";
 import type {
   orderPriceSourceSchema,
   orderStatusSchema,
@@ -20,6 +21,7 @@ import { priceOrderLinesInSingleCurrency } from "./create-order.js";
 import { titleSnapshot } from "./line-money.js";
 import { loadStaffOrder } from "./load-order.js";
 import { normalizeOrderComment } from "./order-comment.js";
+import { resolveOrderReference } from "./resolve-order-reference.js";
 
 type PriceSource = z.output<typeof orderPriceSourceSchema>;
 type OrderStatus = z.output<typeof orderStatusSchema>;
@@ -145,14 +147,20 @@ export function orderTransitionPreview(
   contract: { readonly name: string },
   subject: string,
 ): (
-  input: { readonly orderId: string },
+  input: OrderReferenceInput,
   env: ActionPreviewEnv,
 ) => Promise<ActionPreview> {
   return async (input, env) => {
+    const companyId = previewCompanyScope(env.companyId, contract);
     const order = await loadStaffOrder({
       db: env.tx,
-      companyId: previewCompanyScope(env.companyId, contract),
-      orderId: input.orderId,
+      companyId,
+      orderId: await resolveOrderReference({
+        db: env.tx,
+        companyId,
+        call: env.call,
+        input,
+      }),
     });
 
     const lines: PreviewLine[] = order.items.map((item) =>

@@ -131,6 +131,22 @@ const callEdges: readonly DeclaredCallEdge[] = [
     callee: "companies.get",
   },
   {
+    caller: "orders.confirm",
+    callee: "companies.get",
+  },
+  {
+    caller: "orders.start",
+    callee: "companies.get",
+  },
+  {
+    caller: "orders.complete",
+    callee: "companies.get",
+  },
+  {
+    caller: "orders.cancel",
+    callee: "companies.get",
+  },
+  {
     caller: "documents.searchMatches",
     callee: "companies.get",
   },

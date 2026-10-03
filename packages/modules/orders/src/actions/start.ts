@@ -10,6 +10,7 @@ import { and, eq } from "drizzle-orm";
 
 import { ordersStarted } from "../events/started.js";
 import { orderTransitionPreview } from "../services/preview-card.js";
+import { resolveOrderReference } from "../services/resolve-order-reference.js";
 import { requireWritable } from "../services/writable.js";
 import { startOrderContract } from "./start.contract.js";
 
@@ -17,18 +18,22 @@ const startAuditTarget = holderAuditTarget({
   type: "order",
   field: "orderId",
   fallback: "unknown",
-  sources: ["input"],
+  sources: ["output", "input"],
 });
 
 export const startOrder = implementAction(startOrderContract, {
   handler: async (input, ctx) => {
     const db = requireWritable(ctx.db);
+    const orderId = await resolveOrderReference({
+      db,
+      companyId: ctx.companyId,
+      call: ctx.call,
+      input,
+    });
     const rows = await db
       .select({ id: orders.id, status: orders.status })
       .from(orders)
-      .where(
-        and(eq(orders.companyId, ctx.companyId), eq(orders.id, input.orderId)),
-      )
+      .where(and(eq(orders.companyId, ctx.companyId), eq(orders.id, orderId)))
       .limit(1)
       .for("update");
     const row = rows[0];
@@ -45,9 +50,7 @@ export const startOrder = implementAction(startOrderContract, {
     const updated = await db
       .update(orders)
       .set({ status: "in_progress" })
-      .where(
-        and(eq(orders.companyId, ctx.companyId), eq(orders.id, input.orderId)),
-      )
+      .where(and(eq(orders.companyId, ctx.companyId), eq(orders.id, orderId)))
       .returning({
         customerId: orders.customerId,
       });
@@ -57,15 +60,15 @@ export const startOrder = implementAction(startOrderContract, {
     }
 
     ctx.emit(ordersStarted, {
-      aggregate: { type: "order", id: input.orderId },
+      aggregate: { type: "order", id: orderId },
       payload: {
-        orderId: input.orderId,
+        orderId: orderId,
         customerId: saved.customerId,
       },
     });
 
     return {
-      orderId: input.orderId,
+      orderId: orderId,
       customerId: saved.customerId,
       status: "in_progress" as const,
     };

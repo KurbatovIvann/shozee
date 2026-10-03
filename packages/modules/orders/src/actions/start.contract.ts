@@ -8,9 +8,12 @@
 import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
-export const startOrderInputSchema = z.object({
-  orderId: z.uuid(),
-});
+import {
+  ORDER_REFERENCE_DESCRIPTION,
+  orderReferenceInputSchema,
+} from "./order-reference.contract.js";
+
+export const startOrderInputSchema = orderReferenceInputSchema;
 
 export const startOrderOutputSchema = z.object({
   orderId: z.uuid(),
@@ -20,8 +23,7 @@ export const startOrderOutputSchema = z.object({
 
 export const startOrderContract = defineActionContract({
   name: "orders.start",
-  description:
-    "Start a confirmed staff-intake order in the active company. Starting is a status transition only: the order moves from confirmed to in_progress. Already started orders fail with conflict. Missing or foreign-company orders fail with not-found.",
+  description: `Start a confirmed staff-intake order in the active company. Starting is a status transition only: the order moves from confirmed to in_progress. Already started orders fail with conflict. Missing or foreign-company orders fail with not-found. ${ORDER_REFERENCE_DESCRIPTION}`,
   principal: "staff",
   transport: "client",
   input: startOrderInputSchema,
