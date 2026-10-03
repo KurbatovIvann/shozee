@@ -1,11 +1,11 @@
 import { ConflictError, NotFoundError } from "@showzy/core/errors";
 import {
-  normalizeUniqueMatchQuery,
+  ENTITY_LOOKUP_OPTIONS_MAX,
   pickUniqueReferenceMatch,
   type EntityLookupTarget,
 } from "@showzy/validation/entity-ref";
 
-export const ENTITY_LOOKUP_OPTIONS_MAX = 20;
+export { ENTITY_LOOKUP_OPTIONS_MAX };
 
 export type EntityLookupOption = {
   readonly id: string;
@@ -31,18 +31,7 @@ export function classifyEntityLookupMatch<T>(
   if (picked.kind === "none") {
     return { kind: "none" };
   }
-  const needle = normalizeUniqueMatchQuery(query);
-  const exact = picked.rows.filter((row) =>
-    fieldsOf(row).some(
-      (field) =>
-        field !== null &&
-        field !== undefined &&
-        normalizeUniqueMatchQuery(field) === needle,
-    ),
-  );
-  return exact.length > 0
-    ? { kind: "several", rows: exact }
-    : { kind: "nearest", rows: picked.rows };
+  return { kind: picked.ambiguity, rows: picked.rows };
 }
 
 export type EntityLookupPicker = {

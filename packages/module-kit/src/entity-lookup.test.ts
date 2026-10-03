@@ -1,3 +1,4 @@
+import { pickUniqueNormalizedMatch } from "@showzy/validation/entity-ref";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -56,6 +57,42 @@ describe("classifyEntityLookupMatch", () => {
 
   it("reports none when nothing was found", () => {
     expect(classify("наполеон", [])).toEqual({ kind: "none" });
+  });
+
+  it("carries the ambiguity split the validation helper already computed", () => {
+    const several = [
+      { id: "1", name: "Наполеон" },
+      { id: "2", name: "наполеон" },
+    ];
+    const nearest = [
+      { id: "1", name: "Наполеон великий" },
+      { id: "2", name: "Наполеон малий" },
+    ];
+    const splitOf = (query: string, rows: readonly Row[]) => {
+      const picked = pickUniqueNormalizedMatch(query, rows, fieldsOf);
+      return picked.kind === "ambiguous" ? picked.ambiguity : picked.kind;
+    };
+    expect(splitOf("наполеон", several)).toBe("several");
+    expect(classify("наполеон", several).kind).toBe("several");
+    expect(splitOf("наполе", nearest)).toBe("nearest");
+    expect(classify("наполе", nearest).kind).toBe("nearest");
+  });
+
+  it("does not re-read the match fields after that split", () => {
+    const rows = [
+      { id: "1", name: "Наполеон великий" },
+      { id: "2", name: "Наполеон малий" },
+    ];
+    const passes = new Map<string, number>();
+    const driftingFields = (row: Row): readonly string[] => {
+      const seen = (passes.get(row.id) ?? 0) + 1;
+      passes.set(row.id, seen);
+      return seen === 1 ? [row.name] : ["наполе"];
+    };
+    expect(
+      classifyEntityLookupMatch("наполе", rows, driftingFields, nameOf),
+    ).toEqual({ kind: "nearest", rows });
+    expect([...passes.values()]).toEqual([1, 1]);
   });
 });
 
