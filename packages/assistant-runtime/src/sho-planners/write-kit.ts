@@ -49,6 +49,34 @@ export const shoIdOnly =
   (param: ShoParam): ShoWriteMapped =>
     shoIdFrom(param, field);
 
+export interface ShoMoney {
+  readonly minor: number;
+  readonly currency: string;
+}
+
+export function shoMoneyOf(param: ShoParam): ShoMoney | null {
+  if (Array.isArray(param) || !("value" in param)) {
+    return null;
+  }
+  const value: unknown = param.value;
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("minor" in value) ||
+    !("currency" in value)
+  ) {
+    return null;
+  }
+  const minor: unknown = value.minor;
+  const currency: unknown = value.currency;
+  return typeof minor === "number" &&
+    Number.isSafeInteger(minor) &&
+    minor >= 0 &&
+    typeof currency === "string"
+    ? { minor, currency }
+    : null;
+}
+
 const nonEmpty = (said: string | null): string | null => {
   const text = said?.trim() ?? "";
   return text.length === 0 ? null : text;

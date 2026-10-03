@@ -1,15 +1,31 @@
 import { toProviderToolName } from "@showzy/ai";
-import { PRICE_LIST_NAME_MAX } from "@showzy/pricing/contract";
+import {
+  DEFAULT_PRICE_CURRENCY,
+  PRICE_LIST_NAME_MAX,
+  REMOVE_PRICE_LIST_ENTRIES_MAX_ITEMS,
+  SET_PRICE_LIST_ENTRIES_MAX_ITEMS,
+} from "@showzy/pricing/contract";
+import type { ShoParam } from "@showzy/sho-protocol";
 
-import type { ShoActionPlanners } from "./kit.js";
+import {
+  shoIsRef,
+  shoRefused,
+  SHO_UUID,
+  type ShoActionPlanners,
+  type ShoPlanFallbackReason,
+} from "./kit.js";
 import {
   shoCreatedName,
+  shoIdFrom,
   shoIdOnly,
+  shoMoneyOf,
   shoRenamedName,
   shoSpokenText,
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
+  type ShoWriteFields,
+  type ShoWriteMapped,
   type ShoWriteParamMapper,
   type ShoWritePlan,
   type ShoWritePlans,
@@ -28,6 +44,10 @@ export const SHO_SET_DEFAULT_PRICE_LIST = "pricing.setDefaultPriceList";
 export const SHO_CLEAR_DEFAULT_PRICE_LIST = "pricing.clearDefaultPriceList";
 
 export const SHO_DELETE_PRICE_LIST = "pricing.deletePriceList";
+
+export const SHO_SET_PRICE_LIST_ENTRIES = "pricing.setPriceListEntries";
+
+export const SHO_REMOVE_PRICE_LIST_ENTRIES = "pricing.removePriceListEntries";
 
 export const SHO_DEFAULT_PRICE_LIST_CLEARED_REPLY =
   "Прайс-лист за замовчуванням знято.";
@@ -64,6 +84,81 @@ const onPriceList = (
   required: ["price_list"],
   notes: FOCUS_PRICE_LIST_NOTES,
 });
+
+function productLines(
+  param: ShoParam,
+  max: number,
+): readonly ShoWriteFields[] | ShoPlanFallbackReason {
+  const said: readonly unknown[] = Array.isArray(param) ? param : [param];
+  if (said.length === 0 || said.length > max) {
+    return "unsupported_param";
+  }
+  const lines: ShoWriteFields[] = [];
+  for (const entry of said) {
+    if (!shoIsRef(entry)) {
+      return "unsupported_param";
+    }
+    const mapped = shoIdFrom(entry, "productId");
+    if (shoRefused(mapped)) {
+      return mapped;
+    }
+    lines.push(mapped);
+  }
+  return lines;
+}
+
+function variantOfLine(param: ShoParam | undefined): ShoWriteMapped {
+  if (param === undefined) {
+    return {};
+  }
+  if (Array.isArray(param) || !("attrs" in param)) {
+    return "unsupported_param";
+  }
+  if (param.status === "none" || param.status === "unspecified") {
+    return {};
+  }
+  const id = param.id;
+  return param.status === "resolved" &&
+    typeof id === "string" &&
+    SHO_UUID.test(id)
+    ? { variantId: id }
+    : "unsupported_param";
+}
+
+function priceOfLine(param: ShoParam | undefined): ShoWriteMapped {
+  if (param === undefined) {
+    return {};
+  }
+  const money = shoMoneyOf(param);
+  return money === null || money.currency !== DEFAULT_PRICE_CURRENCY
+    ? "unsupported_param"
+    : { priceMinor: String(money.minor), currency: DEFAULT_PRICE_CURRENCY };
+}
+
+const entriesFromProducts =
+  (max: number, priced: boolean): ShoWriteParamMapper =>
+  (param, command) => {
+    const lines = productLines(param, max);
+    if (shoRefused(lines)) {
+      return lines;
+    }
+    const variant = variantOfLine(command.params["variant"]);
+    if (shoRefused(variant)) {
+      return variant;
+    }
+    const price = priced ? priceOfLine(command.params["price"]) : {};
+    if (shoRefused(price)) {
+      return price;
+    }
+    if (lines.length > 1 && Object.hasOwn(variant, "variantId")) {
+      return "unsupported_param";
+    }
+    return {
+      entries: lines.map((line) => ({ ...line, ...variant, ...price })),
+    };
+  };
+
+const mappedWithTheProduct: ShoWriteParamMapper = () => ({});
 
 const SHO_PRICING_WRITES: ShoWritePlans = {
   [SHO_CREATE_PRICE_LIST]: {
@@ -107,6 +202,29 @@ const SHO_PRICING_WRITES: ShoWritePlans = {
     "Прайс-лист видалено.",
     "id",
   ),
+  [SHO_SET_PRICE_LIST_ENTRIES]: {
+    toolName: toProviderToolName(SHO_SET_PRICE_LIST_ENTRIES),
+    reply: "Ціни в прайс-листі оновлено.",
+    params: {
+      price_list: shoIdOnly("priceListId"),
+      product: entriesFromProducts(SET_PRICE_LIST_ENTRIES_MAX_ITEMS, true),
+      variant: mappedWithTheProduct,
+      price: mappedWithTheProduct,
+    },
+    required: ["price_list", "product", "price"],
+    notes: FOCUS_PRICE_LIST_NOTES,
+  },
+  [SHO_REMOVE_PRICE_LIST_ENTRIES]: {
+    toolName: toProviderToolName(SHO_REMOVE_PRICE_LIST_ENTRIES),
+    reply: "Ціни з прайс-листа прибрано.",
+    params: {
+      price_list: shoIdOnly("priceListId"),
+      product: entriesFromProducts(REMOVE_PRICE_LIST_ENTRIES_MAX_ITEMS, false),
+      variant: mappedWithTheProduct,
+    },
+    required: ["price_list", "product"],
+    notes: FOCUS_PRICE_LIST_NOTES,
+  },
   [SHO_CLEAR_DEFAULT_PRICE_LIST]: {
     toolName: toProviderToolName(SHO_SET_DEFAULT_PRICE_LIST),
     reply: SHO_DEFAULT_PRICE_LIST_CLEARED_REPLY,

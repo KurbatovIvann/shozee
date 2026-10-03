@@ -1,5 +1,4 @@
 import { toProviderToolName } from "@showzy/ai";
-import type { ShoParam } from "@showzy/sho-protocol";
 import {
   DEFAULT_PRODUCT_CURRENCY,
   PRODUCT_NAME_MAX,
@@ -9,6 +8,7 @@ import type { ShoActionPlanners } from "./kit.js";
 import {
   shoCreatedName,
   shoIdOnly,
+  shoMoneyOf,
   shoRenamedName,
   shoWriteActions,
   shoWritePlanners,
@@ -41,36 +41,8 @@ const UPDATE_NOTES: Readonly<Record<string, string>> = {
   read_as_update: SHO_READ_AS_PRODUCT_UPDATE_NOTE,
 };
 
-interface ShoMoney {
-  readonly minor: number;
-  readonly currency: string;
-}
-
-const moneyOf = (param: ShoParam): ShoMoney | null => {
-  if (Array.isArray(param) || !("value" in param)) {
-    return null;
-  }
-  const value: unknown = param.value;
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("minor" in value) ||
-    !("currency" in value)
-  ) {
-    return null;
-  }
-  const minor: unknown = value.minor;
-  const currency: unknown = value.currency;
-  return typeof minor === "number" &&
-    Number.isSafeInteger(minor) &&
-    minor >= 0 &&
-    typeof currency === "string"
-    ? { minor, currency }
-    : null;
-};
-
 const basePrice: ShoWriteParamMapper = (param) => {
-  const money = moneyOf(param);
+  const money = shoMoneyOf(param);
   return money === null || money.currency !== DEFAULT_PRODUCT_CURRENCY
     ? "unsupported_param"
     : {

@@ -299,6 +299,22 @@ registry is injected into `createAssistantRuntime`; this package never imports
   all falls back. That null is the plan's `constants` — a field the write kit
   merges into the input after the mapped params, refusing a constant a mapper
   already wrote — so there is one planner path and no second plan shape.
+  SHO-858 adds the entry writes to the same table:
+  `pricing.setPriceListEntries` and `pricing.removePriceListEntries` plan the
+  resolved or focus-held `price_list` as `priceListId` and the command's
+  `product` — one ref, or the list of refs the SHO-851 guard walks — as the
+  action's `entries`, one line per product. A line binds only to a uuid the
+  parse resolved or the focus holds, because neither action takes a query to
+  raise a picker from; a `variant` binds only as a resolved uuid, and one
+  variant over several lines is `unsupported_param`, since the parse pins it
+  to one product. The price is the Шо money value, never its text: the parsed
+  `{ minor, currency }` becomes `priceMinor` plus `currency` together
+  (money.md), half the pair or a currency the list cannot store is
+  `unsupported_param`, and every line of one command carries the one price
+  said. An unresolvable or invalid line refuses the whole command — the
+  action writes the batch or nothing, so no plan may drop a line the staff
+  member said. The catalogue notes one entry per command, which is what the
+  gold parses carry; the list shape is the protocol's own `ShoRef[]`.
   `SHO_PRICING_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
   config default stays empty.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
