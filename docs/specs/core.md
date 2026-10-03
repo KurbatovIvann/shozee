@@ -57,7 +57,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `errors` | `string[]` of `VALIDATION` \| `NOT_FOUND` \| `CONFLICT` | Domain codes this action may let escape `executeAction`. Empty is a real answer. `INTERNAL` and pipeline codes are not declarable. Enforced from observed `invokeAction` throws; a caller's set must include every code declared by its `ctx.call` / `ctx.callAtomic` callees |
 | `atomicCalls` / `atomicCallers` | action-name arrays | ADR-0021 allowlist edges; empty unless this action is a root caller/internal atomic callee |
 | `audit` | boolean | §8. Mandatory `true` for `risk: write`/`high` |
-| `auditTarget` | server fn, conditional | Required when `audit: true`; derives `{ type, id }` from validated input/output/context |
+| `auditTarget` | server fn, conditional | Required when `audit: true`; derives `{ type, id }` from validated input/output/context and the handler-resolved id (§8) |
 | `auditSnapshot` | optional server fn | Returns explicitly redacted safe JSON; hash-only is the default. **Required** on `share` writes (redacted certificate identity; never the raw token) |
 | `timeout` | ms | Whole-pipeline deadline, shared with nested `ctx.call`s; DB statement timeout and abort signal enforce it |
 | `rateLimit` | optional `{ limit, windowSec, scope }` | Defaults per principal (§10) |
@@ -742,6 +742,16 @@ by default (hash-only); it is populated only when the action binds an
   concurrent executions cannot collide (first used by `doc-signing`
   `complete`). A typed core accessor may replace this if a third module
   needs it.
+- **Handler-resolved target:** a write that resolves a human reference
+  (order number, document number) to a record only inside the execution
+  transaction records that id with `ctx.auditTarget(id)`, so a failure
+  after resolution (CONFLICT, a later guard) is attributed to the record
+  the action acted on instead of the declared fallback. Set once per
+  invocation — a second call is `CoreInvariantError` — and scoped to the
+  invocation, so a nested callee records its own. The id reaches the
+  action's `auditTarget` callback as `resolvedId`: that callback stays the
+  only place a row's target is derived, and a failure before resolution
+  keeps the fallback (`unknown`).
 - **Audited reads** run in a database read-only transaction to preserve
   the `risk: read` write-prevention guarantee; the audit row is written in a
   separate short transaction after the read-only transaction commits. This is
@@ -1018,6 +1028,7 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-10-03 | §2/§8: `ctx.auditTarget(id)` — a handler hands the id it resolved from a human reference to its `auditTarget` callback as `resolvedId`, set once per invocation | Reviewer on SHO-853/SHO-869: `sources: ["output","input"]` cannot reach a resolved id, so a by-number write failing before output audited `unknown` (blueprint §2.1(4)) | SHO-867 |
 | 2026-10-03 | §5/§7: `confirmationOnly: true` request meta — replay stays, resume is dropped, the gate always issues a fresh challenge and the handler is unreachable | Reviewer on SHO-824: omitting `confirmationChallengeId` means "no token", not "do not run", so re-summarizing a carried attempt could execute it | SHO-839 |
 | 2026-10-02 | §7: `ActionPreviewEnv` carries `caller` — `userId` and `can(permission)` over the §3 resolved staff permission set; non-staff human modes hold no company permission | Guardians on SHO-751/SHO-790: a card could only guess what the caller may see (role defaults), and an own-scope account preview had no caller to scope its reads by | SHO-814 |
 | 2026-10-02 | §2: the contract check fails an AI-exposed `risk: write`/`high` action that binds no `preview`; the `preview` row records that the callback is now required, not merely allowed | ADR-0050: the assistant must show the server's card before every write, so the binding belongs to the registry rather than each module's taste | SHO-754 |

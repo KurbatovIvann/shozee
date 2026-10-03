@@ -18,7 +18,7 @@ const completeAuditTarget = holderAuditTarget({
   type: "order",
   field: "orderId",
   fallback: "unknown",
-  sources: ["output", "input"],
+  sources: ["output", "resolved", "input"],
 });
 
 export const completeOrder = implementAction(completeOrderContract, {
@@ -40,6 +40,7 @@ export const completeOrder = implementAction(completeOrderContract, {
     if (row === undefined) {
       throw new NotFoundError();
     }
+    ctx.auditTarget(orderId);
     if (row.status === "done") {
       throw new ConflictError("Order is already completed.");
     }

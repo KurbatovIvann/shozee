@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   ConfirmationRequiredError,
+  ConflictError,
   ValidationError,
 } from "@showzy/core/errors";
 import {
@@ -9,6 +10,7 @@ import {
   kitIdentities,
   type TestKit,
 } from "@showzy/core/testing";
+import { auditLog } from "@showzy/db";
 import { products } from "@showzy/db/schema/catalog";
 import { companyCustomers } from "@showzy/db/schema/customers";
 import { orderItems, orders } from "@showzy/db/schema/orders";
@@ -17,6 +19,7 @@ import {
   EntityLookupAmbiguousError,
   EntityLookupUnmatchedError,
 } from "@showzy/module-kit/entity-lookup";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { cancelOrder } from "./cancel.js";
@@ -39,6 +42,7 @@ const fixtures = {
   siblingTwo: randomUUID(),
   foreign: randomUUID(),
   itemSpoken: randomUUID(),
+  auditConflict: randomUUID(),
 };
 
 const SPOKEN_NUMBER = "KA-131";
@@ -175,6 +179,14 @@ beforeAll(async () => {
         status: "new",
       }),
     ),
+    orderRow({
+      id: fixtures.auditConflict,
+      companyId: companyA,
+      orderNumber: "KA-205",
+      customerId: fixtures.customerA,
+      customerNameSnapshot: CUSTOMER_NAME,
+      status: "confirmed",
+    }),
     orderRow({
       id: fixtures.foreign,
       companyId: companyB,
@@ -323,5 +335,82 @@ describe("the preview card resolves the same reference", () => {
         `Підтвердити замовлення ${SPOKEN_NUMBER}: ${CUSTOMER_NAME}`,
       );
     }
+  });
+});
+
+describe("a write that fails after resolution audits the order it named (SHO-867)", () => {
+  async function auditRow(requestId: string) {
+    const rows = await kit.db.runtime.db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.requestId, requestId));
+    expect(rows).toHaveLength(1);
+    return rows[0];
+  }
+
+  it("records the resolved order id when the number names an already confirmed order", async () => {
+    const requestId = randomUUID();
+    expect(
+      await rejection(() =>
+        kit.invoke(
+          confirmOrder,
+          { orderNumber: "205" },
+          {},
+          { request: { requestId } },
+        ),
+      ),
+    ).toBeInstanceOf(ConflictError);
+
+    expect(await auditRow(requestId)).toMatchObject({
+      action: "orders.confirm",
+      companyId: kitIdentities.companies.a,
+      targetType: "order",
+      targetId: fixtures.auditConflict,
+      outcome: "CONFLICT",
+    });
+  });
+
+  it("leaves the target unknown when the number names no order", async () => {
+    const requestId = randomUUID();
+    await rejection(() =>
+      kit.invoke(
+        confirmOrder,
+        { orderNumber: "777" },
+        {},
+        { request: { requestId } },
+      ),
+    );
+
+    expect((await auditRow(requestId))?.targetId).toBe("unknown");
+  });
+
+  it("records the same id for the by-id conflict, as before", async () => {
+    const requestId = randomUUID();
+    expect(
+      await rejection(() =>
+        kit.invoke(
+          confirmOrder,
+          { orderId: fixtures.auditConflict },
+          {},
+          { request: { requestId } },
+        ),
+      ),
+    ).toBeInstanceOf(ConflictError);
+
+    expect((await auditRow(requestId))?.targetId).toBe(fixtures.auditConflict);
+  });
+
+  it("never records company A's order id for company B's number", async () => {
+    const requestId = randomUUID();
+    await rejection(() =>
+      kit.invoke(confirmOrder, { orderNumber: SPOKEN_NUMBER }, asCompanyB, {
+        request: { requestId },
+      }),
+    );
+
+    const row = await auditRow(requestId);
+    expect(row?.companyId).toBe(kitIdentities.companies.b);
+    expect(row?.targetId).toBe("unknown");
+    expect(row?.targetId).not.toBe(fixtures.spoken);
   });
 });

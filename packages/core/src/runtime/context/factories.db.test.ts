@@ -139,6 +139,9 @@ function runtimeFor<TDb>(
     callAtomic: () => {
       throw new Error("fixture contexts cannot call atomically");
     },
+    auditTarget: () => {
+      throw new Error("fixture contexts cannot record an audit target");
+    },
   };
 }
 

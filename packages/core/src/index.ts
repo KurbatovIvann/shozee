@@ -231,6 +231,7 @@ export type {
   BaseCtx,
   CompanyRole,
   ConsumerCtx,
+  CtxAuditTarget,
   CtxCall,
   CtxCallAtomic,
   CtxEmit,

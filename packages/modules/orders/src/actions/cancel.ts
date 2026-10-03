@@ -18,7 +18,7 @@ const cancelAuditTarget = holderAuditTarget({
   type: "order",
   field: "orderId",
   fallback: "unknown",
-  sources: ["output", "input"],
+  sources: ["output", "resolved", "input"],
 });
 
 export const cancelOrder = implementAction(cancelOrderContract, {
@@ -40,6 +40,7 @@ export const cancelOrder = implementAction(cancelOrderContract, {
     if (row === undefined) {
       throw new NotFoundError();
     }
+    ctx.auditTarget(orderId);
     if (row.status === "canceled") {
       throw new ConflictError("Order is already canceled.");
     }
