@@ -31,6 +31,7 @@ import {
   shoMayReadCard,
   type AssistantChatWindowWithTurn,
 } from "@showzy/assistant-runtime";
+import type { AssistantChatSendReceipt } from "@showzy/validation/assistant-chat";
 import type { Context } from "hono";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -140,7 +141,7 @@ export const assistantKitChatBodySchema = z.strictObject({
  * `openPause` inside it is the open question, so there is no separate `pause`
  * field to keep consistent with it either.
  */
-export interface AssistantKitTurnOk {
+export interface AssistantKitTurnOk extends AssistantChatSendReceipt {
   readonly status: "ok";
   readonly window: AssistantChatWindowWithTurn;
 }
@@ -150,7 +151,7 @@ export interface AssistantKitTurnOk {
  * worker writes into, so a client renders the thread correctly without knowing
  * anything about the queue.
  */
-export interface AssistantKitTurnAccepted {
+export interface AssistantKitTurnAccepted extends AssistantChatSendReceipt {
   readonly status: "accepted";
   readonly window: AssistantChatWindowWithTurn;
 }
@@ -182,11 +183,20 @@ export async function handleAssistantKitChat(
     clientIp: c.get("clientIp"),
   });
   const scope = { conversationId: body.conversationId, bind: caller.bind };
+  const chatUserMessageId = assistantTurnMessageId(
+    { kind: "chat", commandId: body.commandId },
+    "user",
+  );
+  const answerUserMessageId = assistantTurnMessageId(
+    { kind: "answer", commandId: body.commandId },
+    "user",
+  );
   const accepted = async (): Promise<Response> =>
     json(
       202,
       {
         status: "accepted",
+        userMessageId: chatUserMessageId,
         window: await readAssistantChatWindow(kit, turns, scope),
       },
       requestId,
@@ -205,6 +215,7 @@ export async function handleAssistantKitChat(
       200,
       {
         status: "ok",
+        userMessageId: answerUserMessageId,
         window: await readAssistantChatWindow(kit, turns, scope),
       },
       requestId,
@@ -273,10 +284,7 @@ export async function handleAssistantKitChat(
     }
     const asked = await appendChatText(kit, scope, {
       role: "user",
-      messageId: assistantTurnMessageId(
-        { kind: "answer", commandId: body.commandId },
-        "user",
-      ),
+      messageId: answerUserMessageId,
       text: body.text,
     });
     if (asked !== "ok") {
@@ -300,6 +308,7 @@ export async function handleAssistantKitChat(
         200,
         {
           status: "abandoned",
+          userMessageId: answerUserMessageId,
           window: await readAssistantChatWindow(kit, turns, scope),
         },
         requestId,
@@ -477,5 +486,5 @@ export async function handleAssistantKitMessages(
     before === undefined ? {} : { before },
   );
 
-  return json(200, { status: "ok", window }, requestId);
+  return json(200, { status: "ok", userMessageId: null, window }, requestId);
 }

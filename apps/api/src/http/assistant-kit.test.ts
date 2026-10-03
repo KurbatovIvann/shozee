@@ -595,6 +595,7 @@ type KitBody = {
   readonly status?: string;
   readonly reason?: string;
   readonly code?: string;
+  readonly userMessageId?: string | null;
   readonly window?: {
     readonly messages: readonly {
       readonly role: string;
@@ -682,6 +683,35 @@ describe("POST /assistant/kit/chat", () => {
     expect(history.saved).toEqual([
       [{ role: "user", content: "покажи замовлення" }],
     ]);
+  });
+
+  it("names the message it stored, and names the same one on a replay", async () => {
+    const { app, kit, bind } = harness();
+
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    const stored = window.messages[0]?.messageId;
+    expect(stored).toBeDefined();
+    expect(((await first.json()) as KitBody).userMessageId).toBe(stored);
+    expect(((await retry.json()) as KitBody).userMessageId).toBe(stored);
+  });
+
+  it("names no message when the send stored none", async () => {
+    const { app } = harness();
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("перший"));
+
+    const refused = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...chatBody("другий"),
+      commandId: "77777777-7777-4777-8777-777777777777",
+    });
+
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as KitBody).userMessageId).toBeUndefined();
   });
 
   it("does not accept a client-supplied transcript", async () => {

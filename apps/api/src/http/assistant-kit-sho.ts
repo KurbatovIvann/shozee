@@ -257,6 +257,7 @@ export async function shoChatTurn(
       200,
       {
         status: "ok",
+        userMessageId: stored.turn.userMessageId,
         window: await readAssistantChatWindow(env.kit, env.turns, env.scope),
       },
       env.requestId,

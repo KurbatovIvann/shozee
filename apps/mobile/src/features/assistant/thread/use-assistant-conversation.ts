@@ -84,7 +84,7 @@ export type AssistantTenantEpochRef = { current: number };
  * is nothing to restore and nothing to report on this one (SHO-552).
  */
 export type AssistantSendOutcome =
-  | { readonly kind: "sent" }
+  | { readonly kind: "sent"; readonly messageId: string | null }
   | { readonly kind: "refused"; readonly failure: AssistantKitFailure }
   | { readonly kind: "unknown"; readonly failure: AssistantKitFailure }
   | { readonly kind: "superseded" };
@@ -93,6 +93,7 @@ export type AssistantSendOutcome =
 type RunResult = {
   readonly failure: AssistantKitFailure | null;
   readonly current: boolean;
+  readonly userMessageId: string | null;
 };
 
 export interface UseAssistantConversation {
@@ -351,6 +352,7 @@ export function useAssistantConversation(args: {
         return Promise.resolve<RunResult>({
           failure: { kind: "not_sent" },
           current: true,
+          userMessageId: null,
         });
       }
       const epoch = epochRef.current;
@@ -367,7 +369,11 @@ export function useAssistantConversation(args: {
       return perform(call, conversationId)
         .then((outcome): RunResult => {
           if (!current()) {
-            return { failure: outcome.failure, current: false };
+            return {
+              failure: outcome.failure,
+              current: false,
+              userMessageId: outcome.userMessageId,
+            };
           }
           const incoming = outcome.window;
           if (incoming !== null) {
@@ -382,14 +388,22 @@ export function useAssistantConversation(args: {
             }
           }
           setFailure(outcome.failure);
-          return { failure: outcome.failure, current: true };
+          return {
+            failure: outcome.failure,
+            current: true,
+            userMessageId: outcome.userMessageId,
+          };
         })
         .catch((): RunResult => {
           const still = current();
           if (still) {
             setFailure({ kind: "unreachable" });
           }
-          return { failure: { kind: "unreachable" }, current: still };
+          return {
+            failure: { kind: "unreachable" },
+            current: still,
+            userMessageId: null,
+          };
         })
         .finally(() => {
           // Unlatch only if this is still the request in flight. Whether its
@@ -561,7 +575,7 @@ export function useAssistantConversation(args: {
           text: command.text,
           answering: command.answering,
         }),
-      ).then(({ failure, current }): AssistantSendOutcome => {
+      ).then(({ failure, current, userMessageId }): AssistantSendOutcome => {
         // Settled whether or not anyone is still looking: the token is about
         // the attempt, which the server has decided, not about the screen.
         settleCommand(key, failure);
@@ -580,7 +594,7 @@ export function useAssistantConversation(args: {
           return { kind: "superseded" };
         }
         if (failure === null) {
-          return { kind: "sent" };
+          return { kind: "sent", messageId: userMessageId };
         }
         return draftReturns(failure.kind)
           ? { kind: "refused", failure }

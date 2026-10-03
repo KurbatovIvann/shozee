@@ -35,6 +35,7 @@ import {
   assistantCloseTrace,
   assistantRejectedTrace,
   assistantTurnEarnedCard,
+  assistantTurnMessageId,
   readAssistantChatWindow,
   type AssistantKitFor,
   type AssistantTracePart,
@@ -214,6 +215,7 @@ export async function handleAssistantKitAbandon(
     200,
     {
       status: "abandoned",
+      userMessageId: null,
       window: await readAssistantChatWindow(kit, turns, scope),
     },
     requestId,
@@ -245,6 +247,13 @@ export async function handleAssistantKitAnswer(
   });
   const scope = { conversationId: body.conversationId, bind: caller.bind };
   const windowNow = () => readAssistantChatWindow(kit, turns, scope);
+  const userMessageId =
+    given.askedText === undefined
+      ? null
+      : assistantTurnMessageId(
+          { kind: "answer", commandId: body.commandId },
+          "user",
+        );
 
   // Before the claim, not after. The claim is exactly-once by design, so a
   // retry that reached it would be told `gone` — the answer *did* take, and the
@@ -265,7 +274,11 @@ export async function handleAssistantKitAnswer(
   // queued, and a client waiting for this turn's `turn.finished` would wait for
   // an event that is never coming (ADR-0039: `202` means stored and queued).
   if (!(await takeCommand(runtime, command))) {
-    return json(200, { status: "ok", window: await windowNow() }, requestId);
+    return json(
+      200,
+      { status: "ok", userMessageId, window: await windowNow() },
+      requestId,
+    );
   }
 
   const claimed = await kit.claim({
@@ -404,7 +417,11 @@ export async function handleAssistantKitAnswer(
       return json(500, { error: { code: "INTERNAL" } }, requestId);
     }
 
-    return json(200, { status: "ok", window: await windowNow() }, requestId);
+    return json(
+      200,
+      { status: "ok", userMessageId: null, window: await windowNow() },
+      requestId,
+    );
   }
 
   if (resolvedOutcome.kind === "error") {
@@ -506,7 +523,7 @@ export async function handleAssistantKitAnswer(
 
   return json(
     202,
-    { status: "accepted", window: await windowNow() },
+    { status: "accepted", userMessageId, window: await windowNow() },
     requestId,
   );
 }

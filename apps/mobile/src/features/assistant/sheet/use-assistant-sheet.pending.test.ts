@@ -32,7 +32,10 @@ function openChoice(revision: number): AssistantInteraction {
 
 const answered: unknown[] = [];
 const sentTexts: string[] = [];
-let sendOutcome: AssistantSendOutcome = { kind: "sent" };
+let sendOutcome: AssistantSendOutcome = {
+  kind: "sent",
+  messageId: "message-1",
+};
 let settleAnswer: (() => void) | null = null;
 let interaction: AssistantInteraction | null = openChoice(2);
 
@@ -176,7 +179,7 @@ async function settleInFlight(): Promise<void> {
 beforeEach(() => {
   answered.length = 0;
   sentTexts.length = 0;
-  sendOutcome = { kind: "sent" };
+  sendOutcome = { kind: "sent", messageId: "message-1" };
   settleAnswer = null;
   interaction = openChoice(2);
 });

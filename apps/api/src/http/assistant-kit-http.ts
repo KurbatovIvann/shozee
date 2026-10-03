@@ -27,6 +27,7 @@ import type {
 import type { AssistantChatWindowWithTurn } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { CoreInvariantError } from "@showzy/core/errors";
+import type { AssistantChatSendReceipt } from "@showzy/validation/assistant-chat";
 import type { Context } from "hono";
 
 import { REQUEST_ID_HEADER } from "./request-id.js";
@@ -243,11 +244,14 @@ export interface AssistantKitRuntime extends Omit<AssistantRuntime, "forTurn"> {
  * conversation the request never got to read.
  */
 export type AssistantKitResponse =
-  | { readonly status: "ok"; readonly window: AssistantChatWindowWithTurn }
-  | {
+  | (AssistantChatSendReceipt & {
+      readonly status: "ok";
+      readonly window: AssistantChatWindowWithTurn;
+    })
+  | (AssistantChatSendReceipt & {
       readonly status: "accepted";
       readonly window: AssistantChatWindowWithTurn;
-    }
+    })
   | {
       readonly status: "interaction_open";
       readonly window: AssistantChatWindowWithTurn;
@@ -268,10 +272,10 @@ export type AssistantKitResponse =
       readonly message: string;
       readonly window: AssistantChatWindowWithTurn;
     }
-  | {
+  | (AssistantChatSendReceipt & {
       readonly status: "abandoned";
       readonly window: AssistantChatWindowWithTurn;
-    }
+    })
   | {
       readonly status: "answer_in_flight";
       readonly window: AssistantChatWindowWithTurn;

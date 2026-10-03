@@ -252,6 +252,19 @@ export function parseAssistantChatWindow(
   return { ...envelope.data, messages };
 }
 
+export const assistantChatSendReceiptSchema = z.object({
+  userMessageId: z.uuid().nullable(),
+});
+
+export type AssistantChatSendReceipt = z.output<
+  typeof assistantChatSendReceiptSchema
+>;
+
+export function parseAssistantChatUserMessageId(value: unknown): string | null {
+  const parsed = assistantChatSendReceiptSchema.safeParse(value);
+  return parsed.success ? parsed.data.userMessageId : null;
+}
+
 /**
  * Where a window came from, which decides how it joins what a client holds.
  *
