@@ -12,6 +12,7 @@ import {
   type ShoFocusEntry,
   type ShoPrevious,
   type ShoRecordType,
+  type ShoRef,
 } from "@showzy/sho-protocol";
 import { z } from "zod";
 
@@ -43,6 +44,9 @@ const FOCUS_PARAM_TYPES: Readonly<Record<string, ShoRecordType>> = {
   price_list: "price_list",
   counterparty: "counterparty",
 };
+
+const focusKey = (type: ShoRecordType, id: string): string =>
+  `${type}\u0000${id}`;
 
 type Json = Readonly<Record<string, unknown>>;
 
@@ -158,14 +162,55 @@ export function shoTurnRecords(
   return [...ran, ...namedIn(command)].slice(0, SHO_MOST_FOCUS);
 }
 
+interface Referred {
+  readonly path: string;
+  readonly ref: ShoRef;
+}
+
+function refsInto(path: string, value: unknown, into: Referred[]): void {
+  if (shoIsRef(value)) {
+    into.push({ path, ref: value });
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      refsInto(path, entry, into);
+    }
+    return;
+  }
+  if (!isJson(value)) {
+    return;
+  }
+  for (const [key, field] of Object.entries(value)) {
+    refsInto(key, field, into);
+  }
+}
+
+function shoCommandRefs(command: ShoCommand): readonly Referred[] {
+  const refs: Referred[] = [];
+  for (const [path, param] of Object.entries(command.params)) {
+    refsInto(path, param, refs);
+  }
+  return refs;
+}
+
 export function shoFocusHolds(
   command: ShoCommand,
   focus: readonly ShoFocusEntry[],
 ): boolean {
-  const held = new Set(focus.map((entry) => entry.id));
-  for (const param of Object.values(command.params)) {
-    const id = shoIsRef(param) && param.status === "context" ? param.id : null;
-    if (typeof id === "string" && id.length > 0 && !held.has(id)) {
+  const heldAs = new Set(focus.map((entry) => focusKey(entry.type, entry.id)));
+  const heldIds = new Set(focus.map((entry) => entry.id));
+  for (const { path, ref } of shoCommandRefs(command)) {
+    const id = ref.id;
+    if (ref.status !== "context" || typeof id !== "string" || id.length === 0) {
+      continue;
+    }
+    const expected = FOCUS_PARAM_TYPES[path];
+    const holds =
+      expected === undefined
+        ? heldIds.has(id)
+        : heldAs.has(focusKey(expected, id));
+    if (!holds) {
       return false;
     }
   }
@@ -286,7 +331,7 @@ export function shoFocusFrom(
     const earlier =
       log.sessionId === sessionId ? {} : { earlier: true as const };
     for (const record of records) {
-      const key = `${record.type}\u0000${record.id}`;
+      const key = focusKey(record.type, record.id);
       if (held.has(key)) {
         continue;
       }

@@ -21,7 +21,10 @@ import {
 } from "./sho-engine.js";
 import type { ShoContextBuild } from "./sho-context.js";
 import type { ShoContextSource } from "./sho-context-source.js";
+import { shoOrderWriteParse } from "./sho-planners/__tests__/order-write-parses.js";
 import type { ShoPlan } from "./sho-turn.js";
+
+type Json = Record<string, unknown>;
 
 const MEMBER = {
   verifiedCompanyId: "11111111-1111-4111-8111-111111111111",
@@ -358,5 +361,102 @@ describe("what createShoEngine asks Шо", () => {
         focus: [],
       }),
     ).resolves.toEqual({ ...CALL, command: COMMAND });
+  });
+
+  const CONFIDENT = { action: 0.99, margin: 0.8, certainty: 0.9, spans: 0.9 };
+
+  const parseOf = (caseId: string): Json =>
+    JSON.parse(JSON.stringify(shoOrderWriteParse(caseId))) as Json;
+
+  const commandOf = (caseId: string, params?: Json): ShoCommand =>
+    shoCommandSchema.parse({
+      ...parseOf(caseId),
+      confidence: CONFIDENT,
+      ...(params === undefined ? {} : { params }),
+    });
+
+  function createWithProduct(product: Json): ShoCommand {
+    const params = parseOf("d92-focus-update-as-create")["params"] as Json;
+    const items = params["items"] as readonly Json[];
+    return commandOf("d92-focus-update-as-create", {
+      ...params,
+      items: [{ ...(items[0] ?? {}), product }],
+    });
+  }
+
+  const BOUGHT_FOR = {
+    type: "customer" as const,
+    id: "new-orest",
+    name: "Орест Ярема",
+    how: "created" as const,
+    turns: 0,
+  };
+
+  const SHOWN_PRODUCT = {
+    type: "product" as const,
+    id: "p-cable",
+    name: "Кабель USB-C",
+    how: "shown" as const,
+    turns: 1,
+  };
+
+  const inLine = (id: string): Json => ({
+    text: "такий самий",
+    status: "context",
+    id,
+    name: "Кабель USB-C",
+    focus: 0,
+  });
+
+  it("refuses an id inside a line no entry of the focus it sent holds", async () => {
+    await expect(
+      engineOver(createWithProduct(inLine("p-other")))(MEMBER).plan({
+        text: "і відразу замовлення йому на три такі самі",
+        now: new Date("2026-10-02T09:00:00.000Z"),
+        focus: [BOUGHT_FOR, SHOWN_PRODUCT],
+      }),
+    ).resolves.toEqual({ kind: "fallback", reason: "unresolved_reference" });
+  });
+
+  it("plans an id inside a line the focus it sent holds", async () => {
+    await expect(
+      engineOver(createWithProduct(inLine("p-cable")))(MEMBER).plan({
+        text: "і відразу замовлення йому на три такі самі",
+        now: new Date("2026-10-02T09:00:00.000Z"),
+        focus: [BOUGHT_FOR, SHOWN_PRODUCT],
+      }),
+    ).resolves.toMatchObject({ kind: "call" });
+  });
+
+  const CONFIRM_FOCUSED = commandOf("d88-object-order");
+
+  const focusedAs = (type: "customer" | "order") => [
+    {
+      type,
+      id: "o-7001",
+      name: "Остап Гнатюк",
+      how: "shown" as const,
+      turns: 0,
+    },
+  ];
+
+  it("refuses a focus entry of another type in a param that expects an order", async () => {
+    await expect(
+      engineOver(CONFIRM_FOCUSED)(MEMBER).plan({
+        text: "підтверди його",
+        now: new Date("2026-10-02T09:00:00.000Z"),
+        focus: focusedAs("customer"),
+      }),
+    ).resolves.toEqual({ kind: "fallback", reason: "unresolved_reference" });
+  });
+
+  it("plans the same id when the focus holds it as an order", async () => {
+    await expect(
+      engineOver(CONFIRM_FOCUSED)(MEMBER).plan({
+        text: "підтверди його",
+        now: new Date("2026-10-02T09:00:00.000Z"),
+        focus: focusedAs("order"),
+      }),
+    ).resolves.toMatchObject({ kind: "call" });
   });
 });
