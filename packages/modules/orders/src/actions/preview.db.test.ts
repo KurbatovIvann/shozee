@@ -16,11 +16,13 @@ import { cancelOrder } from "./cancel.js";
 import { completeOrder } from "./complete.js";
 import { confirmOrder } from "./confirm.js";
 import { createOrder } from "./create.js";
+import { getOrder } from "./get.js";
 import { startOrder } from "./start.js";
 
 const FOREIGN_CUSTOMER_NAME = "Богдан Фореіньчук";
 const FOREIGN_PRODUCT_NAME = "Таємний торт";
 const CUSTOMER_NAME = "Олена Коваль";
+const RENAMED_CUSTOMER_NAME = "Олена Шевченко";
 const ORDER_COMMENT = "Доставити до 14:00";
 
 const fixtures = {
@@ -364,6 +366,71 @@ describe("orders preview cards (SHO-750)", () => {
       .from(orders)
       .where(eq(orders.id, blank.orderId));
     expect(blankRows[0]?.comment).toBeNull();
+  });
+
+  it("builds the transition card from the orders.get snapshot (SHO-797)", async () => {
+    const snapshot = await kit.invoke(getOrder, { orderId: fixtures.orderA });
+
+    expect(snapshot.customer).toEqual({
+      nameSnapshot: CUSTOMER_NAME,
+      linkedCustomerId: fixtures.customerA,
+    });
+
+    const preview = await previewCard(() =>
+      kit.invoke(
+        confirmOrder,
+        { orderId: fixtures.orderA },
+        {},
+        previewOptions(),
+      ),
+    );
+
+    expect(preview.title).toBe(
+      `Підтвердити замовлення ${snapshot.orderNumber}: ${snapshot.customer.nameSnapshot}`,
+    );
+    expect(preview.lines.map((line) => line.label)).toEqual([
+      ...snapshot.items.map((item) => item.titleSnapshot),
+      "Разом",
+      "Поточний статус",
+    ]);
+    expect(preview.lines.at(-2)?.value).toBe("518,75 грн");
+    const cardCopy = [
+      preview.title,
+      ...preview.lines.map((line) => line.value),
+      ...(preview.notes ?? []),
+    ].join(" ");
+    expect(cardCopy).not.toContain(snapshot.createdAt);
+    expect(cardCopy).not.toContain("2026");
+  });
+
+  it("keeps the stored name after the customer is renamed (SHO-797)", async () => {
+    await kit.db.runtime.db
+      .update(companyCustomers)
+      .set({ name: RENAMED_CUSTOMER_NAME })
+      .where(eq(companyCustomers.id, fixtures.customerA));
+
+    try {
+      const snapshot = await kit.invoke(getOrder, { orderId: fixtures.orderA });
+      expect(snapshot.customer.nameSnapshot).toBe(CUSTOMER_NAME);
+
+      const preview = await previewCard(() =>
+        kit.invoke(
+          confirmOrder,
+          { orderId: fixtures.orderA },
+          {},
+          previewOptions(),
+        ),
+      );
+      expect(preview.title).toBe(
+        `Підтвердити замовлення KA-7: ${CUSTOMER_NAME}`,
+      );
+      expect(preview.title).not.toContain(RENAMED_CUSTOMER_NAME);
+    } finally {
+      await kit.db.runtime.db
+        .update(companyCustomers)
+        .set({ name: CUSTOMER_NAME })
+        .where(eq(companyCustomers.id, fixtures.customerA));
+    }
   });
 
   it("keeps the foreign customer name out of a transition card refusal", async () => {

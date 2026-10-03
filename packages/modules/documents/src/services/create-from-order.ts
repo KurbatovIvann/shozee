@@ -54,7 +54,6 @@ export const CANCELED_ORDER_MESSAGE =
 
 export interface OrderSnapshot {
   readonly orderId: string;
-  readonly customerId: string | null;
   readonly status: string;
   readonly items: readonly OrderLine[];
 }

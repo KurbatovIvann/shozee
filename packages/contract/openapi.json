@@ -49786,15 +49786,28 @@
                       "type": "string",
                       "minLength": 1
                     },
-                    "customerId": {
-                      "anyOf": [
-                        {
+                    "customer": {
+                      "type": "object",
+                      "properties": {
+                        "nameSnapshot": {
                           "type": "string",
-                          "format": "uuid"
+                          "minLength": 1
                         },
-                        {
-                          "type": "null"
+                        "linkedCustomerId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
+                      },
+                      "required": [
+                        "nameSnapshot",
+                        "linkedCustomerId"
                       ]
                     },
                     "status": {
@@ -50016,7 +50029,7 @@
                   "required": [
                     "orderId",
                     "orderNumber",
-                    "customerId",
+                    "customer",
                     "status",
                     "comment",
                     "totalNetMinor",

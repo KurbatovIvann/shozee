@@ -84,7 +84,7 @@ export function useOrderDetail(orderIdParam: string): OrderDetailModel {
     status: query.status,
     failureKind,
   });
-  const customerId = query.data?.customerId ?? null;
+  const customerId = query.data?.customer.linkedCustomerId ?? null;
   const customerQuery = useQuery(
     customerGetQueryOptions({
       client,

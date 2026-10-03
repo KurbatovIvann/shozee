@@ -14,7 +14,10 @@ import {
 } from "../actions/order-view.contract.js";
 import { parseStatus } from "./parse-status.js";
 
-type StaffDb = Extract<ActionCtx, { principal: "staff" }>["db"];
+type StaffReadDb = Pick<
+  Extract<ActionCtx, { principal: "staff" }>["db"],
+  "select"
+>;
 type OrderView = z.output<typeof orderViewSchema>;
 
 function parseDiscountKind(
@@ -51,7 +54,7 @@ function parsePriceSource(
 }
 
 export async function loadStaffOrder(env: {
-  readonly db: StaffDb;
+  readonly db: StaffReadDb;
   readonly companyId: string;
   readonly orderId: string;
 }): Promise<OrderView> {
@@ -83,7 +86,10 @@ export async function loadStaffOrder(env: {
   return {
     orderId: header.id,
     orderNumber: header.orderNumber,
-    customerId: header.customerId,
+    customer: {
+      nameSnapshot: header.customerNameSnapshot,
+      linkedCustomerId: header.customerId,
+    },
     status: parseStatus(header.status),
     comment: header.comment,
     totalNetMinor: moneyToCanonical(header.totalNetMinor),

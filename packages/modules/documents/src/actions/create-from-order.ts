@@ -82,7 +82,7 @@ export const createFromOrder = implementAction(createFromOrderContract, {
       });
       requireCounterpartyCustomerMatch(
         counterparty.customerId,
-        order.customerId,
+        order.customer.linkedCustomerId,
       );
       return createStaffDocument({
         ctx,
@@ -96,7 +96,7 @@ export const createFromOrder = implementAction(createFromOrderContract, {
       });
     }
 
-    const customerId = requireOrderCustomerId(order.customerId);
+    const customerId = requireOrderCustomerId(order.customer.linkedCustomerId);
     const customer = await ctx.call(getCustomer, { id: customerId });
     return createStaffDocument({
       ctx,
@@ -118,7 +118,7 @@ export const createFromOrder = implementAction(createFromOrderContract, {
     ];
     if (input.counterpartyId === undefined) {
       const customer = await env.call(getCustomer, {
-        id: requireOrderCustomerId(order.customerId),
+        id: requireOrderCustomerId(order.customer.linkedCustomerId),
       });
       lines.push({ label: "Покупець", value: customer.name });
     } else {
@@ -127,7 +127,7 @@ export const createFromOrder = implementAction(createFromOrderContract, {
       });
       requireCounterpartyCustomerMatch(
         counterparty.customerId,
-        order.customerId,
+        order.customer.linkedCustomerId,
       );
       lines.push({ label: "Покупець", value: counterparty.name });
     }
