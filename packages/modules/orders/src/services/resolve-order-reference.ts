@@ -3,6 +3,7 @@ import type { ActionCtx, CtxCall } from "@showzy/core";
 import { CoreInvariantError } from "@showzy/core/errors";
 import { orders } from "@showzy/db/schema/orders";
 import {
+  ENTITY_LOOKUP_OPTIONS_MAX,
   entityLookupRefusal,
   type EntityLookupOption,
 } from "@showzy/module-kit/entity-lookup";
@@ -12,8 +13,6 @@ import { and, asc, eq, like } from "drizzle-orm";
 import type { OrderReferenceInput } from "../actions/order-reference.contract.js";
 
 import { orderNumberLeftPrefixPattern } from "./search-matches.js";
-
-export const ORDER_REFERENCE_CANDIDATES_MAX = 20;
 
 type OrderReferenceDb = Pick<
   Extract<ActionCtx, { principal: "staff" }>["db"],
@@ -46,10 +45,10 @@ async function loadOrderNumberCandidates(env: {
       ),
     )
     .orderBy(asc(orders.orderNumber), asc(orders.id))
-    .limit(ORDER_REFERENCE_CANDIDATES_MAX + 1);
+    .limit(ENTITY_LOOKUP_OPTIONS_MAX + 1);
 }
 
-export async function orderIdFromNumber(env: {
+async function orderIdFromNumber(env: {
   readonly db: OrderReferenceDb;
   readonly companyId: string;
   readonly prefix: string;

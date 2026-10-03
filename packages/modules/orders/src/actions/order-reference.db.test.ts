@@ -13,6 +13,7 @@ import { products } from "@showzy/db/schema/catalog";
 import { companyCustomers } from "@showzy/db/schema/customers";
 import { orderItems, orders } from "@showzy/db/schema/orders";
 import {
+  ENTITY_LOOKUP_OPTIONS_MAX,
   EntityLookupAmbiguousError,
   EntityLookupUnmatchedError,
 } from "@showzy/module-kit/entity-lookup";
@@ -44,6 +45,14 @@ const SPOKEN_NUMBER = "KA-131";
 const SIBLING_ONE_NUMBER = "KA-801";
 const SIBLING_TWO_NUMBER = "KA-802";
 const FOREIGN_NUMBER = "MB-131";
+
+const overCap = Array.from(
+  { length: ENTITY_LOOKUP_OPTIONS_MAX + 1 },
+  (_unused, index) => ({
+    id: randomUUID(),
+    orderNumber: `KA-9${String(index).padStart(3, "0")}`,
+  }),
+);
 
 let kit: TestKit;
 
@@ -156,6 +165,16 @@ beforeAll(async () => {
       customerNameSnapshot: CUSTOMER_NAME,
       status: "new",
     }),
+    ...overCap.map((row) =>
+      orderRow({
+        id: row.id,
+        companyId: companyA,
+        orderNumber: row.orderNumber,
+        customerId: fixtures.customerA,
+        customerNameSnapshot: CUSTOMER_NAME,
+        status: "new",
+      }),
+    ),
     orderRow({
       id: fixtures.foreign,
       companyId: companyB,
@@ -237,6 +256,17 @@ describe("an order number that names no single order never writes", () => {
         { id: fixtures.siblingTwo, label: SIBLING_TWO_NUMBER },
       ]);
       expect(error.optionsTruncated).toBe(false);
+    }
+  });
+
+  it("caps the picker and says so when a number prefixes more than the cap", async () => {
+    const error = await rejection(() =>
+      kit.invoke(confirmOrder, { orderNumber: "9" }),
+    );
+    expect(error).toBeInstanceOf(EntityLookupAmbiguousError);
+    if (error instanceof EntityLookupAmbiguousError) {
+      expect(error.options).toHaveLength(ENTITY_LOOKUP_OPTIONS_MAX);
+      expect(error.optionsTruncated).toBe(true);
     }
   });
 
