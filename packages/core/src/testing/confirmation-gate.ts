@@ -31,7 +31,7 @@ export async function challengeIdFor(
   throw outcome.error;
 }
 
-export async function invokeConfirmedAction<
+export async function confirmedRequest<
   TInput extends z.ZodType,
   TOutput extends z.ZodType,
   TTarget = unknown,
@@ -41,7 +41,7 @@ export async function invokeConfirmedAction<
   input: unknown,
   actor: IsolationActor = {},
   options: InvokeOptions = {},
-): Promise<z.output<TOutput>> {
+): Promise<Partial<PipelineRequestMeta>> {
   const request: Partial<PipelineRequestMeta> = {
     idempotencyKey: randomUUID(),
     ...options.request,
@@ -53,8 +53,23 @@ export async function invokeConfirmedAction<
       request: { ...request, requestId: randomUUID() },
     }),
   );
+  return { ...request, confirmationChallengeId: challengeId };
+}
+
+export async function invokeConfirmedAction<
+  TInput extends z.ZodType,
+  TOutput extends z.ZodType,
+  TTarget = unknown,
+>(
+  kit: TestKit,
+  action: ImplementedAction<TInput, TOutput, TTarget>,
+  input: unknown,
+  actor: IsolationActor = {},
+  options: InvokeOptions = {},
+): Promise<z.output<TOutput>> {
+  const request = await confirmedRequest(kit, action, input, actor, options);
   return await invokeAction(kit, action, input, actor, {
     ...options,
-    request: { ...request, confirmationChallengeId: challengeId },
+    request,
   });
 }

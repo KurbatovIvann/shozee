@@ -29,7 +29,10 @@ import {
 } from "../runtime/events/delivery.js";
 import type { EventSubscription } from "../runtime/events/define-event-handler.js";
 import type { PipelineRequestMeta } from "../runtime/pipeline/types.js";
-import { challengeIdFor, invokeConfirmedAction } from "./confirmation-gate.js";
+import {
+  confirmedRequest,
+  invokeConfirmedAction,
+} from "./confirmation-gate.js";
 import { invokeAction, type IsolationActor, type TestKit } from "./kit.js";
 import type { SuiteAction } from "./suites.js";
 
@@ -182,19 +185,10 @@ async function concurrentRequests(
   if (!c.action.contract.requiresConfirmation) {
     return [base, base];
   }
-  const name = c.action.contract.name;
-  const first = await challengeIdFor(
-    name,
-    invokeAction(kit, c.action, input, c.actor, { request: base }),
-  );
-  const second = await challengeIdFor(
-    name,
-    invokeAction(kit, c.action, input, c.actor, { request: base }),
-  );
-  return [first, second].map((confirmationChallengeId) => ({
-    ...base,
-    confirmationChallengeId,
-  }));
+  const options = { request: base };
+  const first = await confirmedRequest(kit, c.action, input, c.actor, options);
+  const second = await confirmedRequest(kit, c.action, input, c.actor, options);
+  return [first, second];
 }
 
 async function runConcurrentIdempotency(
@@ -273,30 +267,38 @@ async function assertTransactionalEmit(
   kit: TestKit,
   spec: EventSuiteSpec,
 ): Promise<void> {
+  const action = spec.failingEmitAction;
   const requestId = randomUUID();
+  const base = { requestId, idempotencyKey: randomUUID() };
+  const request = action.contract.requiresConfirmation
+    ? await confirmedRequest(kit, action, spec.failingEmitInput, spec.actor, {
+        request: base,
+      })
+    : base;
   try {
-    await invokeThroughGate(
-      kit,
-      spec.failingEmitAction,
-      spec.failingEmitInput,
-      spec.actor,
-      { requestId, idempotencyKey: randomUUID() },
-    );
-  } catch {
+    await invokeAction(kit, action, spec.failingEmitInput, spec.actor, {
+      request,
+    });
+  } catch (error) {
+    if (error instanceof ConfirmationRequiredError) {
+      throw new Error(
+        `"${action.contract.name}" never reached its handler: the confirmation gate refused the confirmed invocation`,
+        { cause: error },
+      );
+    }
     const leftover = await kit.db.runtime.db
       .select({ id: domainEvents.id })
       .from(domainEvents)
       .where(eq(domainEvents.requestId, requestId));
     if (leftover.length > 0) {
       throw new Error(
-        `"${spec.failingEmitAction.contract.name}" rolled back the handler but left outbox rows`,
+        `"${action.contract.name}" rolled back the handler but left outbox rows`,
+        { cause: error },
       );
     }
     return;
   }
-  throw new Error(
-    `"${spec.failingEmitAction.contract.name}" was expected to fail after emit`,
-  );
+  throw new Error(`"${action.contract.name}" was expected to fail after emit`);
 }
 
 async function assertConsumerDedup(

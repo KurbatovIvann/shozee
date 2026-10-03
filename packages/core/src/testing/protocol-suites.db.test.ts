@@ -20,7 +20,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { RateLimitError } from "../errors/index.js";
+import { NotFoundError, RateLimitError } from "../errors/index.js";
 import { createRateLimitHook } from "../runtime/rate-limit/create-rate-limit-hook.js";
 import { createInMemoryRateLimitStore } from "../runtime/rate-limit/token-bucket.js";
 import { invokeConfirmedAction } from "./confirmation-gate.js";
@@ -251,6 +251,21 @@ describe("idempotencySuite drives the confirmation gate", () => {
     expect(() => Object.assign(hooks, { confirmation: undefined })).toThrow(
       TypeError,
     );
+  });
+
+  it("fails eventSuite when a gated failing emit never reaches its handler", async () => {
+    await expect(
+      runEventSuiteCase(kit, {
+        module: "kitFixture",
+        emitAction: protocol.createNote,
+        emitInput: noteInput("gate-guard"),
+        failingEmitAction: isolation.accountConfirmFollow,
+        failingEmitInput: { companyId: randomUUID() },
+        eventName: "kitFixture.noted",
+        subscription: protocol.noteProjector,
+        readProjection: publishedCommentCount,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("replays a completed key without issuing a second card", async () => {
