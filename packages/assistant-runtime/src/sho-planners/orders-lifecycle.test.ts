@@ -160,7 +160,7 @@ describe("«підтверди його» binds to the order the focus holds", (
 describe("a focus-type misread is carried to the card", () => {
   const misread = (): ShoCommand =>
     commandOf(focusedOn(OUR_ORDER), {
-      text: "видали її вже нарешті",
+      text: "а тепер видали її будь ласка",
       action: SHO_CANCEL_ORDER,
       verb: "cancel",
       needs: parseOf("d89-delete-customer")["needs"],
