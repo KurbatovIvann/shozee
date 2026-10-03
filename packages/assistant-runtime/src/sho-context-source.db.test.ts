@@ -15,11 +15,20 @@ import {
   customerGroups,
 } from "@showzy/db/schema/customers";
 import { priceLists } from "@showzy/db/schema/pricing";
-import { shoContextSchema } from "@showzy/sho-protocol";
+import {
+  shoContextSchema,
+  type ShoClient,
+  type ShoContextOutcome,
+  type ShoContextRequest,
+  type ShoModelOutcome,
+  type ShoParseOutcome,
+  type ShoPhrasesOutcome,
+} from "@showzy/sho-protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   createShoContextSource,
+  parseWithShoContext,
   readShoNameIndex,
   SHO_CONTEXT_TTL_MS,
   type ShoContextCaller,
@@ -35,9 +44,9 @@ const fixtures = {
   foreignProduct: randomUUID(),
   customer: randomUUID(),
   foreignCustomer: randomUUID(),
+  counterparty: randomUUID(),
   group: randomUUID(),
   priceList: randomUUID(),
-  counterparty: randomUUID(),
   foreignCounterparty: randomUUID(),
 };
 
@@ -49,10 +58,10 @@ const names = {
   foreignProduct: "Шо Чужа Кава",
   customer: "Шо Оля",
   foreignCustomer: "Шо Чужа Оля",
+  counterparty: "Шо ТОВ Партнер",
   group: "Шо Гурт",
   priceList: "Шо Роздріб",
-  counterparty: "Шо ТОВ Ранок",
-  foreignCounterparty: "Шо ТОВ Чужий Ранок",
+  foreignCounterparty: "Шо ТОВ Чужий Партнер",
 };
 
 const contact = {
@@ -63,13 +72,14 @@ const contact = {
 const requisites = {
   edrpou: "14360570",
   iban: "UA213223130000026007233566001",
-  bankName: "Шо Монобанк",
-  bankMfo: "322313",
-  legalAddress: "вулиця Бджолина 8",
+  legalAddress: "Київ, вул. Хрещатик 1",
+  bankName: "Шо Банк",
+  bankMfo: "305299",
   phone: "+380501000779",
-  email: `sho-counterparty-${fixtures.counterparty}@kit.test`,
-  notes: "Шо платить із затримкою",
+  email: `sho-party-${fixtures.counterparty}@kit.test`,
 };
+
+const neverSent = [...Object.values(contact), ...Object.values(requisites)];
 
 const clerkUserId = randomUUID();
 const deputyUserId = randomUUID();
@@ -94,6 +104,28 @@ const outsider = () => callerOf(kitIdentities.companies.a, outsiderUserId);
 
 const sourceOf = () =>
   createShoContextSource({ pipeline: kit.pipeline, now: () => clock });
+
+const unreachable = {
+  outcome: "fallback",
+  reason: "unreachable",
+  httpStatus: null,
+} as const;
+
+const capturing = (sent: ShoContextRequest[]): ShoClient => ({
+  replicas: ["http://sho"],
+  replicaFor: () => "http://sho",
+  parse: (): Promise<ShoParseOutcome> =>
+    Promise.resolve({ outcome: "context_required" }),
+  putContext: (request): Promise<ShoContextOutcome> => {
+    sent.push(request);
+    return Promise.resolve({ outcome: "stored" });
+  },
+  phrases: (): Promise<ShoPhrasesOutcome> =>
+    Promise.resolve({ outcome: "ok", value: [] }),
+  model: (): Promise<ShoModelOutcome> => Promise.resolve(unreachable),
+  ready: () => Promise.resolve(true),
+  health: () => Promise.resolve(true),
+});
 
 beforeAll(async () => {
   kit = await createTestKit();
@@ -138,19 +170,11 @@ beforeAll(async () => {
     },
   ]);
 
-  await kit.db.runtime.db.insert(customerGroups).values([
-    {
-      id: fixtures.group,
-      companyId: kitIdentities.companies.a,
-      name: names.group,
-      slug: `sho-group-${fixtures.group}`,
-    },
-  ]);
-
   await kit.db.runtime.db.insert(counterparties).values([
     {
       id: fixtures.counterparty,
       companyId: kitIdentities.companies.a,
+      customerId: fixtures.customer,
       name: names.counterparty,
       ...requisites,
     },
@@ -158,6 +182,15 @@ beforeAll(async () => {
       id: fixtures.foreignCounterparty,
       companyId: kitIdentities.companies.b,
       name: names.foreignCounterparty,
+    },
+  ]);
+
+  await kit.db.runtime.db.insert(customerGroups).values([
+    {
+      id: fixtures.group,
+      companyId: kitIdentities.companies.a,
+      name: names.group,
+      slug: `sho-group-${fixtures.group}`,
     },
   ]);
 
@@ -241,20 +274,6 @@ describe("createShoContextSource", () => {
     expect(wire).not.toContain(contact.email);
   });
 
-  it("carries a counterparty as an id and a name, never its requisites", async () => {
-    const built = await sourceOf().current(anna());
-
-    expect(built.context.counterparties).toContainEqual({
-      id: fixtures.counterparty,
-      name: names.counterparty,
-    });
-
-    const wire = JSON.stringify(built.context);
-    for (const identifier of Object.values(requisites)) {
-      expect(wire).not.toContain(identifier);
-    }
-  });
-
   it("never carries another company's counterparties", async () => {
     const source = sourceOf();
     const ours = await source.current(anna());
@@ -271,6 +290,40 @@ describe("createShoContextSource", () => {
       id: fixtures.foreignCounterparty,
       name: names.foreignCounterparty,
     });
+  });
+
+  it("pushes a context with no phone, e-mail, ЄДРПОУ or IBAN", async () => {
+    const sent: ShoContextRequest[] = [];
+
+    const outcome = await parseWithShoContext(
+      capturing(sent),
+      sourceOf(),
+      anna(),
+      {
+        text: "додай замовлення для Олі",
+        now: { year: 2026, month: 10, day: 3, hour: 9, minute: 15 },
+        focus: [],
+        deadlineMs: 900,
+        debug: false,
+      },
+    );
+
+    expect(outcome).toEqual({ outcome: "context_required" });
+    const pushed = sent[0]?.context;
+    expect(pushed?.customers).toContainEqual({
+      id: fixtures.customer,
+      name: names.customer,
+    });
+    expect(pushed?.counterparties).toContainEqual({
+      id: fixtures.counterparty,
+      name: names.counterparty,
+    });
+    expect(shoContextSchema.parse(pushed)).toEqual(pushed);
+
+    const wire = JSON.stringify(sent);
+    for (const secret of neverSent) {
+      expect(wire, secret).not.toContain(secret);
+    }
   });
 
   it("never carries one company's names into another company's key", async () => {
