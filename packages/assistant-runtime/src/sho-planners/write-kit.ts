@@ -40,6 +40,13 @@ export function shoSpanText(param: ShoParam): string | null {
     : nonEmpty(param.text);
 }
 
+export function shoTypedText(param: ShoParam): string | null {
+  if (Array.isArray(param) || !("value" in param)) {
+    return null;
+  }
+  return typeof param.value === "string" ? nonEmpty(param.value) : null;
+}
+
 export function shoSpokenText(param: ShoParam): string | null {
   if (Array.isArray(param)) {
     return null;
