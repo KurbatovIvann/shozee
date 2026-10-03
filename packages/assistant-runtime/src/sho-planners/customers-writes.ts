@@ -9,12 +9,7 @@ import {
   GROUP_NAME_MAX,
 } from "@showzy/validation/customers";
 
-import {
-  shoIsRef,
-  shoRefLocator,
-  shoRefused,
-  type ShoActionPlanners,
-} from "./kit.js";
+import { shoIsRef, type ShoActionPlanners } from "./kit.js";
 import {
   shoIdFrom,
   shoIdOnly,
@@ -23,7 +18,6 @@ import {
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
-  type ShoWriteMapped,
   type ShoWriteParamMapper,
   type ShoWritePlan,
   type ShoWritePlans,
