@@ -167,6 +167,18 @@ describe("catalog preview cards", () => {
     ]);
   });
 
+  it("shows no name line when the product update names no name", async () => {
+    const preview = await previewOf(updateProduct, {
+      productId: fixtures.productA,
+      basePriceMinor: "18000",
+      currency: "UAH",
+    });
+    expect(preview.title).toBe("Змінити товар: Кава Арабіка");
+    expect(preview.lines).toEqual([
+      { label: "Базова ціна", value: "150,00 грн → 180,00 грн" },
+    ]);
+  });
+
   it("names the parent product on the catalog.createVariant card", async () => {
     const preview = await previewOf(createVariant, {
       productId: fixtures.productA,

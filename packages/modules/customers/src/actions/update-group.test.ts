@@ -80,6 +80,21 @@ describe("customers.updateGroup contract", () => {
     ).toBeNull();
   });
 
+  it("omits the name to keep it and refuses to clear it with null", () => {
+    expect(
+      updateGroupInputSchema.safeParse({
+        id: validUpdate.id,
+        description: "оптовики",
+      }),
+    ).toMatchObject({ success: true });
+    expect(
+      updateGroupInputSchema.safeParse({ id: validUpdate.id }).success,
+    ).toBe(true);
+    expect(
+      updateGroupInputSchema.safeParse({ ...validUpdate, name: null }).success,
+    ).toBe(false);
+  });
+
   it("rejects identifier fields — the input is strict and slug is server-only", () => {
     for (const extra of [
       { companyId: "c" },

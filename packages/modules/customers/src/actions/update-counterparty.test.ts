@@ -99,6 +99,22 @@ describe("customers.updateCounterparty contract", () => {
     });
   });
 
+  it("omits the name to keep it and refuses to clear it with null", () => {
+    expect(
+      updateCounterpartyInputSchema.safeParse({
+        id: validUpdate.id,
+        notes: "платить після відвантаження",
+      }),
+    ).toMatchObject({ success: true });
+    expect(
+      updateCounterpartyInputSchema.safeParse({ id: validUpdate.id }).success,
+    ).toBe(true);
+    expect(
+      updateCounterpartyInputSchema.safeParse({ ...validUpdate, name: null })
+        .success,
+    ).toBe(false);
+  });
+
   it("rejects identifier fields — the input is strict", () => {
     for (const extra of [
       { companyId: "c" },

@@ -466,7 +466,7 @@ export function applyWriteSuccess(args: {
     const write = args.write;
     baseline = {
       ...baseline,
-      name: write.input.name,
+      name: write.input.name ?? baseline.name,
       priceMinor: write.input.basePriceMinor,
     };
   } else if (args.write.kind === "createVariant") {

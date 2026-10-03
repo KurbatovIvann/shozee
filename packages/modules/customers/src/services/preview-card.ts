@@ -339,9 +339,16 @@ async function groupLines(
   input: GroupPreviewFields,
   stored: StoredGroup | null,
 ): Promise<ActionPreviewLine[]> {
-  const lines: ActionPreviewLine[] = [
-    changeLine(GROUP_LABELS.name, stored?.name ?? null, input.name),
-  ];
+  const lines: ActionPreviewLine[] =
+    stored === null || input.name !== undefined
+      ? [
+          changeLine(
+            GROUP_LABELS.name,
+            stored?.name ?? null,
+            input.name ?? null,
+          ),
+        ]
+      : [];
   if (stored === null || input.description !== undefined) {
     lines.push(
       changeLine(
@@ -371,9 +378,15 @@ async function counterpartyLines(
 ): Promise<ActionPreviewLine[]> {
   const named = (field: keyof CounterpartyPreviewFields): boolean =>
     stored === null || input[field] !== undefined;
-  const lines: ActionPreviewLine[] = [
-    changeLine(COUNTERPARTY_LABELS.name, stored?.name ?? null, input.name),
-  ];
+  const lines: ActionPreviewLine[] = named("name")
+    ? [
+        changeLine(
+          COUNTERPARTY_LABELS.name,
+          stored?.name ?? null,
+          input.name ?? null,
+        ),
+      ]
+    : [];
   for (const field of COUNTERPARTY_TEXT_FIELDS) {
     if (named(field)) {
       lines.push(

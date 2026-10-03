@@ -356,6 +356,17 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
     ]);
   });
 
+  it("shows no name line when the group update names no name", async () => {
+    const preview = await previewOf(updateGroup, {
+      id: fixtures.groupA,
+      description: "Новий опис",
+    });
+    expect(preview.title).toBe("Змінити групу клієнтів: Оптовики");
+    expect(preview.lines).toEqual([
+      { label: "Опис", value: "Старий опис → Новий опис" },
+    ]);
+  });
+
   it("counts the active members the group delete card loses", async () => {
     const empty = await previewOf(deleteGroup, { id: fixtures.groupDeleted });
     expect(empty.title).toBe("Видалити групу клієнтів: Застаріла");
@@ -401,6 +412,20 @@ describe("customers preview cards (ADR-0050, core.md §7)", () => {
         value: "UA111111111111111111111111111 → UA222222222222222222222222222",
       },
       { label: "Клієнт", value: "Анна Коваль → очистити" },
+    ]);
+  });
+
+  it("shows no name line when the counterparty update names no name", async () => {
+    const preview = await previewOf(updateCounterparty, {
+      id: fixtures.partyA,
+      iban: "UA333333333333333333333333333",
+    });
+    expect(preview.title).toBe("Змінити контрагента: ТОВ Анна");
+    expect(preview.lines).toEqual([
+      {
+        label: "IBAN",
+        value: "UA111111111111111111111111111 → UA333333333333333333333333333",
+      },
     ]);
   });
 

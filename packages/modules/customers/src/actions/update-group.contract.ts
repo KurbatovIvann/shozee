@@ -9,7 +9,7 @@ import {
 
 export const updateGroupInputSchema = z.strictObject({
   id: z.uuid(),
-  name: groupNameSchema,
+  name: groupNameSchema.optional(),
   description: groupDescriptionSchema.nullable(),
   priceListId: z.uuid().nullable().optional(),
 });
@@ -19,7 +19,7 @@ export const updateGroupOutputSchema = groupViewSchema;
 export const updateGroupContract = defineActionContract({
   name: "customers.updateGroup",
   description:
-    "Update the name, description, and price-list assignment of a customer group in the staff member's active company. The slug stays the previous value. Changes only the fields it names: an omitted description or price list keeps its stored value and an explicit null clears it. A null price list returns the group to inherit the company default. Missing groups and groups that belong to another company fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
+    "Update the name, description, and price-list assignment of a customer group in the staff member's active company. The slug stays the previous value. Changes only the fields it names: an omitted field keeps its stored value and an explicit null clears it. Name is required in the sense that it cannot be cleared: omit it to keep the stored name, and never send null. A null price list returns the group to inherit the company default. Missing groups and groups that belong to another company fail with the same not-found. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second write.",
   principal: "staff",
   transport: "client",
   input: updateGroupInputSchema,
