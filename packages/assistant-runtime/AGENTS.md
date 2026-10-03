@@ -101,6 +101,29 @@ registry is injected into `createAssistantRuntime`; this package never imports
   bundle's intents and every bundle period token against the parser.
   `SHO_READ_ACTIONS` is the list to paste into `SHO_ACTIONS` for dev; the
   config default stays empty.
+- `sho-planners/orders-writes.ts` — the order write planners (SHO-772):
+  `orders.create` onto the `orders_create` façade and `orders.confirm`,
+  `orders.start`, `orders.complete`, `orders.cancel` onto their own action
+  tools, every one `writes: true`, so each plan pauses on the ADR-0050
+  preview and Шо executes nothing itself. A create maps `customer` and each
+  line's product to the façade's id-or-query locator, the line's attrs to
+  `variantQuery` when the variant is unresolved, and the spoken quantity to
+  `quantityMilli` (scale 3, so «5 кіло» is `5000` and `0,5` is `500`); a
+  quantity that is not a whole milli, a `due`, `payment_method` or
+  `discount` the façade cannot take, and a resolved id that is not a uuid
+  are `unsupported_param`, which is the LLM. The lifecycle actions take
+  `orderId` and nothing else, so only an order reference resolved to a uuid
+  plans: the Шо context has no orders list (`RECORD_LISTS`), so today an
+  order is named only by a focus pronoun, which is `conversation_dependent`
+  until focus resolution lands — the planners are ready for that parse, not
+  reachable before it. A non-blocking `read_as_create` need becomes a note
+  on the plan, and `runShoTurn` appends the plan's notes to the preview's
+  own so a misread is visible on the card before the tap.
+  `SHO_WRITE_ACTIONS` joins `SHO_READ_ACTIONS` as the dev list for
+  `SHO_ACTIONS`; the config default stays empty, so no deployment plans a
+  write until someone names it. The fixtures the planner tests run on are
+  verbatim `expect` parses from `packages/sho/test/conformance-v3`, keyed by
+  the conformance case id.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never

@@ -15,11 +15,13 @@ import {
   type ShoActionPlanners,
   type ShoPlanFallbackReason,
 } from "./sho-planners/kit.js";
+import { SHO_WRITE_PLANNERS } from "./sho-planners/orders-writes.js";
 import { SHO_READ_PLANNERS } from "./sho-planners/reads.js";
 
 export {
   shoLocatorFor,
   shoPlanFallback,
+  shoRefLocator,
   SHO_PLAN_FALLBACK_REASONS,
   type ShoActionPlanner,
   type ShoActionPlanners,
@@ -32,7 +34,10 @@ export const SHO_ACTION_CONFIDENCE_FLOOR = 0.95;
 
 export type ShoNeedRoute = "card" | "dialogue";
 
-export const SHO_ACTION_PLANNERS: ShoActionPlanners = SHO_READ_PLANNERS;
+export const SHO_ACTION_PLANNERS: ShoActionPlanners = Object.freeze({
+  ...SHO_READ_PLANNERS,
+  ...SHO_WRITE_PLANNERS,
+});
 
 export interface ShoPlannerDeps {
   readonly actions: readonly string[];

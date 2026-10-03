@@ -8,6 +8,10 @@ import {
   type ToolSet,
 } from "@showzy/assistant-kit";
 import type { ShoFallbackReason } from "@showzy/sho-protocol";
+import {
+  assistantConfirmationPromptSchema,
+  ASSISTANT_PREVIEW_LIST_MAX,
+} from "@showzy/validation/assistant-chat";
 
 import type { ShoPlanFallbackReason } from "./sho-plan.js";
 
@@ -35,6 +39,7 @@ export interface ShoToolCall {
   readonly toolName: string;
   readonly input: Record<string, unknown>;
   readonly reply: string;
+  readonly notes?: readonly string[];
 }
 
 export type ShoPlan =
@@ -98,6 +103,24 @@ export function shoToolCallId(
 
 function failed(reason: ShoTurnFallbackReason): ShoTurnFallback {
   return { kind: "fallback", reason };
+}
+
+function promptWithNotes(prompt: unknown, notes: readonly string[]): unknown {
+  if (notes.length === 0) {
+    return prompt;
+  }
+  const parsed = assistantConfirmationPromptSchema.safeParse(prompt);
+  if (!parsed.success) {
+    return prompt;
+  }
+  const preview = parsed.data.preview;
+  return {
+    ...parsed.data,
+    preview: {
+      ...preview,
+      notes: [...preview.notes, ...notes].slice(0, ASSISTANT_PREVIEW_LIST_MAX),
+    },
+  };
 }
 
 function conversationThrough(
@@ -183,7 +206,7 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
     return {
       kind: "ask",
       interaction: outcome.interaction,
-      prompt: outcome.prompt,
+      prompt: promptWithNotes(outcome.prompt, plan.notes ?? []),
       secret: outcome.secret,
       continuation: {
         messages,

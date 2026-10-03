@@ -1,4 +1,4 @@
-import type { ShoCommand, ShoRef } from "@showzy/sho-protocol";
+import type { ShoCommand, ShoParam, ShoRef } from "@showzy/sho-protocol";
 
 import type { ShoPlan } from "../sho-turn.js";
 
@@ -54,6 +54,13 @@ const byQuery = (value: string): ShoLocatorOutcome =>
     ? refused("unresolved_reference")
     : { kind: "locator", locator: { by: "query", value } };
 
+export const SHO_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function shoIsRef(param: ShoParam): param is ShoRef {
+  return !Array.isArray(param) && "status" in param && !("attrs" in param);
+}
+
 export function shoLocatorFor(ref: ShoRef): ShoLocatorOutcome {
   if (
     ref.focus !== undefined ||
@@ -79,3 +86,22 @@ export function shoLocatorFor(ref: ShoRef): ShoLocatorOutcome {
   }
   return refused("unresolved_reference");
 }
+
+export function shoRefLocator(
+  param: ShoParam,
+): ShoLocator | ShoPlanFallbackReason {
+  if (!shoIsRef(param)) {
+    return "unsupported_param";
+  }
+  const outcome = shoLocatorFor(param);
+  if (outcome.kind === "fallback") {
+    return outcome.reason;
+  }
+  const locator = outcome.locator;
+  return locator.by === "id" && !SHO_UUID.test(locator.id)
+    ? "unsupported_param"
+    : locator;
+}
+
+export const shoRefused = (mapped: unknown): mapped is ShoPlanFallbackReason =>
+  typeof mapped === "string";
