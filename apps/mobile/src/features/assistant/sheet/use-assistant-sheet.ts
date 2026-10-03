@@ -20,7 +20,7 @@ import { apiUrlFromEnv } from "../../../api/config";
 import { useActiveCompany } from "../../../api/query-provider";
 import { useAuthSession } from "../../../auth/session-provider";
 import { assistantCopy } from "../../../i18n/assistant";
-import { detectLocale } from "../../../i18n/locale";
+import { detectLocale, interpolate } from "../../../i18n/locale";
 import {
   clipAssistantKitText,
   type AssistantKitCall,
@@ -32,6 +32,8 @@ import {
 } from "../thread/use-assistant-conversation-id";
 import { assistantChatErrorMessage, bannerKindFor } from "../shared/chat-error";
 import { assistantChoiceAnswerOptionId } from "../shared/choice-answer";
+import { useVoiceComposer } from "../voice/use-voice-composer";
+import type { AssistantComposerVoice } from "./assistant-composer";
 import type { AssistantSheetViewModel } from "./assistant-sheet-view";
 
 function resolveApiUrl(): string | null {
@@ -153,13 +155,19 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     });
   }, [conversation, input]);
 
-  const sendExample = useCallback(
-    (raw: string) => {
+  const sendText = useCallback(
+    (raw: string): Promise<boolean> => {
       const text = clipAssistantKitText(raw);
       if (text.length === 0) {
-        return;
+        return Promise.resolve(false);
       }
-      void conversation.send(text);
+      return conversation.send(text).then((outcome) => {
+        if (outcome.kind !== "refused") {
+          return true;
+        }
+        setInput((current) => (current.length === 0 ? text : current));
+        return false;
+      });
     },
     [conversation],
   );
@@ -214,6 +222,35 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     ? "unavailable"
     : bannerKindFor(conversation.failure);
 
+  const dictation = useVoiceComposer({
+    call,
+    send: sendText,
+    blocked: busy,
+    announcements: {
+      listening: copy.voice.announceListening,
+      done: copy.voice.announceDone,
+    },
+  });
+
+  const voice: AssistantComposerVoice | null = dictation.available
+    ? {
+        mode: dictation.mode,
+        partial: dictation.partial,
+        countdown: dictation.countdown,
+        countdownLabel:
+          dictation.countdown === null
+            ? null
+            : interpolate(copy.voice.remaining, {
+                seconds: String(dictation.remaining),
+              }),
+        canPress: dictation.canPress,
+        copy: copy.voice,
+        onToggle: dictation.toggle,
+        onRetry: dictation.retry,
+        onSettings: dictation.openSettings,
+      }
+    : null;
+
   return {
     ready: call !== null && directory !== null,
     copy,
@@ -221,7 +258,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     input,
     changeInput: setInput,
     send,
-    sendExample,
+    sendExample: (text: string) => void sendText(text),
     answer,
     pendingOptionId,
     dismiss: conversation.dismiss,
@@ -237,5 +274,7 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
       bannerKind === null ? null : assistantChatErrorMessage(bannerKind, copy),
     loadOlder: conversation.loadOlder,
     loadingOlder: conversation.loadingOlder,
+    voice,
+    spokenTexts: dictation.spoken,
   };
 }
