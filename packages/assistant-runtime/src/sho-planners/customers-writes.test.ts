@@ -920,3 +920,61 @@ describe("a Шо counterparty write only ever reaches the preview", () => {
     }).toEqual({ risk: "high", confirms: true });
   });
 });
+
+describe("a counterparty write links the CRM customer the parse resolved", () => {
+  const LINKED = paramsOf("d95-named-update")["customer"];
+
+  it("plans the create with the linked customer as customerId", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d70-edrpou-ok", {
+          params: { ...paramsOf("d70-edrpou-ok"), customer: reId(LINKED) },
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_createCounterparty",
+      reply: "Контрагента створено.",
+      input: {
+        name: "приватбанк",
+        edrpou: "14360570",
+        customerId: COMPANY_IDS["c-honchar"],
+      },
+    });
+  });
+
+  it("plans the update with the linked customer as customerId", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d79-counterparty-rest", {
+          params: {
+            ...(reId(paramsOf("d79-counterparty-rest")) as Json),
+            customer: reId(LINKED),
+          },
+        }),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_updateCounterparty",
+      reply: "Контрагента оновлено.",
+      input: {
+        id: COMPANY_IDS["k-nechyporuk"],
+        phone: "0501112233",
+        customerId: COMPANY_IDS["c-honchar"],
+      },
+    });
+  });
+
+  it("links no customer the catalogue's own id stands for, which is no uuid", () => {
+    expect(
+      planOf(
+        asCompanyRecords("d79-counterparty-rest", {
+          params: {
+            ...(reId(paramsOf("d79-counterparty-rest")) as Json),
+            customer: LINKED,
+          },
+        }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+  });
+});
