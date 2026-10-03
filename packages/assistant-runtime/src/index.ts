@@ -19,6 +19,7 @@ export * from "./assistant-turn-processor.js";
 export * from "./assistant-turn-recovery.js";
 export * from "./assistant-window.js";
 export * from "./events.js";
+export * from "./sho-capture.js";
 export * from "./sho-context.js";
 export * from "./sho-context-source.js";
 export * from "./sho-engine.js";

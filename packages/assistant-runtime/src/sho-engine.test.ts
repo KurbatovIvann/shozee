@@ -106,7 +106,7 @@ describe("createShoEngine", () => {
 
     await expect(
       engine(MEMBER).plan({ text: "покажи клієнтів", now }),
-    ).resolves.toEqual(CALL);
+    ).resolves.toEqual({ plan: CALL, result: RESULT });
     expect(plan).toHaveBeenCalledWith(RESULT, now);
   });
 
@@ -125,7 +125,10 @@ describe("createShoEngine", () => {
 
     await expect(
       engine(MEMBER).plan({ text: "привіт", now: new Date() }),
-    ).resolves.toEqual({ kind: "fallback", reason: "timeout" });
+    ).resolves.toEqual({
+      plan: { kind: "fallback", reason: "timeout" },
+      result: null,
+    });
   });
 
   it("falls back for a member the context reads all deny, rather than refusing the turn", async () => {
@@ -140,7 +143,10 @@ describe("createShoEngine", () => {
 
     await expect(
       engine(MEMBER).plan({ text: "привіт", now: new Date() }),
-    ).resolves.toEqual({ kind: "fallback", reason: "unreadable" });
+    ).resolves.toEqual({
+      plan: { kind: "fallback", reason: "unreadable" },
+      result: null,
+    });
     expect(plan).not.toHaveBeenCalled();
   });
 

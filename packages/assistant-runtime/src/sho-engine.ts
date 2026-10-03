@@ -16,7 +16,7 @@ import {
   type ShoContextSource,
 } from "./sho-context-source.js";
 import { createShoPlanner } from "./sho-plan.js";
-import type { ShoEngine, ShoPlan } from "./sho-turn.js";
+import type { ShoEngine, ShoPlan, ShoPlanned } from "./sho-turn.js";
 
 export interface ShoVerifiedMember {
   readonly verifiedCompanyId: string;
@@ -63,7 +63,7 @@ export function shoNowAt(now: Date): ShoNow {
 
 const fallback = (
   reason: Extract<ShoPlan, { kind: "fallback" }>["reason"],
-): ShoPlan => ({ kind: "fallback", reason });
+): ShoPlanned => ({ plan: { kind: "fallback", reason }, result: null });
 
 export function createShoEngine(deps: ShoEngineDeps): ShoEngineFor {
   const deadlineMs = deps.deadlineMs ?? SHO_DEFAULT_TIMEOUT_MS;
@@ -95,7 +95,8 @@ export function createShoEngine(deps: ShoEngineDeps): ShoEngineFor {
       if (parsed.outcome !== "ok") {
         return fallback("unreadable");
       }
-      return deps.plan(parsed.value.result, request.now);
+      const result = parsed.value.result;
+      return { plan: deps.plan(result, request.now), result };
     },
   });
 }

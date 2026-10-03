@@ -377,6 +377,7 @@ function harness(options?: {
       return options?.tools ?? {};
     },
     resolveAnswer: options?.resolveAnswer ?? OK_RESOLVE,
+    retrainingCompanyIds: [],
     writtenRecordIdField: (action) =>
       WRITTEN_RECORD_ID_FIELDS.get(action) ?? null,
     prompt: () => ({ system: "you are a test" }),

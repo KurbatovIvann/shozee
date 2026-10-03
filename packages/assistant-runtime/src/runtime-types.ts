@@ -168,6 +168,7 @@ export interface AssistantRuntime {
   readonly tools: (context: AssistantToolContext) => Promise<ToolSet>;
   readonly resolveAnswer: ResolveAnswer;
   readonly sho?: ShoEngineFor;
+  readonly retrainingCompanyIds: readonly string[];
   readonly writtenRecordIdField: AssistantWrittenRecordIdField;
   /** Built per turn: the turn context carries the current time. */
   readonly prompt: () => AssistantTurnPrompt;

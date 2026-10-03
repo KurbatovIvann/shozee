@@ -14,6 +14,7 @@ import {
   type AssistantKitFor,
   type ShoEngineFor,
   type ShoPlan,
+  type ShoPlanned,
   type ShoVerifiedMember,
 } from "@showzy/assistant-runtime";
 import {
@@ -45,6 +46,10 @@ import { shoChatTurn } from "./assistant-kit-sho.js";
 const LIST_TOOL = "customers_list_customers";
 const LIST_ACTION = "customers.listCustomers";
 const UPDATE_TOOL = "customers_updateCustomer";
+
+const SHO_RESULT = {
+  text: "покажи клієнтів",
+} as NonNullable<ShoPlanned["result"]>;
 
 const READS_CUSTOMERS: ShoPlan = {
   kind: "call",
@@ -151,7 +156,10 @@ function enginePlanning(
 ): ShoEngineFor {
   return (member) => {
     seen?.(member);
-    return { plan };
+    return {
+      plan: () =>
+        plan().then((planned) => ({ plan: planned, result: SHO_RESULT })),
+    };
   };
 }
 
@@ -602,6 +610,151 @@ describe("a Шо turn that has to ask", () => {
     expect(await paused.peek(scope)).toBeNull();
     expect(recording.released.map((command) => command.commandId)).toEqual([
       commandId,
+    ]);
+  });
+});
+
+describe("Шо retraining data", () => {
+  function retrainingRuntime(companies: readonly string[]): {
+    readonly runtime: AssistantKitRuntime;
+    readonly kept: () => Record<string, unknown>[];
+  } {
+    const base = runtimeWith(
+      kit.pipeline,
+      enginePlanning(() => Promise.resolve(READS_CUSTOMERS)),
+    );
+    const runtime: AssistantKitRuntime = {
+      ...base,
+      retrainingCompanyIds: companies,
+    };
+    const info = vi.spyOn(runtime.logger, "info");
+    info.mockClear();
+    return {
+      runtime,
+      kept: () => {
+        const written: Record<string, unknown>[] = [];
+        for (const call of info.mock.calls) {
+          const first: unknown = call[0];
+          if (
+            typeof first === "object" &&
+            first !== null &&
+            "sho_retraining" in first
+          ) {
+            written.push(first);
+          }
+        }
+        return written;
+      },
+    };
+  }
+
+  it("keeps the transcript and the parse result for a listed company", async () => {
+    const conversationId = await newConversation({
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+    });
+    const { runtime, kept } = retrainingRuntime([kitIdentities.companies.a]);
+
+    const { response, commandId } = await runTurn({
+      caller: anna,
+      conversationId,
+      sho: undefined,
+      runtime,
+    });
+
+    expect(response?.status).toBe(200);
+    const [record] = kept();
+    expect(kept()).toHaveLength(1);
+    expect(record).toMatchObject({
+      sho_retraining: true,
+      company_id: kitIdentities.companies.a,
+      conversation_id: conversationId,
+      command_id: commandId,
+      transcript: "покажи клієнтів",
+      result: SHO_RESULT,
+      fallback_reason: null,
+    });
+    expect(typeof record?.["request_id"]).toBe("string");
+  });
+
+  it("keeps nothing for a company the list does not name", async () => {
+    const conversationId = await newConversation({
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+    });
+    const { runtime, kept } = retrainingRuntime([]);
+
+    const { response } = await runTurn({
+      caller: anna,
+      conversationId,
+      sho: undefined,
+      runtime,
+    });
+
+    expect(response?.status).toBe(200);
+    expect(kept()).toEqual([]);
+  });
+
+  it("keeps only the tenant the turn was verified in, never the other company on the list", async () => {
+    const own = await newConversation({
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+    });
+    const theirs = await newConversation({
+      companyId: kitIdentities.companies.b,
+      userId: kitIdentities.users.boris,
+    });
+    const { runtime, kept } = retrainingRuntime([
+      kitIdentities.companies.a,
+      kitIdentities.companies.b,
+    ]);
+
+    await runTurn({
+      caller: anna,
+      conversationId: own,
+      sho: undefined,
+      runtime,
+    });
+    await runTurn({
+      caller: boris,
+      conversationId: theirs,
+      sho: undefined,
+      runtime,
+    });
+
+    const companies = kept().map((record) => record["company_id"]);
+    expect(companies).toEqual([
+      kitIdentities.companies.a,
+      kitIdentities.companies.b,
+    ]);
+    expect(
+      kept().filter((record) => record["conversation_id"] === own),
+    ).toHaveLength(1);
+  });
+
+  it("keeps no audio: a record carries the transcript and the result and nothing else", async () => {
+    const conversationId = await newConversation({
+      companyId: kitIdentities.companies.a,
+      userId: kitIdentities.users.anna,
+    });
+    const { runtime, kept } = retrainingRuntime([kitIdentities.companies.a]);
+
+    await runTurn({
+      caller: anna,
+      conversationId,
+      sho: undefined,
+      runtime,
+    });
+
+    expect(Object.keys(kept()[0] ?? {}).sort()).toEqual([
+      "command_id",
+      "company_id",
+      "conversation_id",
+      "fallback_reason",
+      "request_id",
+      "result",
+      "sho_retraining",
+      "transcript",
     ]);
   });
 });

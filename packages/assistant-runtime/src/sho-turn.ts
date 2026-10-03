@@ -7,7 +7,7 @@ import {
   type ToolOutcome,
   type ToolSet,
 } from "@showzy/assistant-kit";
-import type { ShoFallbackReason } from "@showzy/sho-protocol";
+import type { ShoFallbackReason, ShoResult } from "@showzy/sho-protocol";
 
 import type { ShoPlanFallbackReason } from "./sho-plan.js";
 
@@ -46,14 +46,20 @@ export interface ShoTurnRequest {
   readonly now: Date;
 }
 
+export interface ShoPlanned {
+  readonly plan: ShoPlan;
+  readonly result: ShoResult | null;
+}
+
 export interface ShoEngine {
-  readonly plan: (request: ShoTurnRequest) => Promise<ShoPlan>;
+  readonly plan: (request: ShoTurnRequest) => Promise<ShoPlanned>;
 }
 
 export interface ShoTurnSettled {
   readonly kind: "settled";
   readonly parts: readonly ChatPart[];
   readonly appended: readonly ModelMessage[];
+  readonly result: ShoResult | null;
 }
 
 export interface ShoTurnAsk {
@@ -63,11 +69,13 @@ export interface ShoTurnAsk {
   readonly secret: unknown;
   readonly continuation: Continuation;
   readonly appended: readonly ModelMessage[];
+  readonly result: ShoResult | null;
 }
 
 export interface ShoTurnFallback {
   readonly kind: "fallback";
   readonly reason: ShoTurnFallbackReason;
+  readonly result: ShoResult | null;
 }
 
 export type ShoTurnOutcome = ShoTurnSettled | ShoTurnAsk | ShoTurnFallback;
@@ -96,8 +104,11 @@ export function shoToolCallId(
   return `${SHO_TOOL_CALL_PREFIX}${String(seq)}-${sendable(toolName)}-${sendable(commandId)}`;
 }
 
-function failed(reason: ShoTurnFallbackReason): ShoTurnFallback {
-  return { kind: "fallback", reason };
+function failed(
+  reason: ShoTurnFallbackReason,
+  result: ShoResult | null,
+): ShoTurnFallback {
+  return { kind: "fallback", reason, result };
 }
 
 function conversationThrough(
@@ -135,30 +146,31 @@ function conversationThrough(
 }
 
 export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
-  let plan: ShoPlan;
+  let planned: ShoPlanned;
   try {
-    plan = await input.engine.plan({ text: input.text, now: input.now });
+    planned = await input.engine.plan({ text: input.text, now: input.now });
   } catch {
-    return failed("engine_failed");
+    return failed("engine_failed", null);
   }
+  const { plan, result } = planned;
   if (plan.kind === "fallback") {
-    return failed(plan.reason);
+    return failed(plan.reason, result);
   }
 
   const toolCallId = shoToolCallId(input.commandId, 1, plan.toolName);
   const sendableId = providerToolCallId(toolCallId);
   if (sendableId.kind !== "ok") {
-    return failed("unsendable_tool_call_id");
+    return failed("unsendable_tool_call_id", result);
   }
 
   let execute: ToolSet[string]["execute"];
   try {
     execute = (await input.tools())[plan.toolName]?.execute;
   } catch {
-    return failed("tools_unreadable");
+    return failed("tools_unreadable", result);
   }
   if (execute === undefined) {
-    return failed("tool_unavailable");
+    return failed("tool_unavailable", result);
   }
 
   let outcome: ToolOutcome;
@@ -168,11 +180,11 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
       messages: [],
     } as never)) as ToolOutcome;
   } catch {
-    return failed("tool_failed");
+    return failed("tool_failed", result);
   }
 
   if (outcome.kind === "error") {
-    return failed("tool_failed");
+    return failed("tool_failed", result);
   }
 
   if (outcome.kind === "pause") {
@@ -190,6 +202,7 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
         pausedToolCall: { id: sendableId.id, name: plan.toolName },
       },
       appended: messages.slice(input.history.length),
+      result,
     };
   }
 
@@ -204,5 +217,6 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
       ...whole.slice(input.history.length),
       { role: "assistant", content: plan.reply },
     ],
+    result,
   };
 }

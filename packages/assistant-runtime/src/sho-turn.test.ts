@@ -7,6 +7,7 @@ import {
   shoToolCallId,
   type ShoEngine,
   type ShoPlan,
+  type ShoPlanned,
   type ShoTurnInput,
 } from "./sho-turn.js";
 
@@ -15,7 +16,7 @@ const COMMAND = "0d1f4b2a-6c3e-4a1d-9f55-7b2c8e1a4d60";
 const TOOL = "customers_list_customers";
 
 const engineOf = (plan: ShoPlan): ShoEngine => ({
-  plan: () => Promise.resolve(plan),
+  plan: () => Promise.resolve({ plan, result: null }),
 });
 
 const calls = (plan: ShoPlan): ShoPlan => plan;
@@ -167,7 +168,11 @@ describe("runShoTurn", () => {
         Promise.resolve({ kind: "ok", result: {} }),
       ),
     );
-    expect(outcome).toEqual({ kind: "fallback", reason: "timeout" });
+    expect(outcome).toEqual({
+      kind: "fallback",
+      reason: "timeout",
+      result: null,
+    });
   });
 
   it("falls back when the engine throws, and never runs a tool", async () => {
@@ -176,7 +181,11 @@ describe("runShoTurn", () => {
       ...turnWith(readPlan, execute as never),
       engine: { plan: () => Promise.reject(new Error("sho is down")) },
     });
-    expect(outcome).toEqual({ kind: "fallback", reason: "engine_failed" });
+    expect(outcome).toEqual({
+      kind: "fallback",
+      reason: "engine_failed",
+      result: null,
+    });
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -185,7 +194,11 @@ describe("runShoTurn", () => {
       ...turnWith(readPlan, () => Promise.resolve({ kind: "ok", result: {} })),
       tools: () => Promise.resolve({} as ToolSet),
     });
-    expect(absent).toEqual({ kind: "fallback", reason: "tool_unavailable" });
+    expect(absent).toEqual({
+      kind: "fallback",
+      reason: "tool_unavailable",
+      result: null,
+    });
 
     const unreadable = await runShoTurn({
       ...turnWith(readPlan, () => Promise.resolve({ kind: "ok", result: {} })),
@@ -194,6 +207,7 @@ describe("runShoTurn", () => {
     expect(unreadable).toEqual({
       kind: "fallback",
       reason: "tools_unreadable",
+      result: null,
     });
   });
 
@@ -207,11 +221,46 @@ describe("runShoTurn", () => {
         }),
       ),
     );
-    expect(refused).toEqual({ kind: "fallback", reason: "tool_failed" });
+    expect(refused).toEqual({
+      kind: "fallback",
+      reason: "tool_failed",
+      result: null,
+    });
 
     const threw = await runShoTurn(
       turnWith(readPlan, () => Promise.reject(new Error("boom"))),
     );
-    expect(threw).toEqual({ kind: "fallback", reason: "tool_failed" });
+    expect(threw).toEqual({
+      kind: "fallback",
+      reason: "tool_failed",
+      result: null,
+    });
+  });
+
+  it("carries the Шо result out, settled or fallen through", async () => {
+    const result = { text: "покажи клієнтів" } as NonNullable<
+      ShoPlanned["result"]
+    >;
+    const engine: ShoEngine = {
+      plan: () => Promise.resolve({ plan: readPlan, result }),
+    };
+
+    const settled = await runShoTurn({
+      ...turnWith(readPlan, () => Promise.resolve({ kind: "ok", result: {} })),
+      engine,
+    });
+    const fell = await runShoTurn({
+      ...turnWith(readPlan, () => Promise.resolve({ kind: "ok", result: {} })),
+      engine: {
+        plan: () =>
+          Promise.resolve({
+            plan: { kind: "fallback", reason: "timeout" },
+            result,
+          }),
+      },
+    });
+
+    expect(settled.result).toBe(result);
+    expect(fell.result).toBe(result);
   });
 });

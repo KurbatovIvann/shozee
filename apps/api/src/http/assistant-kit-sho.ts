@@ -1,6 +1,7 @@
 import type { PauseScope, PublicPause } from "@showzy/assistant-kit";
 import {
   AssistantKitConversationGoneError,
+  captureShoRetraining,
   readAssistantChatWindow,
   runShoTurn,
   shoFreeBudgetHold,
@@ -118,6 +119,15 @@ export async function shoChatTurn(
         requestId: env.requestId,
         ...(env.clientIp === undefined ? {} : { clientIp: env.clientIp }),
       }),
+    });
+    captureShoRetraining(env.runtime.logger, env.runtime.retrainingCompanyIds, {
+      companyId: env.verifiedCompanyId,
+      conversationId: env.scope.conversationId,
+      commandId: env.command.commandId,
+      requestId: env.requestId,
+      text: env.text,
+      result: outcome.result,
+      fallbackReason: outcome.kind === "fallback" ? outcome.reason : null,
     });
     if (outcome.kind === "fallback") {
       env.runtime.logger.info(

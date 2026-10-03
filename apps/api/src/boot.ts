@@ -221,6 +221,7 @@ export async function bootApi(config: ServerConfig): Promise<BootedApi> {
             model: assistantKitModel,
             provider: staffProvider,
             redis,
+            retrainingCompanyIds: config.sho.retrainingCompanyIds,
             ...(shoEngine === undefined ? {} : { sho: shoEngine }),
           }),
         }),

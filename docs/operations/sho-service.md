@@ -102,4 +102,11 @@ the wire carry only the error's class name as `code`, the response is a bare
 - Deploy ordering between `apps/api` and `apps/sho`, model rollout and
   rollback, and warm-up on deploy.
 - The retraining store (ADR-0049/0051: dev and test companies only) lives in
-  `apps/api`, not here; this service stores nothing.
+  `apps/api`, not here; this service stores nothing. It is the process log of
+  `apps/api`: one `sho_retraining` record per Шо turn carrying the transcript
+  and the parse result, written only for the companies named in
+  `ASSISTANT_RETRAINING_COMPANY_IDS` (empty by default, so nothing is kept).
+  There is no dev/test flag on `companies`, so the allowlist is per
+  deployment, not a property of the company: whether real company commands may
+  be kept, and whether a company carries a `data_use` column instead of this
+  env list, is a production policy and the owner's later call (SHO-773).

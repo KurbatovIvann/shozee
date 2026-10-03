@@ -95,6 +95,7 @@ export interface CreateAssistantRuntimeOptions {
   readonly provider: StaffProviderAdapter;
   readonly redis: RedisLike;
   readonly sho?: ShoEngineFor;
+  readonly retrainingCompanyIds?: readonly string[];
 }
 
 function requireImplementation(
@@ -332,6 +333,7 @@ export function createAssistantRuntime(
       logger: options.pipeline.logger,
     }),
     ...(options.sho === undefined ? {} : { sho: options.sho }),
+    retrainingCompanyIds: options.retrainingCompanyIds ?? [],
     writtenRecordIdField: (action) =>
       options.registry.getContract(action)?.writtenRecordIdField ?? null,
 

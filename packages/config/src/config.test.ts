@@ -505,6 +505,29 @@ describe("Шо service configuration (ADR-0051)", () => {
     expect(config.sho.actions).toEqual([]);
   });
 
+  it("stores no retraining data until companies are named", () => {
+    expect(loadServerConfig(validEnv()).sho.retrainingCompanyIds).toEqual([]);
+  });
+
+  it("reads the retraining companies and de-duplicates them", () => {
+    const first = "4c6f1f2e-2f1a-4a3b-9c7d-1b2e3f4a5b6c";
+    const second = "7a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d";
+    const config = loadServerConfig({
+      ...validEnv(),
+      ASSISTANT_RETRAINING_COMPANY_IDS: ` ${first}, ${second} ,${first}`,
+    });
+    expect(config.sho.retrainingCompanyIds).toEqual([first, second]);
+  });
+
+  it("refuses a retraining company that is not a uuid", () => {
+    expect(() =>
+      loadServerConfig({
+        ...validEnv(),
+        ASSISTANT_RETRAINING_COMPANY_IDS: "sho-dev-bakery",
+      }),
+    ).toThrow(ConfigValidationError);
+  });
+
   it("reads the planned action whitelist and de-duplicates it", () => {
     const config = loadServerConfig({
       ...validEnv(),

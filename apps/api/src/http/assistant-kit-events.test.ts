@@ -269,6 +269,7 @@ function harness(options?: {
       model: stubTextModel("Готово."),
       tools: () => Promise.resolve({}),
       resolveAnswer: UNUSED_RESOLVE,
+      retrainingCompanyIds: [],
       writtenRecordIdField: () => null,
       prompt: () => ({ system: "you are a test" }),
     },
