@@ -419,7 +419,7 @@ describe("the escalation handed to the dialogue model", () => {
   it("names the gap and forbids a third card", () => {
     const note = shoEscalationNote(stuck);
     expect(note).toContain("customer");
-    expect(note).toContain("third");
+    expect(note).toContain("втретє");
   });
 
   it("carries the trap kind and no utterance in the log part", () => {
@@ -459,5 +459,80 @@ describe("the escalation handed to the dialogue model", () => {
 
   it("leaves a plain fallback's message exactly as the person sent it", () => {
     expect(fellBack("створи замовлення", []).content).toBe("створи замовлення");
+  });
+});
+
+describe("a turn that finished is no ask and no trap", () => {
+  const readTwice = [
+    ...turn("скільки у Каті замовлень", {
+      command: asksWhichKate,
+      paused: false,
+    }),
+    ...turn("скільки у Каті замовлень", {
+      command: asksWhichKate,
+      paused: false,
+      seq: 2,
+    }),
+  ];
+
+  it("leaves a settled turn's unsettled reference out of the open gaps", () => {
+    expect(shoOpenGaps(readTwice, SESSION)).toEqual([]);
+  });
+
+  it("plans a third identical read instead of escalating on the gap", () => {
+    expect(
+      shoStuckOnRepeatedGap({
+        history: readTwice,
+        sessionId: SESSION,
+        gaps: [{ path: "customer", why: "ambiguous" }],
+      }),
+    ).toBeNull();
+  });
+
+  it("plans a third identical read instead of trapping the text", () => {
+    expect(
+      shoStuckOnRepeatedText({
+        history: readTwice,
+        sessionId: SESSION,
+        text: "скільки у Каті замовлень",
+      }),
+    ).toBeNull();
+  });
+
+  it("stays quiet when the model finished the job the escalation handed it", () => {
+    const history: ModelMessage[] = [
+      fellBack("створи замовлення", [{ path: "customer", why: "missing" }]),
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "llm-1",
+            toolName: ORDERS_CREATE_TOOL_NAME,
+            input: {},
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "llm-1",
+            toolName: ORDERS_CREATE_TOOL_NAME,
+            output: { type: "json", value: { id: KATE } as never },
+          },
+        ],
+      },
+      { role: "assistant", content: "Готово." },
+    ];
+
+    expect(
+      shoStuckOnRepeatedText({
+        history,
+        sessionId: SESSION,
+        text: "створи замовлення",
+      }),
+    ).toBeNull();
   });
 });

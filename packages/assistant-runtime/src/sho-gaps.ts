@@ -12,6 +12,7 @@ import {
   shoCommandRefs,
   shoLoggedTurns,
   shoLogPart,
+  shoResultPaused,
   SHO_LOG_NAMESPACE,
 } from "./sho-focus.js";
 
@@ -122,10 +123,10 @@ export function shoEscalationOf(input: {
 
 export function shoEscalationNote(stuck: ShoStuck): string {
   if (stuck.trap === "repeat-text") {
-    return "[Шо] The staff member just repeated a request that the previous turn did not finish. Do not ask the question that was already asked — take a different route to the same job.";
+    return "[Шо] Людина повторила те саме прохання, якого попередній хід не завершив. Не став те саме запитання — знайди інший шлях до тієї ж роботи.";
   }
   const named = stuck.gaps.map((gap) => gap.path).join(", ");
-  return `[Шо] Already asked twice and still unresolved: ${named}. Do not raise the same card a third time — ask for it in plain words or offer another way to finish the job.`;
+  return `[Шо] Це вже питали двічі, і досі не з'ясовано: ${named}. Не показуй ту саму картку втретє — спитай про це словами або запропонуй інший спосіб завершити роботу.`;
 }
 
 export function shoEscalatedAskedMessage(
@@ -204,8 +205,8 @@ function askedGaps(
   sessionId: string,
 ): readonly Asked[] {
   const asked: Asked[] = [];
-  for (const { log, index } of thisSitting(history, sessionId)) {
-    const gaps = shoGapsOf(log.command);
+  for (const { log, index, paused } of thisSitting(history, sessionId)) {
+    const gaps = paused ? shoGapsOf(log.command) : [];
     if (gaps.length > 0) {
       asked.push({ index, gaps });
     }
@@ -231,6 +232,28 @@ export function shoOpenGaps(
   return askedGaps(history, sessionId)[0]?.gaps ?? [];
 }
 
+function somethingRanAfter(
+  history: readonly ModelMessage[],
+  index: number,
+): boolean {
+  for (let at = index + 1; at < history.length; at += 1) {
+    const message = history[at];
+    if (message === undefined || message.role !== "tool") {
+      continue;
+    }
+    for (const part of message.content) {
+      if (part.type !== "tool-result") {
+        continue;
+      }
+      const output = part.output;
+      if (!shoResultPaused(output.type === "json" ? output.value : undefined)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function sameWords(one: string, other: string): boolean {
   const said = foldNameWords(one);
   const again = foldNameWords(other);
@@ -250,14 +273,14 @@ export function shoStuckOnRepeatedText(input: {
   if (said === null || !sameWords(said.text, input.text)) {
     return null;
   }
-  const since = thisSitting(input.history, input.sessionId).filter(
-    (turn) => turn.index > said.index,
-  );
-  if (since.some((turn) => !turn.paused)) {
+  if (somethingRanAfter(input.history, said.index)) {
     return null;
   }
+  const cardsSince = thisSitting(input.history, input.sessionId).filter(
+    (turn) => turn.index > said.index,
+  );
   const unfinished =
-    since.length > 0 ||
+    cardsSince.length > 0 ||
     (said.escalation !== null && said.escalation.sessionId === input.sessionId);
   return unfinished
     ? {

@@ -276,7 +276,7 @@ function resultIn(
   return undefined;
 }
 
-const stillPaused = (result: unknown): boolean =>
+export const shoResultPaused = (result: unknown): boolean =>
   isJson(result) && result["status"] === "paused";
 
 function recordsOf(
@@ -294,36 +294,30 @@ interface Touched {
   readonly turns: number;
 }
 
-function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
-  const touched: Touched[] = [];
-  let turns = 0;
+function saidCounts(history: readonly ModelMessage[]): readonly number[] {
+  const counts = new Array<number>(history.length + 1).fill(0);
   for (let index = history.length - 1; index >= 0; index -= 1) {
-    const message = history[index];
-    if (message === undefined) {
-      continue;
-    }
-    if (message.role === "user") {
-      turns += 1;
-      continue;
-    }
-    const parsed = shoTurnLogSchema.safeParse(written(message));
-    const ran = calledIn(message);
-    if (!parsed.success || ran === null) {
-      continue;
-    }
-    const result = resultIn(history, index, ran.toolCallId);
-    const paused = stillPaused(result);
-    touched.push({
-      log: parsed.data,
-      turns,
-      records: recordsOf(parsed.data.command, ran.toolName, result, paused),
-    });
+    counts[index] =
+      (counts[index + 1] ?? 0) + (history[index]?.role === "user" ? 1 : 0);
   }
-  return touched;
+  return counts;
+}
+
+function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
+  const counts = saidCounts(history);
+  return shoLoggedTurns(history).map(
+    ({ log, paused, index, toolName, result }) => ({
+      log,
+      turns: counts[index + 1] ?? 0,
+      records: recordsOf(log.command, toolName, result, paused),
+    }),
+  );
 }
 
 export interface ShoLoggedTurn {
   readonly log: ShoTurnLog;
+  readonly toolName: string;
+  readonly result: unknown;
   readonly paused: boolean;
   readonly index: number;
 }
@@ -342,9 +336,12 @@ export function shoLoggedTurns(
     if (ran === null || !parsed.success) {
       continue;
     }
+    const result = resultIn(history, index, ran.toolCallId);
     logged.push({
       log: parsed.data,
-      paused: stillPaused(resultIn(history, index, ran.toolCallId)),
+      toolName: ran.toolName,
+      result,
+      paused: shoResultPaused(result),
       index,
     });
   }
@@ -401,7 +398,7 @@ export function shoOpenCardPrevious(
     const parsed = shoTurnLogSchema.safeParse(written(message));
     if (
       !parsed.success ||
-      !stillPaused(resultIn(history, index, ran.toolCallId))
+      !shoResultPaused(resultIn(history, index, ran.toolCallId))
     ) {
       return undefined;
     }
