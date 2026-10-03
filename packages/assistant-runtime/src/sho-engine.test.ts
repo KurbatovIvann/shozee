@@ -461,6 +461,26 @@ describe("what createShoEngine asks Шо", () => {
     ).resolves.toMatchObject({ kind: "call" });
   });
 
+  it("refuses a held id in a slot that names no record type", async () => {
+    const elsewhere = commandOf("d88-object-order", {
+      period: {
+        text: "його",
+        status: "context",
+        id: "o-7001",
+        name: "№ 7001",
+        focus: 0,
+      },
+    });
+
+    await expect(
+      engineOver(elsewhere)(MEMBER).plan({
+        text: "підтверди його",
+        now: new Date("2026-10-02T09:00:00.000Z"),
+        focus: focusedAs("order"),
+      }),
+    ).resolves.toEqual({ kind: "fallback", reason: "unresolved_reference" });
+  });
+
   const GROUPED = shoCommandSchema.parse({
     ...(JSON.parse(
       JSON.stringify(shoCustomerWriteParse("d88-there-group")),
