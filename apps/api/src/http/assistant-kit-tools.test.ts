@@ -1134,6 +1134,69 @@ describe("an action that needs a person's authorisation", () => {
     expect(JSON.stringify(outcome)).not.toContain(ANOTHER_COMPANY);
   });
 
+  const THIRD_ALSO: ConfirmationAlsoSecret = {
+    actionName: "orders.create",
+    canonicalInput: { customerId: CUSTOMER_A, items: [] },
+    idempotencyKey: "tool:the-turn-that-asked:third",
+    challengeId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    preview: { title: "Створити замовлення: Галина", lines: [], notes: [] },
+    level: "card",
+  };
+
+  it("names on the card both carried actions the re-ask dropped", async () => {
+    const outcome = await answerWith(
+      {
+        runConfirmed: driftsOnFirst,
+        reSummarize: (args) =>
+          args.idempotencyKey === SECOND_ATTEMPT.idempotencyKey
+            ? Promise.resolve({ id: CUSTOMER_A })
+            : Promise.reject(LEAKY_REFUSAL),
+      },
+      [SECOND_ALSO, THIRD_ALSO],
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "pause",
+      prompt: {
+        preview: {
+          title: CARD.title,
+          notes: [
+            `Вже виконано: «${SECOND_ALSO.preview.title}»`,
+            `Більше не можна виконати: «${THIRD_ALSO.preview.title}»`,
+            ...CARD.notes,
+          ],
+        },
+        also: [],
+      },
+      secret: { also: [] },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(ANOTHER_COMPANY);
+  });
+
+  it("leaves the card's own notes alone when nothing was dropped", async () => {
+    const outcome = await answerWith(
+      {
+        runConfirmed: driftsOnFirst,
+        reSummarize: () =>
+          Promise.reject(
+            new AssistantConfirmationRequired(
+              SECOND_ATTEMPT,
+              new ConfirmationRequiredError(SECOND_RESUMMARIZED),
+            ),
+          ),
+      },
+      [SECOND_ALSO],
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "pause",
+      prompt: {
+        preview: CARD,
+        also: [SECOND_RESUMMARIZED.preview],
+      },
+    });
+  });
+
   it("re-asks a carried high-risk action and the whole card turns strong", async () => {
     const outcome = await answerWith(
       {

@@ -18,6 +18,7 @@
  */
 import type { ToolOutcome } from "@showzy/assistant-kit";
 import { CoreError, CoreInvariantError } from "@showzy/core/errors";
+import { ASSISTANT_PREVIEW_TEXT_MAX } from "@showzy/validation/assistant-chat";
 
 import type {
   AssistantInteractionTypes,
@@ -200,11 +201,28 @@ function confirmedAttempts(
   ];
 }
 
+type DroppedOutcome = "done" | "failed";
+
+const DROPPED_NOTE_PREFIX: Record<DroppedOutcome, string> = {
+  done: "Вже виконано",
+  failed: "Більше не можна виконати",
+};
+
+function droppedNote(
+  one: ConfirmationAlsoSecret,
+  outcome: DroppedOutcome,
+): string {
+  return `${DROPPED_NOTE_PREFIX[outcome]}: «${one.preview.title}»`.slice(
+    0,
+    ASSISTANT_PREVIEW_TEXT_MAX,
+  );
+}
+
 function dropCarried(
   deps: ResolveAnswerDeps,
   one: ConfirmationAlsoSecret,
-  fields: Record<string, unknown>,
-): void {
+  fields: { readonly outcome: DroppedOutcome; readonly code?: string },
+): string {
   deps.logger.warn(
     {
       action: one.actionName,
@@ -213,14 +231,21 @@ function dropCarried(
     },
     "carried confirmation left off the re-asked card",
   );
+  return droppedNote(one, fields.outcome);
+}
+
+interface RecarriedAlso {
+  readonly asked: readonly ConfirmationAlsoSecret[];
+  readonly droppedNotes: readonly string[];
 }
 
 async function recarryAlso(
   args: ResolveArgs,
   deps: ResolveAnswerDeps,
   also: readonly ConfirmationAlsoSecret[],
-): Promise<readonly ConfirmationAlsoSecret[]> {
+): Promise<RecarriedAlso> {
   const asked: ConfirmationAlsoSecret[] = [];
+  const droppedNotes: string[] = [];
   for (const one of also) {
     try {
       await deps.reSummarize({
@@ -229,7 +254,7 @@ async function recarryAlso(
         input: one.canonicalInput,
         idempotencyKey: one.idempotencyKey,
       });
-      dropCarried(deps, one, { outcome: "done" });
+      droppedNotes.push(dropCarried(deps, one, { outcome: "done" }));
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         asked.push(confirmationAlso(error));
@@ -239,13 +264,15 @@ async function recarryAlso(
         throw error;
       }
       if (error instanceof CoreError) {
-        dropCarried(deps, one, { outcome: "failed", code: error.code });
+        droppedNotes.push(
+          dropCarried(deps, one, { outcome: "failed", code: error.code }),
+        );
         continue;
       }
       throw error;
     }
   }
-  return asked;
+  return { asked, droppedNotes };
 }
 
 async function resolveConfirmation(
@@ -270,9 +297,11 @@ async function resolveConfirmation(
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         if (done.length === 0) {
+          const recarried = await recarryAlso(args, deps, resolution.also);
           return confirmationPause(
             error,
-            await recarryAlso(args, deps, resolution.also),
+            recarried.asked,
+            recarried.droppedNotes,
           );
         }
         return halted(done, {
