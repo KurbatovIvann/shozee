@@ -6,8 +6,6 @@ import {
 } from "@showzy/ai";
 import type {
   ShoAttr,
-  ShoCommand,
-  ShoNeed,
   ShoOrderItem,
   ShoParam,
   ShoQuantity,
@@ -16,16 +14,23 @@ import type {
 
 import {
   shoIsRef,
-  shoPlanFallback,
   shoRefLocator,
   shoRefused,
   SHO_UUID,
-  type ShoActionPlan,
-  type ShoActionPlanner,
   type ShoActionPlanners,
   type ShoLocator,
   type ShoPlanFallbackReason,
 } from "./kit.js";
+import {
+  shoSpokenText,
+  shoWriteActions,
+  shoWritePlanners,
+  shoWritePlannerParams,
+  type ShoWriteFields as Fields,
+  type ShoWriteMapped as Mapped,
+  type ShoWriteParamMapper,
+  type ShoWritePlans,
+} from "./write-kit.js";
 
 export const SHO_READ_AS_CREATE_NOTE = "Прочитано як нове замовлення";
 
@@ -33,19 +38,7 @@ const QUANTITY_MILLI_SCALE = 1000;
 
 const QUANTITY_MILLI_EPSILON = 1e-6;
 
-type Fields = Record<string, unknown>;
-
-type Mapped = Fields | ShoPlanFallbackReason;
-
 const refused = shoRefused;
-
-function spokenText(param: ShoParam): string | null {
-  if (Array.isArray(param) || !("text" in param)) {
-    return null;
-  }
-  const text = param.text.trim();
-  return text.length === 0 ? null : text;
-}
 
 function uncheckedName(param: ShoParam): ShoLocator | null {
   if (!shoIsRef(param) || param.status !== "unchecked") {
@@ -174,23 +167,14 @@ const createItems = (param: ShoParam): Mapped => {
   return { items };
 };
 
-const createComment = (param: ShoParam): Mapped => {
-  const text = spokenText(param);
+const createComment: ShoWriteParamMapper = (param) => {
+  const text = shoSpokenText(param);
   return text === null
     ? "unsupported_param"
     : { comment: text.slice(0, CREATE_ORDER_COMMENT_MAX) };
 };
 
-type ParamMapper = (param: ShoParam) => Mapped;
-
-interface WritePlan {
-  readonly toolName: string;
-  readonly reply: string;
-  readonly params: Readonly<Record<string, ParamMapper>>;
-  readonly required: readonly string[];
-}
-
-const SHO_ORDER_WRITES: Readonly<Record<string, WritePlan>> = {
+const SHO_ORDER_WRITES: ShoWritePlans = {
   "orders.create": {
     toolName: ORDERS_CREATE_TOOL_NAME,
     reply: "Замовлення створено.",
@@ -200,85 +184,16 @@ const SHO_ORDER_WRITES: Readonly<Record<string, WritePlan>> = {
       comment: createComment,
     },
     required: ["customer", "items"],
+    notes: { read_as_create: SHO_READ_AS_CREATE_NOTE },
   },
 };
 
-export const SHO_WRITE_ACTIONS: readonly string[] = Object.freeze(
-  Object.keys(SHO_ORDER_WRITES),
-);
+export const SHO_WRITE_ACTIONS: readonly string[] =
+  shoWriteActions(SHO_ORDER_WRITES);
 
 export const SHO_WRITE_PLANNER_PARAMS: Readonly<
   Record<string, readonly string[]>
-> = Object.freeze(
-  Object.fromEntries(
-    Object.entries(SHO_ORDER_WRITES).map(([action, write]) => [
-      action,
-      Object.freeze(Object.keys(write.params)),
-    ]),
-  ),
-);
+> = shoWritePlannerParams(SHO_ORDER_WRITES);
 
-function noteOf(need: ShoNeed): string {
-  const span = need.span?.text.trim() ?? "";
-  return span.length === 0
-    ? `${SHO_READ_AS_CREATE_NOTE}.`
-    : `${SHO_READ_AS_CREATE_NOTE}: «${span}».`;
-}
-
-export function shoWriteNotes(command: ShoCommand): readonly string[] {
-  return command.needs
-    .filter((need) => !need.blocking && need.reason === "read_as_create")
-    .map((need) => noteOf(need));
-}
-
-function inputFor(write: WritePlan, command: ShoCommand): Mapped {
-  const input: Fields = {};
-  for (const [name, param] of Object.entries(command.params)) {
-    const mapper = write.params[name];
-    if (mapper === undefined) {
-      return "unsupported_param";
-    }
-    const mapped = mapper(param);
-    if (refused(mapped)) {
-      return mapped;
-    }
-    for (const [field, value] of Object.entries(mapped)) {
-      if (field in input) {
-        return "unsupported_param";
-      }
-      input[field] = value;
-    }
-  }
-  return write.required.every((name) => name in command.params)
-    ? input
-    : "blocking_need";
-}
-
-function plannerFor(write: WritePlan): ShoActionPlanner {
-  return {
-    writes: true,
-    plan: (command): ShoActionPlan => {
-      const input = inputFor(write, command);
-      if (refused(input)) {
-        return shoPlanFallback(input);
-      }
-      const notes = shoWriteNotes(command);
-      return {
-        kind: "call",
-        toolName: write.toolName,
-        input,
-        reply: write.reply,
-        ...(notes.length === 0 ? {} : { notes }),
-      };
-    },
-  };
-}
-
-export const SHO_WRITE_PLANNERS: ShoActionPlanners = Object.freeze(
-  Object.fromEntries(
-    Object.entries(SHO_ORDER_WRITES).map(([action, write]) => [
-      action,
-      plannerFor(write),
-    ]),
-  ),
-);
+export const SHO_WRITE_PLANNERS: ShoActionPlanners =
+  shoWritePlanners(SHO_ORDER_WRITES);

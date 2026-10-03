@@ -136,6 +136,26 @@ registry is injected into `createAssistantRuntime`; this package never imports
   case id; the tests add only what the gold labels never carry — the
   confidence block, and this company's uuids in place of the catalogue's
   demo record ids.
+- `sho-planners/write-kit.ts`, `sho-planners/customers-writes.ts` — the one
+  write-plan machinery every write planner is built from (map each said param
+  through its mapper, no field written twice, the required and `one_of` params
+  the parse must carry, the non-blocking misread needs that become card notes),
+  and the customer write planners (SHO-775): `customers.createCustomer` and
+  `customers.updateCustomer` onto their own action tools, `writes: true`, so
+  both pause on the ADR-0050 preview. The create takes its name from the
+  runtime's nominative (`creates.name`, else `new_name`) and needs a phone or
+  an e-mail, because the action's own refine does; the update takes the id the
+  company-scoped parse resolved and nothing else — a name the list does not
+  know, a bare «клієнту» pointer and a resolved id that is not a uuid are all
+  the LLM, since `customers.updateCustomer` takes no query to raise a picker
+  from. Patch semantics hold (SHO-725): a field Шо did not parse is never
+  sent, so it keeps its stored value. `comment` is the action's `notes` and
+  `group` only a resolved uuid; `price_list` and every other param is
+  `unsupported_param`. A phone or an e-mail is action input only — never a
+  log line and never the focus (D94). The D84 `read_as_update` and D85
+  `read_as_customer_update` needs become the card's notes.
+  `SHO_CUSTOMER_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
+  config default stays empty.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never
