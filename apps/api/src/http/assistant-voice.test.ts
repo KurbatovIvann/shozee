@@ -279,6 +279,24 @@ describe("assistant voice route", () => {
     expect(slots.held.size).toBe(1);
   });
 
+  it("answers a slot-busy handshake with the upgrade the adapter made", async () => {
+    const recognizer = trackingRecognizer();
+    const slots = countingSlots(1);
+    const voice = createAssistantVoiceApp(runtime({ recognizer, slots }));
+
+    const first = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+    const second = await handshake(voice, {
+      [COMPANY_SELECTOR_HEADER]: COMPANY,
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(recognizer.streams).toHaveLength(0);
+    expect(slots.held.size).toBe(1);
+  });
+
   it("closes a refused handshake without touching the recognizer", () => {
     const socket = openSocket(voiceRefusalEvents("RATE_LIMIT_STORE"));
 

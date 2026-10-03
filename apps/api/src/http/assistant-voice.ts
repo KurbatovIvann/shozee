@@ -24,6 +24,7 @@ import { REQUEST_ID_HEADER, resolveRequestId } from "./request-id.js";
 import type { VoiceRecognizer } from "./assistant-voice-chirp.js";
 import {
   admitVoiceSession,
+  VOICE_SESSION_DENIAL_CODE,
   type VoiceSessionRateLimit,
 } from "./assistant-voice-limit.js";
 import {
@@ -31,8 +32,6 @@ import {
   type VoiceSession,
   type VoiceSessionCaller,
 } from "./assistant-voice-session.js";
-
-export const VOICE_SLOT_DENIAL_CODE = "RATE_LIMITED";
 
 export type VoiceUpgrade = (
   c: Context<AssistantKitAppEnv>,
@@ -186,7 +185,19 @@ export function createAssistantVoiceApp(
 
     const streamId = randomUUID();
     if (!(await runtime.slots.acquire(caller.userId, streamId))) {
-      return await upgradeSocket(c, voiceRefusalEvents(VOICE_SLOT_DENIAL_CODE));
+      runtime.logger.info(
+        {
+          request_id: requestId,
+          user_id: caller.userId,
+          company_id: companyId,
+          reason: "no_slot",
+        },
+        "assistant voice refused a caller before opening a recognizer",
+      );
+      return await upgradeSocket(
+        c,
+        voiceRefusalEvents(VOICE_SESSION_DENIAL_CODE.session_limit),
+      );
     }
     const releaseSlot = (): void => {
       runtime.slots.release(caller.userId, streamId).catch((error: unknown) => {

@@ -173,7 +173,9 @@ tool result. Zod validation is necessary but never grants tenant access.
   (`VOICE_SESSIONS_PER_MINUTE_PER_USER`, fail-closed on a store outage)
   after the concurrency slot and before any Chirp recognizer opens. A refused
   handshake accepts the upgrade and closes with `VOICE_CLOSE_CODE.refused`
-  (SHO-852), so a client tells a refusal from a lost network.
+  (SHO-852), so a client tells a refusal from a lost network. The close
+  reason carries the denial code for diagnosis only; clients read the close
+  code alone.
   Requirement, not built: there is no company-wide or global ceiling yet, so
   N staff multiply that bound and tenant Chirp spend is limited per user
   only — the chat USD budget (`AI_DAILY_BUDGET_USD_*`) does not cover voice.
