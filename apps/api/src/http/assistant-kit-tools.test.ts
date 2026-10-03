@@ -39,6 +39,7 @@ import {
   confirmationAlso,
   confirmationPause,
   createResolveAnswer,
+  previewNoting,
   withChosenId,
   choice,
   type AssistantToolLogger,
@@ -55,10 +56,13 @@ import {
   ConflictError,
   CoreInvariantError,
   NotFoundError,
+  TimeoutError,
 } from "@showzy/core/errors";
 import { ENTITY_LOOKUP_OPTIONS_MAX } from "@showzy/module-kit/entity-lookup";
 import {
   ASSISTANT_CHOICE_OPTIONS_MAX,
+  ASSISTANT_PREVIEW_LIST_MAX,
+  ASSISTANT_PREVIEW_TEXT_MAX,
   assistantConfirmationPromptSchema,
 } from "@showzy/validation/assistant-chat";
 import { describe, expect, it } from "vitest";
@@ -1173,6 +1177,57 @@ describe("an action that needs a person's authorisation", () => {
     expect(JSON.stringify(outcome)).not.toContain(ANOTHER_COMPANY);
   });
 
+  it("asks for a retry when a carried action could not be re-checked", async () => {
+    const outcome = await answerWith(
+      {
+        runConfirmed: driftsOnFirst,
+        reSummarize: () => Promise.reject(new TimeoutError()),
+      },
+      [SECOND_ALSO],
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "pause",
+      prompt: {
+        preview: {
+          notes: [
+            `Не вдалося перевірити: «${SECOND_ALSO.preview.title}» — спробуйте ще раз`,
+            ...CARD.notes,
+          ],
+        },
+        also: [],
+      },
+    });
+  });
+
+  it("clips a long carried title so the note still fits the card", async () => {
+    const outcome = await answerWith(
+      {
+        runConfirmed: driftsOnFirst,
+        reSummarize: () => Promise.resolve({ id: CUSTOMER_A }),
+      },
+      [
+        {
+          ...SECOND_ALSO,
+          preview: {
+            title: "я".repeat(ASSISTANT_PREVIEW_TEXT_MAX),
+            lines: [],
+            notes: [],
+          },
+        },
+      ],
+    );
+
+    if (outcome.kind !== "pause") {
+      throw new Error("a drifted confirmation pauses");
+    }
+    const { preview } = assistantConfirmationPromptSchema.parse(outcome.prompt);
+    const note = preview.notes[0] ?? "";
+    expect(note).toHaveLength(ASSISTANT_PREVIEW_TEXT_MAX);
+    expect(note.startsWith("Вже виконано: «")).toBe(true);
+    expect(note.endsWith("»")).toBe(true);
+  });
+
   it("leaves the card's own notes alone when nothing was dropped", async () => {
     const outcome = await answerWith(
       {
@@ -1405,6 +1460,36 @@ describe("an action that needs a person's authorisation", () => {
     });
 
     expect(outcome).toMatchObject({ kind: "error", code: "CONFLICT" });
+  });
+});
+
+describe("a plan's note and a dropped carried entry compose once", () => {
+  const PLAN_NOTE = "Шо: перевірте кількість";
+  const DROPPED_NOTE = "Вже виконано: «Змінити клієнта: Галина»";
+  const OWN_NOTES = Array.from(
+    { length: ASSISTANT_PREVIEW_LIST_MAX },
+    (_, index) => `нотатка ${String(index)}`,
+  );
+
+  it("keeps the added notes first, in order, and within the card's cap", () => {
+    const noted = previewNoting(
+      { title: "Створити замовлення", lines: [], notes: OWN_NOTES },
+      [PLAN_NOTE, DROPPED_NOTE],
+    );
+
+    expect(noted.notes).toHaveLength(ASSISTANT_PREVIEW_LIST_MAX);
+    expect(noted.notes.slice(0, 3)).toEqual([
+      PLAN_NOTE,
+      DROPPED_NOTE,
+      OWN_NOTES[0],
+    ]);
+    expect(noted.notes.at(-1)).toBe(OWN_NOTES[ASSISTANT_PREVIEW_LIST_MAX - 3]);
+  });
+
+  it("leaves the card as it is when there is nothing to add", () => {
+    const preview = { title: "Створити замовлення", lines: [], notes: [] };
+
+    expect(previewNoting(preview, [])).toBe(preview);
   });
 });
 

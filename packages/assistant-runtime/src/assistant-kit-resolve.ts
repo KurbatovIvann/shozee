@@ -33,7 +33,10 @@ import {
   confirmationAlso,
   confirmationPause,
 } from "./assistant-kit-confirmation.js";
-import type { AssistantToolLogger } from "./assistant-kit-tools.js";
+import {
+  handlerRefusedTheWrite,
+  type AssistantToolLogger,
+} from "./assistant-kit-tools.js";
 import type { AssistantToolContext, ResolveAnswer } from "./runtime-types.js";
 
 interface FacadeInput {
@@ -201,37 +204,35 @@ function confirmedAttempts(
   ];
 }
 
-type DroppedOutcome = "done" | "failed";
+type DroppedKind = "done" | "gone" | "unchecked";
 
-const DROPPED_NOTE_PREFIX: Record<DroppedOutcome, string> = {
-  done: "Вже виконано",
-  failed: "Більше не можна виконати",
+const DROPPED_NOTE: Record<DroppedKind, (title: string) => string> = {
+  done: (title) => `Вже виконано: «${title}»`,
+  gone: (title) => `Більше не можна виконати: «${title}»`,
+  unchecked: (title) => `Не вдалося перевірити: «${title}» — спробуйте ще раз`,
 };
 
-function droppedNote(
-  one: ConfirmationAlsoSecret,
-  outcome: DroppedOutcome,
-): string {
-  return `${DROPPED_NOTE_PREFIX[outcome]}: «${one.preview.title}»`.slice(
-    0,
-    ASSISTANT_PREVIEW_TEXT_MAX,
-  );
+function droppedNote(one: ConfirmationAlsoSecret, kind: DroppedKind): string {
+  const write = DROPPED_NOTE[kind];
+  const room = ASSISTANT_PREVIEW_TEXT_MAX - write("").length;
+  return write(one.preview.title.slice(0, room));
 }
 
 function dropCarried(
   deps: ResolveAnswerDeps,
   one: ConfirmationAlsoSecret,
-  fields: { readonly outcome: DroppedOutcome; readonly code?: string },
+  dropped: { readonly kind: DroppedKind; readonly code?: string },
 ): string {
   deps.logger.warn(
     {
       action: one.actionName,
       idempotencyKey: one.idempotencyKey,
-      ...fields,
+      outcome: dropped.kind === "done" ? "done" : "failed",
+      ...(dropped.code === undefined ? {} : { code: dropped.code }),
     },
     "carried confirmation left off the re-asked card",
   );
-  return droppedNote(one, fields.outcome);
+  return droppedNote(one, dropped.kind);
 }
 
 interface RecarriedAlso {
@@ -254,7 +255,7 @@ async function recarryAlso(
         input: one.canonicalInput,
         idempotencyKey: one.idempotencyKey,
       });
-      droppedNotes.push(dropCarried(deps, one, { outcome: "done" }));
+      droppedNotes.push(dropCarried(deps, one, { kind: "done" }));
     } catch (error) {
       if (error instanceof AssistantConfirmationRequired) {
         asked.push(confirmationAlso(error));
@@ -265,7 +266,10 @@ async function recarryAlso(
       }
       if (error instanceof CoreError) {
         droppedNotes.push(
-          dropCarried(deps, one, { outcome: "failed", code: error.code }),
+          dropCarried(deps, one, {
+            kind: handlerRefusedTheWrite(error) ? "gone" : "unchecked",
+            code: error.code,
+          }),
         );
         continue;
       }

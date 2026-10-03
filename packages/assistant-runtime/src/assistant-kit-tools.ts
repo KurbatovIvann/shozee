@@ -51,6 +51,17 @@ export interface AssistantToolLogger {
   warn(fields: Record<string, unknown>, message: string): void;
 }
 
+const HANDLER_REFUSALS: ReadonlySet<string> = new Set([
+  "VALIDATION",
+  "NOT_FOUND",
+  "CONFLICT",
+  "PERMISSION_DENIED",
+]);
+
+export function handlerRefusedTheWrite(error: unknown): boolean {
+  return error instanceof CoreError && HANDLER_REFUSALS.has(error.code);
+}
+
 /**
  * The card this call produced or changed, addressed by the slot its surface
  * fills.

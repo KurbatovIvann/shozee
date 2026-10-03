@@ -123,7 +123,7 @@ export function confirmationAlso(
   };
 }
 
-function previewNoting(
+export function previewNoting(
   preview: AssistantPreview,
   notes: readonly string[],
 ): AssistantPreview {
