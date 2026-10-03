@@ -52,7 +52,9 @@ import {
 import type { AnyActionContract } from "../action-registry.js";
 import {
   createAuditTargetBox,
+  rejectNonHandlerAuditTarget,
   type AuditTargetBox,
+  type NonHandlerPhase,
 } from "../audit/audit-target-box.js";
 import {
   createAccountContext,
@@ -122,6 +124,10 @@ interface RunEnv<TInput extends z.ZodType, TOutput extends z.ZodType, TTarget> {
   readonly signal: AbortSignal;
   readonly now: () => number;
   readonly makeRuntime: <TDb>(db: TDb) => ContextRuntime<TDb>;
+  readonly makeNonHandlerRuntime: <TDb>(
+    db: TDb,
+    phase: NonHandlerPhase,
+  ) => ContextRuntime<TDb>;
 }
 
 /**
@@ -416,6 +422,19 @@ function buildRunEnv<
     path: [contract.name],
   });
 
+  const baseRuntime = <TDb>(
+    db: TDb,
+  ): Omit<ContextRuntime<TDb>, "auditTarget"> => ({
+    db,
+    logger: deps.logger,
+    deadline,
+    signal: options.controller.signal,
+    emit: emitBuffer.emit,
+    enqueue: enqueueBuffer.enqueue,
+    call: ctxCall,
+    callAtomic: ctxCallAtomic,
+  });
+
   const env: RunEnv<TInput, TOutput, TTarget> = {
     deps,
     action: invocation.action,
@@ -427,15 +446,15 @@ function buildRunEnv<
     signal: options.controller.signal,
     now,
     makeRuntime: <TDb>(db: TDb): ContextRuntime<TDb> => ({
-      db,
-      logger: deps.logger,
-      deadline,
-      signal: options.controller.signal,
-      emit: emitBuffer.emit,
-      enqueue: enqueueBuffer.enqueue,
-      call: ctxCall,
-      callAtomic: ctxCallAtomic,
+      ...baseRuntime(db),
       auditTarget: state.auditTarget.record,
+    }),
+    makeNonHandlerRuntime: <TDb>(
+      db: TDb,
+      phase: NonHandlerPhase,
+    ): ContextRuntime<TDb> => ({
+      ...baseRuntime(db),
+      auditTarget: rejectNonHandlerAuditTarget(contract.name, phase),
     }),
   };
   const hookEnv: PipelineHookEnv = {
@@ -1021,6 +1040,7 @@ async function runActionPreview<
         env,
         tx,
         readOnlyPreview,
+        "preview",
       );
       let previewFinished = false;
       const call = createCtxCall({
@@ -1156,7 +1176,10 @@ async function runAuthorizationPreflight<
         async (tx) => {
           const ctx = await createStaffContext({
             request,
-            runtime: env.makeRuntime(createReadTx(tx)),
+            runtime: env.makeNonHandlerRuntime(
+              createReadTx(tx),
+              "authorization preflight",
+            ),
             session: principal.session,
             companySelector: principal.companySelector,
           });
@@ -1170,7 +1193,10 @@ async function runAuthorizationPreflight<
         async (tx) => {
           const ctx = await createCustomerContext({
             request,
-            runtime: env.makeRuntime(createReadTx(tx)),
+            runtime: env.makeNonHandlerRuntime(
+              createReadTx(tx),
+              "authorization preflight",
+            ),
             session: principal.session,
             input: env.input,
             resolveTarget: requireResolver(env),
@@ -1208,7 +1234,10 @@ async function runAuthorizationPreflight<
         async (tx) => {
           const ctx = await createShareContext({
             request,
-            runtime: env.makeRuntime(createReadTx(tx)),
+            runtime: env.makeNonHandlerRuntime(
+              createReadTx(tx),
+              "authorization preflight",
+            ),
             input: env.input,
             resolveTarget: requireResolver(env),
           });
@@ -1242,14 +1271,19 @@ async function constructPrincipalContext<
   env: RunEnv<TInput, TOutput, TTarget>,
   tx: Tx,
   readOnly: boolean = env.contract.risk === "read",
+  phase?: NonHandlerPhase,
 ): Promise<ActionCtx> {
   const { contract, request, principal } = env;
   const capability: ReadTx | Tx = readOnly ? createReadTx(tx) : tx;
+  const makeRuntime = <TDb>(db: TDb): ContextRuntime<TDb> =>
+    phase === undefined
+      ? env.makeRuntime(db)
+      : env.makeNonHandlerRuntime(db, phase);
   switch (principal.mode) {
     case "staff": {
       const ctx = await createStaffContext({
         request,
-        runtime: env.makeRuntime(capability),
+        runtime: makeRuntime(capability),
         session: principal.session,
         companySelector: principal.companySelector,
       });
@@ -1259,7 +1293,7 @@ async function constructPrincipalContext<
     case "customer":
       return await createCustomerContext({
         request,
-        runtime: env.makeRuntime(capability),
+        runtime: makeRuntime(capability),
         session: principal.session,
         input: env.input,
         resolveTarget: requireResolver(env),
@@ -1276,14 +1310,14 @@ async function constructPrincipalContext<
         }
         return await createPublicContext({
           request,
-          runtime: env.makeRuntime<ReadTx>(capability),
+          runtime: makeRuntime<ReadTx>(capability),
           publicScope: "globalProjection",
           grant,
         });
       }
       return await createPublicContext({
         request,
-        runtime: env.makeRuntime<ReadTx>(capability),
+        runtime: makeRuntime<ReadTx>(capability),
         publicScope: "target",
         input: env.input,
         resolveTarget: requireResolver(env),
@@ -1296,30 +1330,30 @@ async function constructPrincipalContext<
             principal.scope,
             {
               request,
-              runtime: env.makeRuntime(capability),
+              runtime: makeRuntime(capability),
               readOnly,
             },
           )
         : createSystemContext(principal.serviceName, principal.scope, {
             request,
-            runtime: env.makeRuntime(capability),
+            runtime: makeRuntime(capability),
           });
     case "consumer":
       return createConsumerContext({
         request,
-        runtime: env.makeRuntime<ReadTx>(capability),
+        runtime: makeRuntime<ReadTx>(capability),
         session: principal.session,
       });
     case "account":
       return createAccountContext({
         request,
-        runtime: env.makeRuntime(capability),
+        runtime: makeRuntime(capability),
         session: principal.session,
       });
     case "share":
       return await createShareContext({
         request,
-        runtime: env.makeRuntime(capability),
+        runtime: makeRuntime(capability),
         input: env.input,
         resolveTarget: requireResolver(env),
       });
