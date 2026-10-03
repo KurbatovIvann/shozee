@@ -70,6 +70,11 @@ const FOCUS_GROUP_NOTES: Readonly<Record<string, string>> = {
   read_as_focus_type: SHO_READ_AS_FOCUS_GROUP_NOTE,
 };
 
+const SET_GROUP_NOTES: Readonly<Record<string, string>> = {
+  ...MISREAD_NOTES,
+  ...FOCUS_GROUP_NOTES,
+};
+
 const clipped = (param: ShoParam, max: number): string | null =>
   shoSpokenText(param)?.slice(0, max) ?? null;
 
@@ -142,7 +147,7 @@ const email = contact("email", CUSTOMER_EMAIL_MAX);
 
 const priceList = idOnly("priceListId");
 
-const onFocusedRecord = (
+const onResolvedRecord = (
   action: string,
   reply: string,
   param: string,
@@ -185,19 +190,19 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
     oneOf: [["rename_to", "phone", "email", "comment", "group"]],
     notes: MISREAD_NOTES,
   },
-  [SHO_ARCHIVE_CUSTOMER]: onFocusedRecord(
+  [SHO_ARCHIVE_CUSTOMER]: onResolvedRecord(
     SHO_ARCHIVE_CUSTOMER,
     "Клієнта заархівовано.",
     "customer",
     FOCUS_CUSTOMER_NOTES,
   ),
-  [SHO_RESTORE_CUSTOMER]: onFocusedRecord(
+  [SHO_RESTORE_CUSTOMER]: onResolvedRecord(
     SHO_RESTORE_CUSTOMER,
     "Клієнта повернуто з архіву.",
     "customer",
     FOCUS_CUSTOMER_NOTES,
   ),
-  [SHO_DELETE_CUSTOMER]: onFocusedRecord(
+  [SHO_DELETE_CUSTOMER]: onResolvedRecord(
     SHO_DELETE_CUSTOMER,
     "Клієнта видалено.",
     "customer",
@@ -211,7 +216,7 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
       group: idOnly("groupId"),
     },
     required: ["customers", "group"],
-    notes: MISREAD_NOTES,
+    notes: SET_GROUP_NOTES,
   },
   [SHO_CREATE_GROUP]: {
     toolName: toProviderToolName(SHO_CREATE_GROUP),
@@ -236,7 +241,7 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
     oneOf: [["rename_to", "description", "price_list"]],
     notes: FOCUS_GROUP_NOTES,
   },
-  [SHO_DELETE_GROUP]: onFocusedRecord(
+  [SHO_DELETE_GROUP]: onResolvedRecord(
     SHO_DELETE_GROUP,
     "Групу видалено.",
     "group",

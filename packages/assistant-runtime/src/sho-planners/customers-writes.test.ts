@@ -622,6 +622,18 @@ describe("customers.setGroup plans one customers.updateCustomer", () => {
     });
   });
 
+  it("notes the focus misread on d88-there-group's «туди», as d89-rename-group's need reads it", () => {
+    expect(
+      notesOf(
+        planOf(
+          asCompanyRecords("d88-there-group", {
+            needs: parseOf("d89-rename-group")["needs"],
+          }),
+        ),
+      ),
+    ).toEqual([`${SHO_READ_AS_FOCUS_GROUP_NOTE}: «її».`]);
+  });
+
   it("sends the d79-group-case batch to the LLM: one card is not one write", () => {
     expect(planOf(verbatim(shoReadParse("d79-group-case")))).toEqual({
       kind: "fallback",
