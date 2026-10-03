@@ -23,6 +23,7 @@ export * from "./sho-context.js";
 export * from "./sho-context-source.js";
 export * from "./sho-engine.js";
 export * from "./sho-plan.js";
+export * from "./sho-planners/orders-writes.js";
 export * from "./sho-planners/reads.js";
 export * from "./sho-turn.js";
 export * from "./runtime-types.js";

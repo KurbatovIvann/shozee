@@ -15,12 +15,15 @@ import {
   type ShoActionPlanners,
   type ShoPlanFallbackReason,
 } from "./sho-planners/kit.js";
+import { SHO_WRITE_PLANNERS } from "./sho-planners/orders-writes.js";
 import { SHO_READ_PLANNERS } from "./sho-planners/reads.js";
 
 export {
   shoLocatorFor,
   shoPlanFallback,
+  shoRefLocator,
   SHO_PLAN_FALLBACK_REASONS,
+  type ShoActionPlan,
   type ShoActionPlanner,
   type ShoActionPlanners,
   type ShoLocator,
@@ -32,7 +35,10 @@ export const SHO_ACTION_CONFIDENCE_FLOOR = 0.95;
 
 export type ShoNeedRoute = "card" | "dialogue";
 
-export const SHO_ACTION_PLANNERS: ShoActionPlanners = SHO_READ_PLANNERS;
+export const SHO_ACTION_PLANNERS: ShoActionPlanners = Object.freeze({
+  ...SHO_READ_PLANNERS,
+  ...SHO_WRITE_PLANNERS,
+});
 
 export interface ShoPlannerDeps {
   readonly actions: readonly string[];
@@ -132,9 +138,13 @@ function planFor(
   if (planner === undefined) {
     return shoPlanFallback("not_whitelisted");
   }
-  return planner.writes === shoWrites(command)
-    ? planner.plan(command, now)
-    : shoPlanFallback("effect_mismatch");
+  if (planner.writes !== shoWrites(command)) {
+    return shoPlanFallback("effect_mismatch");
+  }
+  const planned = planner.plan(command, now);
+  return planned.kind === "call"
+    ? { ...planned, writes: planner.writes }
+    : planned;
 }
 
 export function createShoPlanner(deps: ShoPlannerDeps): ShoPlanner {
