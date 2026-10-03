@@ -288,7 +288,7 @@ function writeOrderStatus(
   }
   return rpcJson({
     orderId,
-    customerId: updated.customerId ?? null,
+    customerId: jsonObject(updated.customer)?.linkedCustomerId ?? null,
     status: nextStatus,
     ...extra,
   });
@@ -761,7 +761,7 @@ function allHandlers(sessionState: SessionState, rpcState: RpcState) {
       const getView = {
         orderId,
         orderNumber,
-        customerId,
+        customer: { nameSnapshot: customerName, linkedCustomerId: customerId },
         status: "new",
         comment: commentRaw.length > 0 ? commentRaw : null,
         totalNetMinor: "0",

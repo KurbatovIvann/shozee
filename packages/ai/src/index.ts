@@ -31,6 +31,11 @@ export {
   type ActionToolExecute,
 } from "./action-tool.js";
 export {
+  CREATE_ORDER_COMMENT_MAX,
+  CREATE_ORDER_MAX_ITEMS,
+  ORDERS_CREATE_QUERY_MAX,
+} from "./tool-facades/orders-create.js";
+export {
   StaffAssistantNotConfiguredError,
   StaffAssistantProviderError,
 } from "./errors.js";
@@ -112,7 +117,9 @@ export {
 export { staffAssistantTurnContextAddendum } from "./turn-context.js";
 export {
   kyivCalendarDate,
-  mapOrdersListPeriod,
+  kyivNamedPeriodRange,
+  KYIV_NAMED_PERIODS,
+  mapOrdersListWholePeriod,
   secondsUntilKyivMidnight,
   staffAssistantClockLines,
   STAFF_ASSISTANT_TIME_ZONE,

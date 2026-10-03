@@ -31,8 +31,10 @@ import {
 import { z } from "zod";
 
 import { moneyWireSchema, quantityMilliWireSchema } from "../wire.contract.js";
-import { listOrderCustomerSchema } from "./list.contract.js";
-import { orderStatusSchema } from "./order-view.contract.js";
+import {
+  orderCustomerSchema,
+  orderStatusSchema,
+} from "./order-view.contract.js";
 
 /** Line ceiling named on the feature card (stricter than catalog facts). */
 export const CREATE_ORDER_MAX_ITEMS = 100;
@@ -144,7 +146,7 @@ export const createOrderInputSchema = z.strictObject({
 export const createOrderOutputSchema = z.strictObject({
   orderId: z.uuid(),
   orderNumber: z.string().min(1),
-  customer: listOrderCustomerSchema,
+  customer: orderCustomerSchema,
   status: orderStatusSchema,
   itemCount: z.number().int().positive(),
   totalNetMinor: moneyWireSchema,

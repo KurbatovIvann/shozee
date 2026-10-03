@@ -35,6 +35,7 @@ const RESULT = { text: "покажи клієнтів" } as ShoResult;
 
 const CALL: ShoPlan = {
   kind: "call",
+  writes: false,
   toolName: "customers_list_customers",
   input: {},
   reply: "Ось клієнти.",

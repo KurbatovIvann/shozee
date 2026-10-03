@@ -75,6 +75,67 @@ registry is injected into `createAssistantRuntime`; this package never imports
   reaches only a planner that declares it, so a mis-parse cannot be planned
   through a read tool; every AI write still pauses on the preview card
   (SHO-749), which is what the SHO-740 wrong-write recordings pin.
+- `sho-planners/kit.ts`, `sho-planners/reads.ts` — the planner kit (fallback
+  reasons, the planner shape, `shoLocatorFor`) and the read planners that
+  `SHO_ACTION_PLANNERS` is (SHO-771): `orders.list`, `orders.count`,
+  `orders.get`, `customers.getCustomer`, `customers.listCustomers`,
+  `catalog.getProduct`, `catalog.listProducts`, `pricing.listPriceLists`,
+  each onto the existing staff façade input. Every param name is one the Шо
+  catalogue gives that intent (`customer`, `status`, `period`, `group_by`,
+  `order_number`, `search_text`, `group`, `product`, `phone`, `email`); a
+  param the planner does not name — `due`, `payment_status`, `amount`,
+  `availability` — an unreadable period, an unreadable status, a second
+  value for one façade field, and a non-uuid resolved id are all
+  `unsupported_param`, which is the LLM. `orders.get` plans
+  `orders_list_page` with the order number as `query`, but only when
+  `isCanonicalOrderNumberToken` says the spoken text is a `{prefix}-{tail}`
+  number: a stored number is base36 (`services/order-number-format.ts`), so
+  the digits in «замовлення номер 133» would match a different order by
+  coincidence through the `ilike`. Periods go through `kyivNamedPeriodRange`,
+  which reads the tokens Шо emits (`today` … `last_quarter`, `last_days:N`,
+  `range:MM-DD..MM-DD`, `range:YYYY-MM-DD..YYYY-MM-DD`) with the runtime's
+  own semantics — a «this» period ends today — and never a second date map.
+  `apps/sho/src/sho-planners.parity.test.ts` is what keeps the two in one
+  piece: it is the only place allowed to import both `@showzy/sho` and the
+  rest (ADR-0051), and it checks `SHO_READ_PLANNER_PARAMS` against the model
+  bundle's intents and every bundle period token against the parser.
+  `SHO_READ_ACTIONS` is the list to paste into `SHO_ACTIONS` for dev; the
+  config default stays empty.
+- `sho-planners/orders-writes.ts` — the order write planner (SHO-772):
+  `orders.create` onto the `orders_create` façade, `writes: true`, so the
+  plan pauses on the ADR-0050 preview and Шо executes nothing itself. It
+  maps `customer` and each line's product to the façade's id-or-query
+  locator — an unchecked name becomes the query the resolver raises the
+  picker from (SHO-747), where a read refuses it — the line's attrs to
+  `variantQuery` when the variant is unresolved, and the spoken quantity to
+  `quantityMilli` (scale 3, so «10 штук» is `10000`) — but only when the
+  spoken unit counts pieces whatever the product is sold in: nothing,
+  `pcs`, `pair`, `bottle` or `can`, the runtime's own `COUNTING_UNITS`.
+  `unsupported_param`, which is the LLM: every other unit, a `box`, `bag`,
+  `pack` or `m2` as much as a `kg`, because the Шо context carries no sale
+  unit, so «5 мішків» is not 5 of what the line sells and «0,5» of a
+  kilogram product is not half a piece; a quantity that is not a whole
+  milli; a `due`, `payment_method` or `discount` the façade cannot take,
+  which would otherwise be dropped from what the staff member said; and a
+  resolved id that is not shaped like a uuid. The order lifecycle
+  (`orders.confirm`, `start`, `complete`, `cancel`) is **not** here: those
+  actions take `orderId` and nothing else, and Шо names an order by a code
+  or a focus pronoun, never by a uuid — SHO-845 plans them on focus
+  (SHO-770) and the order-code resolver.
+  A non-blocking `read_as_create` need becomes a note on the plan, and
+  `runShoTurn` prepends the plan's notes to a confirmation pause's own, so
+  a misread is visible on the card before the tap and a full list cannot
+  drop it. A planner returns a `ShoActionPlan`, which carries no `writes`:
+  `planFor` stamps the planner's own flag onto the call it hands back, so
+  the effect gate and `runShoTurn`'s `write_did_not_pause` fallback — taken
+  when a declared write comes back as anything but a pause — read one fact.
+  `SHO_WRITE_ACTIONS` joins `SHO_READ_ACTIONS` as the dev list for
+  `SHO_ACTIONS`; the config default stays empty, so no deployment plans a
+  write until someone names it. The planner tests run on verbatim `expect`
+  parses from `packages/sho/test/conformance-v3`, keyed by the conformance
+  case id; the tests add only what the gold labels never carry — the
+  confidence block, and this company's uuids in place of the catalogue's
+  demo record ids.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never

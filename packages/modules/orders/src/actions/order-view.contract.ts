@@ -26,6 +26,11 @@ export const orderPriceSourceSchema = z.enum([
   "base",
 ]);
 
+export const orderCustomerSchema = z.object({
+  nameSnapshot: z.string().min(1),
+  linkedCustomerId: z.uuid().nullable(),
+});
+
 export const orderItemViewSchema = z.object({
   itemId: z.uuid(),
   productId: z.uuid(),
@@ -52,7 +57,7 @@ export const orderItemViewSchema = z.object({
 export const orderViewSchema = z.object({
   orderId: z.uuid(),
   orderNumber: z.string().min(1),
-  customerId: z.uuid().nullable(),
+  customer: orderCustomerSchema,
   status: orderStatusSchema,
   comment: z.string().max(2000).nullable(),
   totalNetMinor: moneyWireSchema,

@@ -8,6 +8,10 @@ import {
   type ToolSet,
 } from "@showzy/assistant-kit";
 import type { ShoFallbackReason } from "@showzy/sho-protocol";
+import {
+  assistantConfirmationPromptSchema,
+  ASSISTANT_PREVIEW_LIST_MAX,
+} from "@showzy/validation/assistant-chat";
 
 import type { ShoPlanFallbackReason } from "./sho-plan.js";
 
@@ -28,6 +32,7 @@ export type ShoTurnFallbackReason =
   | "tool_unavailable"
   | "tool_failed"
   | "unsendable_tool_call_id"
+  | "write_did_not_pause"
   | ShoFallbackReason
   | ShoPlanFallbackReason;
 
@@ -35,6 +40,8 @@ export interface ShoToolCall {
   readonly toolName: string;
   readonly input: Record<string, unknown>;
   readonly reply: string;
+  readonly writes: boolean;
+  readonly notes?: readonly string[];
 }
 
 export type ShoPlan =
@@ -98,6 +105,24 @@ export function shoToolCallId(
 
 function failed(reason: ShoTurnFallbackReason): ShoTurnFallback {
   return { kind: "fallback", reason };
+}
+
+function promptWithNotes(prompt: unknown, notes: readonly string[]): unknown {
+  if (notes.length === 0) {
+    return prompt;
+  }
+  const parsed = assistantConfirmationPromptSchema.safeParse(prompt);
+  if (!parsed.success) {
+    return prompt;
+  }
+  const preview = parsed.data.preview;
+  return {
+    ...parsed.data,
+    preview: {
+      ...preview,
+      notes: [...notes, ...preview.notes].slice(0, ASSISTANT_PREVIEW_LIST_MAX),
+    },
+  };
 }
 
 function conversationThrough(
@@ -175,6 +200,10 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
     return failed("tool_failed");
   }
 
+  if (plan.writes && outcome.kind !== "pause") {
+    return failed("write_did_not_pause");
+  }
+
   if (outcome.kind === "pause") {
     const messages = conversationThrough(input, toolCallId, plan, {
       status: "paused",
@@ -183,7 +212,7 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
     return {
       kind: "ask",
       interaction: outcome.interaction,
-      prompt: outcome.prompt,
+      prompt: promptWithNotes(outcome.prompt, plan.notes ?? []),
       secret: outcome.secret,
       continuation: {
         messages,

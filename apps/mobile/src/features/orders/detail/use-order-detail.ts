@@ -86,7 +86,7 @@ export function useOrderDetail(
     productIds,
     enabled: query.state.kind === "ready",
   });
-  const customerId = query.order?.customerId ?? null;
+  const customerId = query.order?.customer.linkedCustomerId ?? null;
   const customerQuery = useQuery(
     getCustomerNameQueryOptions({
       client: apiClient,
