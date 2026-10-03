@@ -3,7 +3,6 @@ import {
   CREATE_ORDER_MAX_ITEMS,
   ORDERS_CREATE_QUERY_MAX,
   ORDERS_CREATE_TOOL_NAME,
-  toProviderToolName,
 } from "@showzy/ai";
 import type {
   ShoAttr,
@@ -78,7 +77,12 @@ function isOrderItems(param: ShoParam): param is ShoOrderItem[] {
   );
 }
 
+const MEASURED_UNITS: readonly string[] = ["g", "kg", "t", "ml", "l"];
+
 function quantityFields(quantity: ShoQuantity): Mapped {
+  if (quantity.unit !== null && MEASURED_UNITS.includes(quantity.unit)) {
+    return "unsupported_param";
+  }
   const said = quantity.value;
   if (said === null || !Number.isFinite(said) || said <= 0) {
     return "unsupported_param";
@@ -178,14 +182,6 @@ const createComment = (param: ShoParam): Mapped => {
     : { comment: text.slice(0, CREATE_ORDER_COMMENT_MAX) };
 };
 
-const lifecycleOrder = (param: ShoParam): Mapped => {
-  const locator = shoRefLocator(param);
-  if (refused(locator)) {
-    return locator;
-  }
-  return locator.by === "id" ? { orderId: locator.id } : "unresolved_reference";
-};
-
 type ParamMapper = (param: ShoParam) => Mapped;
 
 interface WritePlan {
@@ -194,13 +190,6 @@ interface WritePlan {
   readonly params: Readonly<Record<string, ParamMapper>>;
   readonly required: readonly string[];
 }
-
-const lifecycle = (action: string, reply: string): WritePlan => ({
-  toolName: toProviderToolName(action),
-  reply,
-  params: { order_number: lifecycleOrder },
-  required: ["order_number"],
-});
 
 const SHO_ORDER_WRITES: Readonly<Record<string, WritePlan>> = {
   "orders.create": {
@@ -213,10 +202,6 @@ const SHO_ORDER_WRITES: Readonly<Record<string, WritePlan>> = {
     },
     required: ["customer", "items"],
   },
-  "orders.confirm": lifecycle("orders.confirm", "Замовлення підтверджено."),
-  "orders.start": lifecycle("orders.start", "Замовлення в роботі."),
-  "orders.complete": lifecycle("orders.complete", "Замовлення виконано."),
-  "orders.cancel": lifecycle("orders.cancel", "Замовлення скасовано."),
 };
 
 export const SHO_WRITE_ACTIONS: readonly string[] = Object.freeze(
@@ -281,6 +266,7 @@ function plannerFor(write: WritePlan): ShoActionPlanner {
       const notes = shoWriteNotes(command);
       return {
         kind: "call",
+        writes: true,
         toolName: write.toolName,
         input,
         reply: write.reply,

@@ -81,6 +81,7 @@ const readPlanner = (toolName: string): ShoActionPlanners[string] => ({
   writes: false,
   plan: (command): ShoPlan => ({
     kind: "call",
+    writes: false,
     toolName,
     input: { said: command.text },
     reply: "Ось вони.",
@@ -91,6 +92,7 @@ const writePlanner = (toolName: string): ShoActionPlanners[string] => ({
   writes: true,
   plan: (): ShoPlan => ({
     kind: "call",
+    writes: false,
     toolName,
     input: {},
     reply: "Готово.",
@@ -354,6 +356,7 @@ describe("the SHO-740 wrong-write recordings never become a write", () => {
             seen.push(command.action);
             return {
               kind: "call",
+              writes: false,
               toolName: "orders_confirm",
               input: {},
               reply: "Готово.",
@@ -391,6 +394,7 @@ describe("the whitelist and the effect agreement", () => {
     );
     expect(plan).toMatchObject({
       kind: "call",
+      writes: false,
       toolName: "orders_list_page",
       reply: "Ось вони.",
     });

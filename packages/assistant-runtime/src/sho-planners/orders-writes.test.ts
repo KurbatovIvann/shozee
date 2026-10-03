@@ -19,13 +19,19 @@ import { SHO_READ_ACTIONS } from "./reads.js";
 
 const NOW = new Date("2026-09-02T12:00:00.000Z");
 
+const OVER_THE_FLOOR = {
+  action: 0.99,
+  margin: 0.8,
+  certainty: 0.9,
+  spans: 0.9,
+};
+
 const COMPANY_IDS: Readonly<Record<string, string>> = {
   "c-oksana": "0f6c8ef2-6b4c-4b2a-9f3e-5b1a6c2d7e81",
   "p-tee": "7c1b5d90-2e44-4a1f-8b6d-3f0c9a2e4b57",
   "v-tee-1": "4b2e7a18-9d31-4c6f-83a5-1e0d6f24c7b9",
-  "c-oleh": "9a3f1c25-5e78-4d0b-b6e4-2c8a7f13d509",
-  "p-cheese": "1d7e4a63-0b92-4f85-9c31-6a5e8d2b4f07",
-  "o-7001": "6e0c9b47-3a85-4d19-82f6-5b4a1e7c3d02",
+  "c-olena": "9a3f1c25-5e78-4d0b-b6e4-2c8a7f13d509",
+  "p-rolls": "1d7e4a63-0b92-4f85-9c31-6a5e8d2b4f07",
 };
 
 type Json = Record<string, unknown>;
@@ -46,13 +52,6 @@ function reId(value: unknown): unknown {
     ]),
   );
 }
-
-const OVER_THE_FLOOR = {
-  action: 0.99,
-  margin: 0.8,
-  certainty: 0.9,
-  spans: 0.9,
-};
 
 const parseOf = (caseId: string): Json =>
   JSON.parse(JSON.stringify(shoOrderWriteParse(caseId))) as Json;
@@ -94,6 +93,9 @@ function planOf(command: ShoCommand): ShoPlan {
   return planner.plan(command, NOW);
 }
 
+const itemsOf = (plan: ShoPlan): unknown =>
+  plan.kind === "call" ? plan.input["items"] : null;
+
 const whitelisted = createShoPlanner({
   actions: [...SHO_READ_ACTIONS, ...SHO_WRITE_ACTIONS],
 });
@@ -102,6 +104,7 @@ describe("SHO_WRITE_PLANNERS maps the conformance order-create parses", () => {
   it("plans dv3-lines-01 as queries, implicit quantities and attr variants", () => {
     expect(planOf(commandOf("dv3-lines-01"))).toEqual({
       kind: "call",
+      writes: true,
       toolName: "orders_create",
       reply: "Замовлення створено.",
       input: {
@@ -122,14 +125,17 @@ describe("SHO_WRITE_PLANNERS maps the conformance order-create parses", () => {
     });
   });
 
-  it("plans dv3-lines-27 quantities in milli whatever the spoken unit", () => {
-    const plan = planOf(commandOf("dv3-lines-27"));
-    expect(plan.kind === "call" ? plan.input["items"] : null).toEqual([
-      { productQuery: "кава в зернах lavazza", quantityMilli: "5000" },
+  it("plans the dv3-lines-16 counts in milli", () => {
+    expect(itemsOf(planOf(commandOf("dv3-lines-16")))).toEqual([
       {
-        productQuery: "стаканчики",
-        variantQuery: "400 мл",
-        quantityMilli: "500000",
+        productQuery: "бальзам для губ",
+        variantQuery: "полуничний",
+        quantityMilli: "10000",
+      },
+      {
+        productQuery: "сироватка з вітаміном c",
+        variantQuery: "30 мл",
+        quantityMilli: "5000",
       },
     ]);
   });
@@ -137,6 +143,7 @@ describe("SHO_WRITE_PLANNERS maps the conformance order-create parses", () => {
   it("plans d78-attrs-colour-size on the company's own ids", () => {
     expect(planOf(asCompanyRecords("d78-attrs-colour-size"))).toEqual({
       kind: "call",
+      writes: true,
       toolName: "orders_create",
       reply: "Замовлення створено.",
       input: {
@@ -152,14 +159,20 @@ describe("SHO_WRITE_PLANNERS maps the conformance order-create parses", () => {
     });
   });
 
-  it("plans the d75-kilo fraction as 500 milli and names no variant", () => {
-    const plan = planOf(asCompanyRecords("d75-kilo"));
-    expect(plan.kind === "call" ? plan.input["items"] : null).toEqual([
-      { productId: COMPANY_IDS["p-cheese"], quantityMilli: "500" },
+  it("names no variant for the d73-surname-unknown product that has none", () => {
+    expect(itemsOf(planOf(asCompanyRecords("d73-surname-unknown")))).toEqual([
+      { productId: COMPANY_IDS["p-rolls"], quantityMilli: "3000" },
     ]);
   });
 
-  it("refuses a resolved id that is not a record of this company", () => {
+  it("refuses the d75-kilo weight until the context carries the sale unit", () => {
+    expect(planOf(asCompanyRecords("d75-kilo"))).toEqual({
+      kind: "fallback",
+      reason: "unsupported_param",
+    });
+  });
+
+  it("refuses a resolved id that is not shaped like a uuid", () => {
     expect(planOf(commandOf("d94-order-phone-dative"))).toEqual({
       kind: "fallback",
       reason: "unsupported_param",
@@ -178,59 +191,6 @@ describe("SHO_WRITE_PLANNERS maps the conformance order-create parses", () => {
     expect(
       planOf(commandOf("dv3-lines-01", { params: { items: said["items"] } })),
     ).toEqual({ kind: "fallback", reason: "blocking_need" });
-  });
-});
-
-describe("SHO_WRITE_PLANNERS maps the order lifecycle onto one order id", () => {
-  const RESOLVED = {
-    text: "його",
-    status: "resolved",
-    id: COMPANY_IDS["o-7001"],
-    name: "№ 7001",
-  };
-
-  const confirmOf = (action: string): ShoCommand =>
-    commandOf("d88-object-order", {
-      action,
-      params: { order_number: RESOLVED },
-    });
-
-  const LIFECYCLE: Readonly<Record<string, [string, string]>> = {
-    "orders.confirm": ["orders_confirm", "Замовлення підтверджено."],
-    "orders.start": ["orders_start", "Замовлення в роботі."],
-    "orders.complete": ["orders_complete", "Замовлення виконано."],
-    "orders.cancel": ["orders_cancel", "Замовлення скасовано."],
-  };
-
-  it("plans a resolved order reference as the lifecycle action's orderId", () => {
-    for (const [action, [toolName, reply]] of Object.entries(LIFECYCLE)) {
-      expect({ action, plan: planOf(confirmOf(action)) }).toEqual({
-        action,
-        plan: {
-          kind: "call",
-          toolName,
-          reply,
-          input: { orderId: COMPANY_IDS["o-7001"] },
-        },
-      });
-    }
-  });
-
-  it("refuses d88-object-order while the order is only a focus pronoun", () => {
-    expect(planOf(commandOf("d88-object-order"))).toEqual({
-      kind: "fallback",
-      reason: "conversation_dependent",
-    });
-  });
-
-  it("refuses the customer, period and amount alternatives of the catalogue", () => {
-    expect(
-      planOf(
-        commandOf("d88-object-order", {
-          params: { customer: { text: "оксани", status: "unchecked" } },
-        }),
-      ),
-    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
   });
 });
 

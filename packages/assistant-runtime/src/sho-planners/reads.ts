@@ -291,7 +291,13 @@ function plannerFor(read: ReadPlan): ShoActionPlanner {
       const input = inputFor(read, command, now);
       return refused(input)
         ? shoPlanFallback(input)
-        : { kind: "call", toolName: read.toolName, input, reply: read.reply };
+        : {
+            kind: "call",
+            writes: false,
+            toolName: read.toolName,
+            input,
+            reply: read.reply,
+          };
     },
   };
 }

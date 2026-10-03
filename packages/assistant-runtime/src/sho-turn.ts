@@ -32,6 +32,7 @@ export type ShoTurnFallbackReason =
   | "tool_unavailable"
   | "tool_failed"
   | "unsendable_tool_call_id"
+  | "write_did_not_pause"
   | ShoFallbackReason
   | ShoPlanFallbackReason;
 
@@ -39,6 +40,7 @@ export interface ShoToolCall {
   readonly toolName: string;
   readonly input: Record<string, unknown>;
   readonly reply: string;
+  readonly writes: boolean;
   readonly notes?: readonly string[];
 }
 
@@ -118,7 +120,7 @@ function promptWithNotes(prompt: unknown, notes: readonly string[]): unknown {
     ...parsed.data,
     preview: {
       ...preview,
-      notes: [...preview.notes, ...notes].slice(0, ASSISTANT_PREVIEW_LIST_MAX),
+      notes: [...notes, ...preview.notes].slice(0, ASSISTANT_PREVIEW_LIST_MAX),
     },
   };
 }
@@ -196,6 +198,10 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
 
   if (outcome.kind === "error") {
     return failed("tool_failed");
+  }
+
+  if (plan.writes && outcome.kind !== "pause") {
+    return failed("write_did_not_pause");
   }
 
   if (outcome.kind === "pause") {
