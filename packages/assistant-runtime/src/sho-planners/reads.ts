@@ -55,7 +55,7 @@ const RECORD_STATUSES = ["active", "archived", "all"];
 
 const COUNT_GROUPS = ["status", "product", "customer"];
 
-const SHOZEE_DOCUMENT_TYPES = ["payment_invoice", "delivery_note"];
+export const SHOZEE_DOCUMENT_TYPES = ["payment_invoice", "delivery_note"];
 
 type Fields = Record<string, unknown>;
 

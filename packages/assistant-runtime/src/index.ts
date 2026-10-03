@@ -25,6 +25,7 @@ export * from "./sho-engine.js";
 export * from "./sho-focus.js";
 export * from "./sho-plan.js";
 export * from "./sho-planners/customers-writes.js";
+export * from "./sho-planners/documents-writes.js";
 export * from "./sho-planners/orders-lifecycle.js";
 export * from "./sho-planners/orders-writes.js";
 export * from "./sho-planners/reads.js";
