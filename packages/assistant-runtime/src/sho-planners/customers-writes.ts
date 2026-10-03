@@ -1,6 +1,14 @@
 import { toProviderToolName } from "@showzy/ai";
-import type { ShoParam, ShoRecordType } from "@showzy/sho-protocol";
 import {
+  COUNTERPARTY_BANK_MFO_MAX,
+  COUNTERPARTY_BANK_NAME_MAX,
+  COUNTERPARTY_EDRPOU_MAX,
+  COUNTERPARTY_EMAIL_MAX,
+  COUNTERPARTY_IBAN_MAX,
+  COUNTERPARTY_LEGAL_ADDRESS_MAX,
+  COUNTERPARTY_NAME_MAX,
+  COUNTERPARTY_NOTES_MAX,
+  COUNTERPARTY_PHONE_MAX,
   CUSTOMER_EMAIL_MAX,
   CUSTOMER_NAME_MAX,
   CUSTOMER_NOTES_MAX,
@@ -9,19 +17,18 @@ import {
   GROUP_NAME_MAX,
 } from "@showzy/validation/customers";
 
+import { shoIsRef, type ShoActionPlanners } from "./kit.js";
 import {
-  shoIsRef,
-  shoRefLocator,
-  shoRefused,
-  type ShoActionPlanners,
-} from "./kit.js";
-import {
+  shoIdFrom,
+  shoCreatedName,
+  shoIdOnly,
+  shoRenamedName,
   shoSpanText,
   shoSpokenText,
+  shoTypedText,
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
-  type ShoWriteMapped,
   type ShoWriteParamMapper,
   type ShoWritePlan,
   type ShoWritePlans,
@@ -45,6 +52,12 @@ export const SHO_UPDATE_GROUP = "customers.updateGroup";
 
 export const SHO_DELETE_GROUP = "customers.deleteGroup";
 
+export const SHO_CREATE_COUNTERPARTY = "customers.createCounterparty";
+
+export const SHO_UPDATE_COUNTERPARTY = "customers.updateCounterparty";
+
+export const SHO_DELETE_COUNTERPARTY = "customers.deleteCounterparty";
+
 export const SHO_READ_AS_UPDATE_NOTE =
   "Прочитано як редагування клієнта, не створення";
 
@@ -56,6 +69,9 @@ export const SHO_READ_AS_FOCUS_CUSTOMER_NOTE =
 
 export const SHO_READ_AS_FOCUS_GROUP_NOTE =
   "Прочитано як дію над групою з розмови";
+
+export const SHO_READ_AS_FOCUS_COUNTERPARTY_NOTE =
+  "Прочитано як дію над контрагентом з розмови";
 
 const MISREAD_NOTES: Readonly<Record<string, string>> = {
   read_as_update: SHO_READ_AS_UPDATE_NOTE,
@@ -70,48 +86,19 @@ const FOCUS_GROUP_NOTES: Readonly<Record<string, string>> = {
   read_as_focus_type: SHO_READ_AS_FOCUS_GROUP_NOTE,
 };
 
+const FOCUS_COUNTERPARTY_NOTES: Readonly<Record<string, string>> = {
+  read_as_focus_type: SHO_READ_AS_FOCUS_COUNTERPARTY_NOTE,
+};
+
 const SET_GROUP_NOTES: Readonly<Record<string, string>> = {
   ...MISREAD_NOTES,
   ...FOCUS_GROUP_NOTES,
 };
 
-const clipped = (param: ShoParam, max: number): string | null =>
-  shoSpokenText(param)?.slice(0, max) ?? null;
-
-const idFrom = (param: ShoParam, field: string): ShoWriteMapped => {
-  const locator = shoRefLocator(param);
-  if (shoRefused(locator)) {
-    return locator;
-  }
-  return locator.by === "id" ? { [field]: locator.id } : "unsupported_param";
-};
-
-const idOnly =
-  (field: string): ShoWriteParamMapper =>
-  (param) =>
-    idFrom(param, field);
-
 const soleCustomerId: ShoWriteParamMapper = (param) => {
   const only = Array.isArray(param) && param.length === 1 ? param[0] : null;
-  return shoIsRef(only) ? idFrom(only, "id") : "unsupported_param";
+  return shoIsRef(only) ? shoIdFrom(only, "id") : "unsupported_param";
 };
-
-const created =
-  (type: ShoRecordType, max: number): ShoWriteParamMapper =>
-  (param, command) => {
-    const nominative =
-      command.creates?.type === type ? (command.creates.name ?? "").trim() : "";
-    const text =
-      nominative.length > 0 ? nominative.slice(0, max) : clipped(param, max);
-    return text === null ? "unsupported_param" : { name: text };
-  };
-
-const renamed =
-  (max: number): ShoWriteParamMapper =>
-  (param) => {
-    const text = clipped(param, max);
-    return text === null ? "unsupported_param" : { name: text };
-  };
 
 const contact =
   (field: string, max: number): ShoWriteParamMapper =>
@@ -129,13 +116,22 @@ const clippedSpan =
     return text === null ? "unsupported_param" : { [field]: text };
   };
 
-const createdName = created("customer", CUSTOMER_NAME_MAX);
+const identifier =
+  (field: string, max: number): ShoWriteParamMapper =>
+  (param) => {
+    const value = shoTypedText(param);
+    return value === null || value.length > max
+      ? "unsupported_param"
+      : { [field]: value };
+  };
 
-const createdGroupName = created("group", GROUP_NAME_MAX);
+const createdName = shoCreatedName("customer", CUSTOMER_NAME_MAX);
 
-const renamedTo = renamed(CUSTOMER_NAME_MAX);
+const createdGroupName = shoCreatedName("group", GROUP_NAME_MAX);
 
-const renamedGroupTo = renamed(GROUP_NAME_MAX);
+const renamedTo = shoRenamedName(CUSTOMER_NAME_MAX);
+
+const renamedGroupTo = shoRenamedName(GROUP_NAME_MAX);
 
 const comment = clippedSpan("notes", CUSTOMER_NOTES_MAX);
 
@@ -145,7 +141,45 @@ const phone = contact("phone", CUSTOMER_PHONE_MAX);
 
 const email = contact("email", CUSTOMER_EMAIL_MAX);
 
-const priceList = idOnly("priceListId");
+const priceList = shoIdOnly("priceListId");
+
+const createdCounterpartyName = shoCreatedName(
+  "counterparty",
+  COUNTERPARTY_NAME_MAX,
+);
+
+const renamedCounterpartyTo = shoRenamedName(COUNTERPARTY_NAME_MAX);
+
+const legalAddress = clippedSpan(
+  "legalAddress",
+  COUNTERPARTY_LEGAL_ADDRESS_MAX,
+);
+
+const bankName = clippedSpan("bankName", COUNTERPARTY_BANK_NAME_MAX);
+
+const counterpartyNotes = clippedSpan("notes", COUNTERPARTY_NOTES_MAX);
+
+const edrpou = identifier("edrpou", COUNTERPARTY_EDRPOU_MAX);
+
+const iban = identifier("iban", COUNTERPARTY_IBAN_MAX);
+
+const bankMfo = identifier("bankMfo", COUNTERPARTY_BANK_MFO_MAX);
+
+const counterpartyPhone = contact("phone", COUNTERPARTY_PHONE_MAX);
+
+const counterpartyEmail = contact("email", COUNTERPARTY_EMAIL_MAX);
+
+const COUNTERPARTY_REQUISITES: Readonly<Record<string, ShoWriteParamMapper>> = {
+  edrpou,
+  address: legalAddress,
+  iban,
+  bank_name: bankName,
+  mfo: bankMfo,
+  phone: counterpartyPhone,
+  email: counterpartyEmail,
+  comment: counterpartyNotes,
+  customer: shoIdOnly("customerId"),
+};
 
 const onResolvedRecord = (
   action: string,
@@ -155,7 +189,7 @@ const onResolvedRecord = (
 ): ShoWritePlan => ({
   toolName: toProviderToolName(action),
   reply,
-  params: { [param]: idOnly("id") },
+  params: { [param]: shoIdOnly("id") },
   required: [param],
   notes,
 });
@@ -169,7 +203,7 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
       phone,
       email,
       comment,
-      group: idOnly("groupId"),
+      group: shoIdOnly("groupId"),
     },
     required: ["new_name"],
     oneOf: [["phone", "email"]],
@@ -179,12 +213,12 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
     toolName: toProviderToolName(SHO_UPDATE_CUSTOMER),
     reply: "Клієнта оновлено.",
     params: {
-      customer: idOnly("id"),
+      customer: shoIdOnly("id"),
       rename_to: renamedTo,
       phone,
       email,
       comment,
-      group: idOnly("groupId"),
+      group: shoIdOnly("groupId"),
     },
     required: ["customer"],
     oneOf: [["rename_to", "phone", "email", "comment", "group"]],
@@ -213,7 +247,7 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
     reply: "Клієнта оновлено.",
     params: {
       customers: soleCustomerId,
-      group: idOnly("groupId"),
+      group: shoIdOnly("groupId"),
     },
     required: ["customers", "group"],
     notes: SET_GROUP_NOTES,
@@ -232,7 +266,7 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
     toolName: toProviderToolName(SHO_UPDATE_GROUP),
     reply: "Групу оновлено.",
     params: {
-      group: idOnly("id"),
+      group: shoIdOnly("id"),
       rename_to: renamedGroupTo,
       description: describedGroup,
       price_list: priceList,
@@ -246,6 +280,33 @@ const SHO_CUSTOMER_WRITES: ShoWritePlans = {
     "Групу видалено.",
     "group",
     FOCUS_GROUP_NOTES,
+  ),
+  [SHO_CREATE_COUNTERPARTY]: {
+    toolName: toProviderToolName(SHO_CREATE_COUNTERPARTY),
+    reply: "Контрагента створено.",
+    params: {
+      new_name: createdCounterpartyName,
+      ...COUNTERPARTY_REQUISITES,
+    },
+    required: ["new_name"],
+  },
+  [SHO_UPDATE_COUNTERPARTY]: {
+    toolName: toProviderToolName(SHO_UPDATE_COUNTERPARTY),
+    reply: "Контрагента оновлено.",
+    params: {
+      counterparty: shoIdOnly("id"),
+      rename_to: renamedCounterpartyTo,
+      ...COUNTERPARTY_REQUISITES,
+    },
+    required: ["counterparty"],
+    oneOf: [["rename_to", ...Object.keys(COUNTERPARTY_REQUISITES)]],
+    notes: FOCUS_COUNTERPARTY_NOTES,
+  },
+  [SHO_DELETE_COUNTERPARTY]: onResolvedRecord(
+    SHO_DELETE_COUNTERPARTY,
+    "Контрагента видалено.",
+    "counterparty",
+    FOCUS_COUNTERPARTY_NOTES,
   ),
 };
 

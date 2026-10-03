@@ -5,13 +5,14 @@ import {
   PRODUCT_NAME_MAX,
 } from "@showzy/validation/catalog";
 
-import { shoRefLocator, shoRefused, type ShoActionPlanners } from "./kit.js";
+import type { ShoActionPlanners } from "./kit.js";
 import {
-  shoSpokenText,
+  shoCreatedName,
+  shoIdOnly,
+  shoRenamedName,
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
-  type ShoWriteMapped,
   type ShoWriteParamMapper,
   type ShoWritePlan,
   type ShoWritePlans,
@@ -78,38 +79,16 @@ const basePrice: ShoWriteParamMapper = (param) => {
       };
 };
 
-const productId: ShoWriteParamMapper = (param): ShoWriteMapped => {
-  const locator = shoRefLocator(param);
-  if (shoRefused(locator)) {
-    return locator;
-  }
-  return locator.by === "id" ? { productId: locator.id } : "unsupported_param";
-};
+const product = shoIdOnly("productId");
 
-const named = (param: ShoParam): string | null =>
-  shoSpokenText(param)?.slice(0, PRODUCT_NAME_MAX) ?? null;
+const createdName = shoCreatedName("product", PRODUCT_NAME_MAX);
 
-const createdName: ShoWriteParamMapper = (param, command) => {
-  const nominative =
-    command.creates?.type === "product"
-      ? (command.creates.name ?? "").trim()
-      : "";
-  const text =
-    nominative.length > 0
-      ? nominative.slice(0, PRODUCT_NAME_MAX)
-      : named(param);
-  return text === null ? "unsupported_param" : { name: text };
-};
-
-const renamedTo: ShoWriteParamMapper = (param) => {
-  const text = named(param);
-  return text === null ? "unsupported_param" : { name: text };
-};
+const renamedTo = shoRenamedName(PRODUCT_NAME_MAX);
 
 const onProduct = (action: string, reply: string): ShoWritePlan => ({
   toolName: toProviderToolName(action),
   reply,
-  params: { product: productId },
+  params: { product },
   required: ["product"],
   notes: FOCUS_NOTES,
 });
@@ -128,7 +107,7 @@ const SHO_CATALOG_WRITES: ShoWritePlans = {
     toolName: toProviderToolName(SHO_UPDATE_PRODUCT),
     reply: "Товар оновлено.",
     params: {
-      product: productId,
+      product,
       rename_to: renamedTo,
       price: basePrice,
     },

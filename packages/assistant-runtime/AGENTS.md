@@ -231,6 +231,37 @@ registry is injected into `createAssistantRuntime`; this package never imports
   risk, so they pause on the same ADR-0050 preview as every other write and
   carry their `read_as_focus_type` misread as a note on the card. The parity
   test reads a planned write intent as `write` or `high` for that reason.
+  The counterparty writes (SHO-860) sit in the same table:
+  `customers.createCounterparty` takes `new_name`, `customers.updateCounterparty`
+  the resolved `counterparty` as `id` plus at least one field, and
+  `customers.deleteCounterparty` — `kind: "high"`, `risk: "high"` — the record
+  alone. `address` is the legal address span, `bank_name` the bank the staff
+  said and `comment` the action's `notes`; `edrpou`, `iban` and `mfo` are taken
+  only from the runtime's typed value and refused when they outrun the
+  action's cap, because clipping an identifier would store a different firm,
+  and an identifier the runtime failed its own check on arrives as a blocking
+  `invalid_value` need, which is the LLM. No identifier, phone or e-mail ever
+  reaches the Шо context: a counterparty enters it as an id and a name.
+- `sho-planners/documents-writes.ts` — the document write planners (SHO-861):
+  `documents.createFromOrder`, `documents.cancel`, `documents.share` and
+  `documents.requestSign` onto their own action tools, `writes: true`, so each
+  pauses on the ADR-0050 preview; the SHO-788/801/809 preview callbacks own
+  the share token and the signing request, and no planner input carries one.
+  All four actions take a uuid and nothing else, so the only reference that
+  binds is a ref the parse bound to a live focus entry (`status: "context"`,
+  SHO-770). `order_number` is such an entry, so a create from the order just
+  made plans; `document_ref` is not — the protocol has no `document` record
+  type, so the focus never holds a document and `shoFocusHolds` refuses any
+  context `document_ref`. A spoken document or order number is therefore
+  `unsupported_param`, which is the LLM, until those actions take an
+  id-or-reference input as the lifecycle four did at SHO-853 (SHO-869).
+  `document_type` maps to the two types Shozee issues and `counterparty` to a
+  resolved uuid;
+  `customer`, `period`, `status`, `amount`, `basis`, `channel`, `email` and
+  `phone` are the LLM's — a `basis` span is a bare document number («57»),
+  never the «Підстава» sentence the action stores.
+  `SHO_DOCUMENT_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
+  config default stays empty.
 - `sho-planners/catalog-writes.ts` — the product write planners (SHO-855):
   `catalog.createProduct`, `catalog.updateProduct`, `catalog.archiveProduct`
   and `catalog.restoreProduct` onto their own action tools, `writes: true`,
