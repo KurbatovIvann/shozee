@@ -20,6 +20,8 @@ const NOW = new Date("2026-09-02T12:00:00.000Z");
 const CUSTOMER_ID = "0f6c8ef2-6b4c-4b2a-9f3e-5b1a6c2d7e81";
 const GROUP_ID = "2a9d4c11-7f3b-4d54-8c21-9e7f0b3a5d64";
 const PRODUCT_ID = "7c1b5d90-2e44-4a1f-8b6d-3f0c9a2e4b57";
+const PRICE_LIST_ID = "4d8e1a62-9c07-4f33-bb18-6a2d5e7c0913";
+const COUNTERPARTY_ID = "b35f7e04-18ac-42d6-9c5b-71e8d0a4f236";
 
 interface Said {
   readonly text: string;
@@ -324,6 +326,212 @@ describe("SHO_READ_PLANNERS maps the SHO-734 read phrases", () => {
   });
 });
 
+describe("SHO_READ_PLANNERS maps the SHO-854 read phrases", () => {
+  it("plans d72-read-groups as the bare group list", () => {
+    expect(
+      planOf({ text: "покажи групи", action: "customers.listGroups" }),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_list_groups",
+      input: {},
+      reply: "Ось групи.",
+    });
+  });
+
+  it("plans the group card from d79-group-case's resolved group", () => {
+    expect(
+      planOf({
+        text: "покажи групу установи",
+        action: "customers.getGroup",
+        params: {
+          group: {
+            text: "установи",
+            status: "resolved",
+            id: GROUP_ID,
+            name: "Установи",
+            match: "exact",
+          },
+        },
+      }),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_getGroup",
+      input: { id: GROUP_ID },
+      reply: "Ось група.",
+    });
+  });
+
+  it("plans the counterparty list from d72-stock-list's search text", () => {
+    expect(
+      planOf({
+        text: "покажи контрагентів болгарки",
+        action: "customers.listCounterparties",
+        params: { search_text: { text: "болгарки" } },
+      }),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_listCounterparties",
+      input: { search: "болгарки" },
+      reply: "Ось контрагенти.",
+    });
+  });
+
+  it("plans the counterparties of a resolved customer by id", () => {
+    expect(
+      planOf({
+        text: "покажи контрагентів цукерні",
+        action: "customers.listCounterparties",
+        params: { customer: resolved(CUSTOMER_ID, "цукерні") },
+      }),
+    ).toMatchObject({
+      toolName: "customers_listCounterparties",
+      input: { customerId: CUSTOMER_ID },
+    });
+  });
+
+  it("plans the counterparty card from d79-counterparty-rest's ref", () => {
+    expect(
+      planOf({
+        text: "покажи контрагента фоп нечипорук галина",
+        action: "customers.getCounterparty",
+        params: {
+          counterparty: {
+            text: "фоп нечипорук галина",
+            status: "resolved",
+            id: COUNTERPARTY_ID,
+            name: "ФОП Нечипорук Галина",
+            match: "exact",
+          },
+        },
+      }),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_getCounterparty",
+      input: { id: COUNTERPARTY_ID },
+      reply: "Ось контрагент.",
+    });
+  });
+
+  it("plans d89-open-price-list from the focus-held price list", () => {
+    expect(
+      planOf({
+        text: "відкрий його ще раз",
+        action: "pricing.getPriceList",
+        params: {
+          price_list: {
+            text: "його",
+            status: "context",
+            id: PRICE_LIST_ID,
+            name: "Осінній",
+            focus: 0,
+          },
+        },
+      }),
+    ).toEqual({
+      kind: "call",
+      toolName: "pricing_getPriceList",
+      input: { id: PRICE_LIST_ID },
+      reply: "Ось прайс-лист.",
+    });
+  });
+
+  it("plans d79-price-list-noun as the entries of that list", () => {
+    expect(
+      planOf({
+        text: "що в нас у партнерському прайсі",
+        action: "pricing.listPriceListEntries",
+        params: {
+          price_list: {
+            text: "партнерському",
+            status: "resolved",
+            id: PRICE_LIST_ID,
+            name: "Партнерський",
+            match: "form",
+          },
+        },
+      }),
+    ).toEqual({
+      kind: "call",
+      toolName: "pricing_listPriceListEntries",
+      input: { priceListId: PRICE_LIST_ID },
+      reply: "Ось ціни прайс-листа.",
+    });
+  });
+
+  it("narrows the price-list entries to a resolved product", () => {
+    expect(
+      planOf({
+        text: "яка ціна американо в партнерському прайсі",
+        action: "pricing.listPriceListEntries",
+        params: {
+          price_list: resolved(PRICE_LIST_ID, "партнерському"),
+          product: resolved(PRODUCT_ID, "американо"),
+        },
+      }),
+    ).toMatchObject({
+      toolName: "pricing_listPriceListEntries",
+      input: { priceListId: PRICE_LIST_ID, productId: PRODUCT_ID },
+    });
+  });
+
+  it("plans the document list with no filter", () => {
+    expect(
+      planOf({ text: "покажи документи", action: "documents.list" }),
+    ).toEqual({
+      kind: "call",
+      toolName: "documents_list",
+      input: {},
+      reply: "Ось документи.",
+    });
+  });
+
+  it("plans the layouts of a document type Shozee issues", () => {
+    expect(
+      planOf({
+        text: "покажи шаблони рахунків",
+        action: "docGeneration.listLayouts",
+        params: { document_type: { value: "payment_invoice" } },
+      }),
+    ).toEqual({
+      kind: "call",
+      toolName: "docGeneration_listLayouts",
+      input: { type: "payment_invoice" },
+      reply: "Ось шаблони документів.",
+    });
+  });
+
+  it("plans search from d72-stock-list's search text", () => {
+    expect(
+      planOf({
+        text: "знайди болгарки",
+        action: "search.query",
+        params: { search_text: { text: "болгарки" } },
+      }),
+    ).toEqual({
+      kind: "call",
+      toolName: "search_query",
+      input: { query: "болгарки" },
+      reply: "Ось що знайшлося.",
+    });
+  });
+
+  it("narrows search to one entity type Shozee searches", () => {
+    expect(
+      planOf({
+        text: "чи є у нас брауні",
+        action: "search.query",
+        params: {
+          search_text: { text: "брауні" },
+          search_type: { value: "product" },
+        },
+      }),
+    ).toMatchObject({
+      toolName: "search_query",
+      input: { query: "брауні", types: ["product"] },
+    });
+  });
+});
+
 describe("SHO_READ_PLANNERS falls back to the model", () => {
   const cases: readonly (Said & { readonly reason: string })[] = [
     {
@@ -415,6 +623,88 @@ describe("SHO_READ_PLANNERS falls back to the model", () => {
       text: "покажи активні прайс-листи",
       action: "pricing.listPriceLists",
       params: { availability: { value: "active" } },
+      reason: "unsupported_param",
+    },
+    {
+      text: "покажи прайс гуртовий",
+      action: "pricing.getPriceList",
+      params: {
+        price_list: {
+          text: "гуртовий",
+          status: "unknown",
+          suggest: {
+            action: "pricing.createPriceList",
+            params: { new_name: { text: "гуртовий" } },
+          },
+        },
+      },
+      reason: "unresolved_reference",
+    },
+    {
+      text: "покажи групу установи",
+      action: "customers.getGroup",
+      params: {
+        group: {
+          text: "установи",
+          status: "resolved",
+          id: "g-institutions",
+          name: "Установи",
+          match: "exact",
+        },
+      },
+      reason: "unsupported_param",
+    },
+    {
+      text: "покажи контрагента фоп нечипорук галина",
+      action: "customers.getCounterparty",
+      params: {
+        counterparty: {
+          text: "фоп нечипорук галина",
+          status: "resolved",
+          id: "k-nechyporuk",
+          name: "ФОП Нечипорук Галина",
+          match: "exact",
+        },
+      },
+      reason: "unsupported_param",
+    },
+    {
+      text: "покажи контрагентів тов ранок",
+      action: "customers.listCounterparties",
+      params: { customer: { text: "тов ранок", status: "unchecked" } },
+      reason: "unresolved_reference",
+    },
+    {
+      text: "покажи акти",
+      action: "documents.list",
+      params: { document_type: { value: "act" } },
+      reason: "unsupported_param",
+    },
+    {
+      text: "покажи непідписані документи",
+      action: "documents.list",
+      params: { signing_status: { value: "unsigned" } },
+      reason: "unsupported_param",
+    },
+    {
+      text: "покажи чек номер 2031",
+      action: "documents.get",
+      params: { document_ref: { text: "2031", value: 2031 } },
+      reason: "unsupported_param",
+    },
+    {
+      text: "покажи шаблони чеків",
+      action: "docGeneration.listLayouts",
+      params: { document_type: { value: "receipt" } },
+      reason: "unsupported_param",
+    },
+    {
+      text: "знайди доставку бариста лаб",
+      action: "search.query",
+      params: {
+        search_text: { text: "бариста лаб" },
+        search_type: { value: "shipment" },
+      },
       reason: "unsupported_param",
     },
   ];

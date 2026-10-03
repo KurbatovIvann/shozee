@@ -83,7 +83,22 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `SHO_ACTION_PLANNERS` is (SHO-771): `orders.list`, `orders.count`,
   `orders.get`, `customers.getCustomer`, `customers.listCustomers`,
   `catalog.getProduct`, `catalog.listProducts`, `pricing.listPriceLists`,
-  each onto the existing staff façade input. Every param name is one the Шо
+  each onto the existing staff façade input. SHO-854 adds the rest of the
+  reads Шо already parses — `customers.listGroups`, `customers.getGroup`,
+  `customers.listCounterparties`, `customers.getCounterparty`,
+  `pricing.getPriceList`, `pricing.listPriceListEntries`, `documents.list`,
+  `documents.get`, `docGeneration.listLayouts`, `search.query` — onto the
+  provider tool name of the action itself where no façade exists. Those
+  actions take ids, not names, so a `group`, `counterparty`, `price_list`,
+  `product`, `customer` or `document_ref` reference plans only as an id
+  locator and a spoken name is `unsupported_param`, which is the LLM:
+  there is no id-or-reference input to fall into. `document_type` maps only
+  to the two types Shozee issues (`payment_invoice`, `delivery_note`), and
+  `search_type` only to a `SEARCH_ENTITY_TYPES` member, so the catalogue's
+  `act`, `reconciliation_act`, `receipt`, `shipment` are the model's.
+  `documents.list` maps `document_type` alone — `customer`, `period` and
+  `signing_status` need the Shozee change the catalogue note names.
+  Every param name is one the Шо
   catalogue gives that intent (`customer`, `status`, `period`, `group_by`,
   `order_number`, `search_text`, `group`, `product`, `phone`, `email`); a
   param the planner does not name — `due`, `payment_status`, `amount`,

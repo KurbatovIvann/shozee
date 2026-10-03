@@ -1,20 +1,30 @@
 import {
   kyivNamedPeriodRange,
+  toProviderToolName,
   CATALOG_GET_PRODUCT_TOOL_NAME,
   CATALOG_LIST_PRODUCTS_TOOL_NAME,
   CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
   CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+  CUSTOMERS_LIST_GROUPS_TOOL_NAME,
   LIST_ORDERS_QUERY_MAX,
   ORDERS_LIST_COUNTS_TOOL_NAME,
   ORDERS_LIST_PAGE_TOOL_NAME,
   PRICING_LIST_PRICE_LISTS_TOOL_NAME,
 } from "@showzy/ai";
 import { LIST_PRODUCTS_QUERY_MAX } from "@showzy/catalog/contract";
-import { LIST_CUSTOMERS_SEARCH_MAX } from "@showzy/customers/contract";
+import {
+  LIST_CUSTOMERS_SEARCH_MAX,
+  LIST_GROUPS_SEARCH_MAX,
+} from "@showzy/customers/contract";
 import { LIST_PRICE_LISTS_QUERY_MAX } from "@showzy/pricing/contract";
 import type { ShoCommand, ShoParam } from "@showzy/sho-protocol";
+import { LIST_COUNTERPARTIES_SEARCH_MAX } from "@showzy/validation/customers";
 import { ENTITY_REF_QUERY_MAX } from "@showzy/validation/entity-ref";
-import { isCanonicalOrderNumberToken } from "@showzy/validation/search";
+import {
+  isCanonicalOrderNumberToken,
+  SEARCH_ENTITY_TYPES,
+  SEARCH_QUERY_MAX,
+} from "@showzy/validation/search";
 
 import {
   shoPlanFallback,
@@ -43,6 +53,8 @@ export const SHO_ACTIVE_ORDER_STATUSES = [
 const RECORD_STATUSES = ["active", "archived", "all"];
 
 const COUNT_GROUPS = ["status", "product", "customer"];
+
+const SHOZEE_DOCUMENT_TYPES = ["payment_invoice", "delivery_note"];
 
 type Fields = Record<string, unknown>;
 
@@ -103,19 +115,27 @@ const orderStatus: ParamMapper = (param) => {
     : "unsupported_param";
 };
 
-const recordStatus: ParamMapper = (param) => {
-  const value = enumValue(param);
-  return value !== null && RECORD_STATUSES.includes(value)
-    ? { status: value }
-    : "unsupported_param";
-};
+const enumField =
+  (field: string, allowed: readonly string[]): ParamMapper =>
+  (param) => {
+    const value = enumValue(param);
+    return value !== null && allowed.includes(value)
+      ? { [field]: value }
+      : "unsupported_param";
+  };
 
-const countGroup: ParamMapper = (param) => {
-  const value = enumValue(param);
-  return value !== null && COUNT_GROUPS.includes(value)
-    ? { groupBy: value }
-    : "unsupported_param";
-};
+const enumList =
+  (field: string, allowed: readonly string[]): ParamMapper =>
+  (param) => {
+    const value = enumValue(param);
+    return value !== null && allowed.includes(value)
+      ? { [field]: [value] }
+      : "unsupported_param";
+  };
+
+const recordStatus = enumField("status", RECORD_STATUSES);
+
+const countGroup = enumField("groupBy", COUNT_GROUPS);
 
 const orderCustomer: ParamMapper = (param) => {
   const locator = locatorOf(param);
@@ -137,13 +157,15 @@ const orderNumber: ParamMapper = (param) => {
     : { query: text.slice(0, LIST_ORDERS_QUERY_MAX) };
 };
 
-const customerGroup: ParamMapper = (param) => {
-  const locator = locatorOf(param);
-  if (refused(locator)) {
-    return locator;
-  }
-  return locator.by === "id" ? { groupId: locator.id } : "unsupported_param";
-};
+const refId =
+  (field: string): ParamMapper =>
+  (param) => {
+    const locator = locatorOf(param);
+    if (refused(locator)) {
+      return locator;
+    }
+    return locator.by === "id" ? { [field]: locator.id } : "unsupported_param";
+  };
 
 const searchText =
   (field: string, max: number): ParamMapper =>
@@ -215,7 +237,7 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
     params: {
       search_text: searchText("search", LIST_CUSTOMERS_SEARCH_MAX),
       status: recordStatus,
-      group: customerGroup,
+      group: refId("groupId"),
     },
   },
   "catalog.getProduct": {
@@ -232,10 +254,73 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
       status: recordStatus,
     },
   },
+  "customers.listGroups": {
+    toolName: CUSTOMERS_LIST_GROUPS_TOOL_NAME,
+    reply: "Ось групи.",
+    params: { search_text: searchText("search", LIST_GROUPS_SEARCH_MAX) },
+  },
+  "customers.getGroup": {
+    toolName: toProviderToolName("customers.getGroup"),
+    reply: "Ось група.",
+    params: { group: refId("id") },
+    single: true,
+  },
+  "customers.listCounterparties": {
+    toolName: toProviderToolName("customers.listCounterparties"),
+    reply: "Ось контрагенти.",
+    params: {
+      search_text: searchText("search", LIST_COUNTERPARTIES_SEARCH_MAX),
+      customer: refId("customerId"),
+    },
+  },
+  "customers.getCounterparty": {
+    toolName: toProviderToolName("customers.getCounterparty"),
+    reply: "Ось контрагент.",
+    params: { counterparty: refId("id") },
+    single: true,
+  },
   "pricing.listPriceLists": {
     toolName: PRICING_LIST_PRICE_LISTS_TOOL_NAME,
     reply: "Ось прайс-листи.",
     params: { search_text: searchText("query", LIST_PRICE_LISTS_QUERY_MAX) },
+  },
+  "pricing.getPriceList": {
+    toolName: toProviderToolName("pricing.getPriceList"),
+    reply: "Ось прайс-лист.",
+    params: { price_list: refId("id") },
+    single: true,
+  },
+  "pricing.listPriceListEntries": {
+    toolName: toProviderToolName("pricing.listPriceListEntries"),
+    reply: "Ось ціни прайс-листа.",
+    params: {
+      price_list: refId("priceListId"),
+      product: refId("productId"),
+    },
+  },
+  "documents.list": {
+    toolName: toProviderToolName("documents.list"),
+    reply: "Ось документи.",
+    params: { document_type: enumField("type", SHOZEE_DOCUMENT_TYPES) },
+  },
+  "documents.get": {
+    toolName: toProviderToolName("documents.get"),
+    reply: "Ось документ.",
+    params: { document_ref: refId("documentId") },
+    single: true,
+  },
+  "docGeneration.listLayouts": {
+    toolName: toProviderToolName("docGeneration.listLayouts"),
+    reply: "Ось шаблони документів.",
+    params: { document_type: enumField("type", SHOZEE_DOCUMENT_TYPES) },
+  },
+  "search.query": {
+    toolName: toProviderToolName("search.query"),
+    reply: "Ось що знайшлося.",
+    params: {
+      search_text: searchText("query", SEARCH_QUERY_MAX),
+      search_type: enumList("types", SEARCH_ENTITY_TYPES),
+    },
   },
 };
 
