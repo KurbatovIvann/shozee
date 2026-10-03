@@ -1,4 +1,18 @@
+import {
+  STAFF_ASSISTANT_RECORD_SHAPES,
+  type StaffAssistantRecordShape,
+} from "@showzy/ai";
 import type { ModelMessage } from "@showzy/assistant-kit";
+import {
+  CATALOG_GET_PRODUCT_TOOL_NAME,
+  CATALOG_LIST_PRODUCTS_TOOL_NAME,
+  CUSTOMERS_GET_CUSTOMER_TOOL_NAME,
+  CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME,
+  CUSTOMERS_LIST_GROUPS_TOOL_NAME,
+  ORDERS_CREATE_TOOL_NAME,
+  ORDERS_LIST_PAGE_TOOL_NAME,
+  PRICING_LIST_PRICE_LISTS_TOOL_NAME,
+} from "@showzy/ai";
 import {
   shoCommandSchema,
   shoFocusEntrySchema,
@@ -25,14 +39,23 @@ export const shoFocusRecordSchema = shoFocusEntrySchema.omit({
 
 export const shoTurnLogSchema = z.object({
   command: shoCommandSchema,
-  records: z.array(shoFocusRecordSchema).max(SHO_MOST_FOCUS),
   sessionId: z.string(),
   at: z.string(),
-  open: z.boolean(),
 });
 
 export type ShoFocusRecord = z.infer<typeof shoFocusRecordSchema>;
 export type ShoTurnLog = z.infer<typeof shoTurnLogSchema>;
+
+export const SHO_FOCUS_TOOL_TYPES: Readonly<Record<string, ShoRecordType>> = {
+  [CATALOG_GET_PRODUCT_TOOL_NAME]: "product",
+  [CATALOG_LIST_PRODUCTS_TOOL_NAME]: "product",
+  [CUSTOMERS_GET_CUSTOMER_TOOL_NAME]: "customer",
+  [CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]: "customer",
+  [CUSTOMERS_LIST_GROUPS_TOOL_NAME]: "group",
+  [ORDERS_CREATE_TOOL_NAME]: "order",
+  [ORDERS_LIST_PAGE_TOOL_NAME]: "order",
+  [PRICING_LIST_PRICE_LISTS_TOOL_NAME]: "price_list",
+};
 
 const FOCUS_PARAM_TYPES: Readonly<Record<string, ShoRecordType>> = {
   customer: "customer",
@@ -41,38 +64,6 @@ const FOCUS_PARAM_TYPES: Readonly<Record<string, ShoRecordType>> = {
   product: "product",
   price_list: "price_list",
   counterparty: "counterparty",
-};
-
-const SHOWN_BY_ACTION: Readonly<Record<string, ShoRecordType>> = {
-  "customers.getCustomer": "customer",
-  "catalog.getProduct": "product",
-  "orders.get": "order",
-};
-
-const LISTED_BY_ACTION: Readonly<Record<string, ShoRecordType>> = {
-  "customers.listCustomers": "customer",
-  "customers.listGroups": "group",
-  "catalog.listProducts": "product",
-  "pricing.listPriceLists": "price_list",
-  "orders.list": "order",
-};
-
-const ID_KEYS: Readonly<Record<ShoRecordType, string>> = {
-  customer: "customerId",
-  group: "groupId",
-  order: "orderId",
-  product: "productId",
-  price_list: "priceListId",
-  counterparty: "counterpartyId",
-};
-
-const NAME_KEYS: Readonly<Record<ShoRecordType, string>> = {
-  customer: "name",
-  group: "name",
-  order: "orderNumber",
-  product: "name",
-  price_list: "name",
-  counterparty: "name",
 };
 
 type Json = Readonly<Record<string, unknown>>;
@@ -93,18 +84,21 @@ interface Seen {
   readonly name: string;
 }
 
-function viewOf(value: unknown, type: ShoRecordType): Seen | null {
-  const id = text(value, ID_KEYS[type]) ?? text(value, "id");
-  const name = text(value, NAME_KEYS[type]) ?? text(value, "name");
+function viewOf(value: unknown, shape: StaffAssistantRecordShape): Seen | null {
+  const id = text(value, shape.idKey);
+  const name = text(value, shape.nameKey);
   return id === null ? null : { id, name: name ?? "" };
 }
 
-function rowsOf(value: unknown): readonly unknown[] {
-  if (!isJson(value)) {
-    return [];
+function rowsOf(
+  value: unknown,
+  shape: StaffAssistantRecordShape,
+): readonly unknown[] | null {
+  if (shape.rowsKey === null || !isJson(value)) {
+    return null;
   }
-  const items = value["items"];
-  return Array.isArray(items) ? items : [];
+  const rows = value[shape.rowsKey];
+  return Array.isArray(rows) ? rows : null;
 }
 
 function refOf(param: ShoParam): ShoRef | null {
@@ -131,41 +125,46 @@ function namedIn(command: ShoCommand): readonly ShoFocusRecord[] {
   return named;
 }
 
+function ranOf(
+  toolName: string,
+  result: unknown,
+): readonly ShoFocusRecord[] | null {
+  const type = SHO_FOCUS_TOOL_TYPES[toolName];
+  const shape = STAFF_ASSISTANT_RECORD_SHAPES[toolName];
+  if (type === undefined || shape === undefined) {
+    return null;
+  }
+  const rows = rowsOf(result, shape);
+  if (rows === null) {
+    const seen = viewOf(result, shape);
+    return seen === null
+      ? null
+      : [{ type, id: seen.id, name: seen.name, how: "shown" }];
+  }
+  const only = rows.length === 1 ? viewOf(rows[0], shape) : null;
+  return only === null
+    ? [{ type, id: "", name: "", how: "listed", count: rows.length }]
+    : [{ type, id: only.id, name: only.name, how: "listed" }];
+}
+
 export function shoTurnRecords(
   command: ShoCommand,
+  toolName: string,
   result: unknown,
 ): readonly ShoFocusRecord[] {
   const records: ShoFocusRecord[] = [];
   const creates = command.creates;
+  const ran = ranOf(toolName, result);
   if (creates !== undefined && creates.type !== SHO_UNRECOGNIZED) {
-    const made = viewOf(result, creates.type);
+    const made = ran?.[0];
     records.push({
       type: creates.type,
-      id: made?.id ?? "",
+      id: made?.type === creates.type ? made.id : "",
       name: creates.name ?? made?.name ?? "",
       how: "created",
     });
-  }
-  const shown = SHOWN_BY_ACTION[command.action];
-  const seen = shown === undefined ? null : viewOf(result, shown);
-  if (shown !== undefined && seen !== null) {
-    records.push({ type: shown, id: seen.id, name: seen.name, how: "shown" });
-  }
-  const listed = LISTED_BY_ACTION[command.action];
-  if (listed !== undefined) {
-    const rows = rowsOf(result);
-    const only = rows.length === 1 ? viewOf(rows[0], listed) : null;
-    records.push(
-      only === null
-        ? {
-            type: listed,
-            id: "",
-            name: "",
-            how: "listed",
-            count: rows.length,
-          }
-        : { type: listed, id: only.id, name: only.name, how: "listed" },
-    );
+  } else if (ran !== null) {
+    records.push(...ran);
   }
   return [...records, ...namedIn(command)].slice(0, SHO_MOST_FOCUS);
 }
@@ -189,8 +188,49 @@ function written(message: ModelMessage): unknown {
   }
 }
 
+interface Ran {
+  readonly toolCallId: string;
+  readonly toolName: string;
+}
+
+function calledIn(message: ModelMessage): Ran | null {
+  if (message.role !== "assistant" || typeof message.content === "string") {
+    return null;
+  }
+  for (const part of message.content) {
+    if (part.type === "tool-call") {
+      return { toolCallId: part.toolCallId, toolName: part.toolName };
+    }
+  }
+  return null;
+}
+
+function resultIn(
+  history: readonly ModelMessage[],
+  after: number,
+  toolCallId: string,
+): unknown {
+  for (let index = after + 1; index < history.length; index += 1) {
+    const message = history[index];
+    if (message === undefined || message.role !== "tool") {
+      continue;
+    }
+    for (const part of message.content) {
+      if (part.type === "tool-result" && part.toolCallId === toolCallId) {
+        return part.output.type === "json" ? part.output.value : undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
+const stillPaused = (result: unknown): boolean =>
+  isJson(result) && result["status"] === "paused";
+
 interface Touched {
   readonly log: ShoTurnLog;
+  readonly records: readonly ShoFocusRecord[];
+  readonly open: boolean;
   readonly turns: number;
 }
 
@@ -207,9 +247,22 @@ function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
       continue;
     }
     const parsed = shoTurnLogSchema.safeParse(written(message));
-    if (parsed.success) {
-      touched.push({ log: parsed.data, turns });
+    const ran = calledIn(message);
+    if (!parsed.success || ran === null) {
+      continue;
     }
+    const result = resultIn(history, index, ran.toolCallId);
+    const open = stillPaused(result);
+    touched.push({
+      log: parsed.data,
+      open,
+      turns,
+      records: shoTurnRecords(
+        parsed.data.command,
+        ran.toolName,
+        open ? undefined : result,
+      ),
+    });
   }
   return touched;
 }
@@ -220,12 +273,12 @@ export function shoFocusFrom(
 ): readonly ShoFocusEntry[] {
   const held = new Set<string>();
   const focus: ShoFocusEntry[] = [];
-  for (const { log, turns } of shoLogs(history)) {
+  for (const { log, records, turns } of shoLogs(history)) {
     const earlier =
       log.sessionId === sessionId ? {} : { earlier: true as const };
-    for (const record of log.records) {
+    for (const record of records) {
       const key = `${record.type}\u0000${record.id}`;
-      if (record.id.length > 0 && held.has(key)) {
+      if (held.has(key)) {
         continue;
       }
       held.add(key);
@@ -245,6 +298,6 @@ export function shoPreviousFrom(
   if (newest === undefined) {
     return undefined;
   }
-  const { command, open, at } = newest.log;
-  return !open && shoWrites(command) ? undefined : { command, at };
+  const { command, at } = newest.log;
+  return !newest.open && shoWrites(command) ? undefined : { command, at };
 }

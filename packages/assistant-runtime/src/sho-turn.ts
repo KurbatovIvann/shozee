@@ -20,7 +20,6 @@ import {
   shoFocusFrom,
   shoLogOptions,
   shoPreviousFrom,
-  shoTurnRecords,
   type ShoTurnLog,
 } from "./sho-focus.js";
 
@@ -173,15 +172,13 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
     return failed(plan.reason);
   }
   const planned = plan.command;
-  const logOf = (open: boolean, result: unknown): ShoTurnLog | null =>
+  const log: ShoTurnLog | null =
     planned === undefined
       ? null
       : {
           command: planned,
-          records: [...shoTurnRecords(planned, result)],
           sessionId: input.sessionId,
           at: input.now.toISOString(),
-          open,
         };
 
   const toolCallId = shoToolCallId(input.commandId, 1, plan.toolName);
@@ -220,7 +217,7 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
       toolCallId,
       plan,
       { status: "paused", reason: outcome.interaction },
-      logOf(true, null),
+      log,
     );
     return {
       kind: "ask",
@@ -240,7 +237,7 @@ export async function runShoTurn(input: ShoTurnInput): Promise<ShoTurnOutcome> {
     toolCallId,
     plan,
     outcome.result,
-    logOf(false, outcome.result),
+    log,
   );
   return {
     kind: "settled",

@@ -8,6 +8,7 @@ export const SHO_PLAN_FALLBACK_REASONS = [
   "unrecognized_shape",
   "ui_answer",
   "needs_dialogue",
+  "needs_reference",
   "unsupported_action",
   "conversation_dependent",
   "low_confidence",
