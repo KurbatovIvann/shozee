@@ -52,6 +52,7 @@ import {
   requireCaller,
   requireVerifiedCompany,
   requireOpenCardRead,
+  storedUserMessageId,
   takeCommand,
   type AssistantKitAppEnv,
   type AssistantKitCardVerdict,
@@ -191,16 +192,21 @@ export async function handleAssistantKitChat(
     { kind: "answer", commandId: body.commandId },
     "user",
   );
-  const accepted = async (): Promise<Response> =>
-    json(
+  const accepted = async (stored?: string | null): Promise<Response> => {
+    const window = await readAssistantChatWindow(kit, turns, scope);
+    return json(
       202,
       {
         status: "accepted",
-        userMessageId: chatUserMessageId,
-        window: await readAssistantChatWindow(kit, turns, scope),
+        userMessageId:
+          stored === undefined
+            ? storedUserMessageId(window, chatUserMessageId)
+            : stored,
+        window,
       },
       requestId,
     );
+  };
 
   const command = {
     route: "chat" as const,
@@ -210,16 +216,18 @@ export async function handleAssistantKitChat(
   };
 
   const finishing = { ...command, route: "answer" as const };
-  const settled = async (): Promise<Response> =>
-    json(
+  const settled = async (): Promise<Response> => {
+    const window = await readAssistantChatWindow(kit, turns, scope);
+    return json(
       200,
       {
         status: "ok",
-        userMessageId: answerUserMessageId,
-        window: await readAssistantChatWindow(kit, turns, scope),
+        userMessageId: storedUserMessageId(window, answerUserMessageId),
+        window,
       },
       requestId,
     );
+  };
   const writeFailed = async (outcome: PauseWriteOutcome): Promise<Response> => {
     await runtime.commands.release(finishing);
     return outcome === "wrong_owner"
@@ -304,12 +312,13 @@ export async function handleAssistantKitChat(
       if (declined !== "ok") {
         return await writeFailed(declined);
       }
+      const window = await readAssistantChatWindow(kit, turns, scope);
       return json(
         200,
         {
           status: "abandoned",
-          userMessageId: answerUserMessageId,
-          window: await readAssistantChatWindow(kit, turns, scope),
+          userMessageId: storedUserMessageId(window, answerUserMessageId),
+          window,
         },
         requestId,
       );
@@ -440,7 +449,7 @@ export async function handleAssistantKitChat(
     await kit.abandon({ ...scope, interactionId: open.interactionId });
   }
 
-  return await accepted();
+  return await accepted(result.turn.userMessageId);
 }
 
 export async function handleAssistantKitMessages(

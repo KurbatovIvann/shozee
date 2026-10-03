@@ -2346,6 +2346,60 @@ describe("a send while a card is open answers it", () => {
     ]);
   });
 
+  it("names the message the accepted answer stored, fresh and on a replay", async () => {
+    const { app, kit, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+
+    const first = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
+    const retry = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
+
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    const stored = window.messages.find(
+      (message) => message.role === "user",
+    )?.messageId;
+    expect(stored).toBeDefined();
+    expect(((await first.json()) as KitBody).userMessageId).toBe(stored);
+    expect(((await retry.json()) as KitBody).userMessageId).toBe(stored);
+  });
+
+  it("names no message when the answer only opened the next question", async () => {
+    const { app, kit, bind } = harness({ resolveAnswer: SECOND_QUESTION });
+    const pause = await openPause(kit, bind);
+
+    const first = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "перший"),
+    );
+    const retry = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "перший"),
+    );
+
+    expect([first.status, retry.status]).toEqual([200, 200]);
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    expect(window.messages.some((message) => message.role === "user")).toBe(
+      false,
+    );
+    expect(((await first.json()) as KitBody).userMessageId).toBeNull();
+    expect(((await retry.json()) as KitBody).userMessageId).toBeNull();
+  });
+
   it("«ні» declines it exactly as the card's own cancel does", async () => {
     const { app, kit, queue, bind } = harness();
     const pause = await openConfirmation(kit, bind);

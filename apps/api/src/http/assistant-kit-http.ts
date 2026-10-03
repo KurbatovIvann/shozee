@@ -287,6 +287,20 @@ export type AssistantKitResponse =
       readonly retryAfterSec?: number;
     };
 
+export function storedUserMessageId(
+  window: AssistantChatWindowWithTurn,
+  candidate: string | null,
+): string | null {
+  if (candidate === null) {
+    return null;
+  }
+  return window.messages.some(
+    (message) => message.role === "user" && message.messageId === candidate,
+  )
+    ? candidate
+    : null;
+}
+
 export function json(
   status: number,
   body: AssistantKitResponse,

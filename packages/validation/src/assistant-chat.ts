@@ -256,8 +256,8 @@ export const assistantChatSendReceiptSchema = z.object({
   userMessageId: z.uuid().nullable(),
 });
 
-export type AssistantChatSendReceipt = z.output<
-  typeof assistantChatSendReceiptSchema
+export type AssistantChatSendReceipt = Readonly<
+  z.output<typeof assistantChatSendReceiptSchema>
 >;
 
 export function parseAssistantChatUserMessageId(value: unknown): string | null {
