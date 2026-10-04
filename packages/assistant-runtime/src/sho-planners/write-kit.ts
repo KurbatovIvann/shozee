@@ -4,6 +4,7 @@ import type {
   ShoParam,
   ShoRecordType,
 } from "@showzy/sho-protocol";
+import type { ZodType } from "zod";
 
 import {
   shoIsRef,
@@ -157,12 +158,24 @@ export const shoCreatedName =
     return text === null ? "unsupported_param" : { name: text };
   };
 
-export const shoRenamedName =
-  (max: number): ShoWriteParamMapper =>
+export const shoClippedField =
+  (field: string, max: number): ShoWriteParamMapper =>
   (param) => {
     const text = clipped(param, max);
-    return text === null ? "unsupported_param" : { name: text };
+    return text === null ? "unsupported_param" : { [field]: text };
   };
+
+export const shoTypedField =
+  (field: string, schema: ZodType): ShoWriteParamMapper =>
+  (param) => {
+    const value = shoTypedText(param);
+    return value !== null && schema.safeParse(value).success
+      ? { [field]: value }
+      : "unsupported_param";
+  };
+
+export const shoRenamedName = (max: number): ShoWriteParamMapper =>
+  shoClippedField("name", max);
 
 function noteOf(prefix: string, need: ShoNeed): string {
   const span = need.span?.text.trim() ?? "";

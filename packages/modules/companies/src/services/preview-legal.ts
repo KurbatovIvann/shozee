@@ -1,15 +1,19 @@
 import type { ActionPreviewEnv } from "@showzy/core";
 import type { ActionPreviewLine } from "@showzy/core/errors";
 import { companyLegalInfo } from "@showzy/db/schema/companies";
-import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
 import { eq } from "drizzle-orm";
 import type { z } from "zod";
 
 type PreviewTx = ActionPreviewEnv["tx"];
 
-import { companyLegalTypeSchema } from "../actions/company-view.contract.js";
+import type { companyLegalTypeSchema } from "../actions/company-view.contract.js";
 import type { updateLegalInputSchema } from "../actions/update-legal.contract.js";
-import { namedLegalFields } from "./company-view.js";
+import {
+  legalFactsReturning,
+  namedLegalFields,
+  parseCompanyType,
+  type StoredLegalFacts,
+} from "./company-view.js";
 
 type UpdateLegalInput = z.output<typeof updateLegalInputSchema>;
 type CompanyLegalType = z.output<typeof companyLegalTypeSchema>;
@@ -42,36 +46,12 @@ export function companyTypeLabel(companyType: CompanyLegalType): string {
   return COMPANY_TYPE_LABELS[companyType];
 }
 
-export interface StoredLegalFacts {
-  readonly companyType: string;
-  readonly legalName: string | null;
-  readonly edrpou: string | null;
-  readonly legalAddress: string | null;
-  readonly iban: string | null;
-  readonly bankName: string | null;
-  readonly bankMfo: string | null;
-  readonly bankEdrpou: string | null;
-  readonly phone: string | null;
-  readonly email: string | null;
-}
-
 export async function loadStoredLegalFacts(env: {
   readonly tx: PreviewTx;
   readonly companyId: string;
 }): Promise<StoredLegalFacts | undefined> {
   const rows = await env.tx
-    .select({
-      companyType: companyLegalInfo.companyType,
-      legalName: companyLegalInfo.legalName,
-      edrpou: companyLegalInfo.edrpou,
-      legalAddress: companyLegalInfo.legalAddress,
-      iban: companyLegalInfo.iban,
-      bankName: companyLegalInfo.bankName,
-      bankMfo: companyLegalInfo.bankMfo,
-      bankEdrpou: companyLegalInfo.bankEdrpou,
-      phone: companyLegalInfo.phone,
-      email: companyLegalInfo.email,
-    })
+    .select(legalFactsReturning)
     .from(companyLegalInfo)
     .where(eq(companyLegalInfo.companyId, env.companyId))
     .limit(1);
@@ -86,13 +66,7 @@ function storedLabel(
     return null;
   }
   if (field === "companyType") {
-    return companyTypeLabel(
-      parseDbEnum(
-        companyLegalTypeSchema,
-        stored.companyType,
-        `company_legal_info row has illegal company_type "${stored.companyType}"`,
-      ),
-    );
+    return companyTypeLabel(parseCompanyType(stored.companyType));
   }
   return stored[field];
 }
@@ -128,7 +102,7 @@ export function legalPreviewLines(
     }
     const storedValue = storedLabel(field, stored);
     const next =
-      field === "companyType"
+      input.companyType !== undefined && field === "companyType"
         ? companyTypeLabel(input.companyType)
         : patchedLabel(patch[field] ?? null, storedValue);
     lines.push(changeLine(LEGAL_FIELD_LABELS[field], storedValue, next));

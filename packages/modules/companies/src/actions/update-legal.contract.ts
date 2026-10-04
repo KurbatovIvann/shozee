@@ -36,9 +36,12 @@ export {
   COMPANY_LEGAL_PHONE_MAX,
 };
 
+export const LEGAL_IDENTITY_REQUIRED_MESSAGE =
+  "Name companyType and legalName on the first save of the legal requisites.";
+
 export const updateLegalInputSchema = z.strictObject({
-  companyType: companyLegalTypeSchema,
-  legalName: companyLegalNameSchema,
+  companyType: companyLegalTypeSchema.optional(),
+  legalName: companyLegalNameSchema.optional(),
   edrpou: companyLegalEdrpouSchema,
   legalAddress: companyLegalAddressSchema,
   iban: companyLegalIbanSchema,
@@ -54,7 +57,7 @@ export const updateLegalOutputSchema = companyViewSchema;
 export const updateLegalContract = defineActionContract({
   name: "companies.updateLegal",
   description:
-    "Upsert seller legal requisites for the staff member's active company (ФОП/ТОВ, legal name, ЄДРПОУ, address, IBAN/bank, document phone and email). Changes only the fields it names: once requisites exist, an omitted optional field keeps its stored value and an explicit null or empty string clears it; on the first save an omitted field is stored as null. Does not change the company's trade name, slug, or numbering prefix. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second legal row.",
+    "Upsert seller legal requisites for the staff member's active company (ФОП/ТОВ, legal name, ЄДРПОУ, address, IBAN/bank, document phone and email). Changes only the fields it names: once requisites exist, an omitted field keeps its stored value — including companyType and legalName — and an explicit null or empty string clears an optional one; on the first save an omitted optional field is stored as null and omitting companyType or legalName is a validation error. companyType and legalName reject null: they are cleared by nothing. Does not change the company's trade name, slug, or numbering prefix. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second legal row.",
   principal: "staff",
   transport: "client",
   input: updateLegalInputSchema,

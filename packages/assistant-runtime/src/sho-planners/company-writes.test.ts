@@ -127,6 +127,15 @@ describe("SHO_COMPANY_WRITE_PLANNERS plans companies.updateLegal", () => {
     });
   });
 
+  it("plans the IBAN alone, leaving the stored type and name unnamed (SHO-870)", () => {
+    expect(planOf(commandOf("sho-870-legal-iban"))).toEqual({
+      kind: "call",
+      toolName: "companies_updateLegal",
+      reply: "Реквізити оновлено.",
+      input: { iban: "UA213223130000026007233566001" },
+    });
+  });
+
   it("sends no key for a field the parse never named (SHO-725)", () => {
     const plan = planOf(updatingLegal({ edrpou: GOLD_EDRPOU }));
     expect(plan.kind === "call" ? Object.keys(plan.input).sort() : []).toEqual([
@@ -138,11 +147,12 @@ describe("SHO_COMPANY_WRITE_PLANNERS plans companies.updateLegal", () => {
 });
 
 describe("a legal update is refused rather than guessed", () => {
-  it("refuses d70-edrpou-length as parsed: no type and no legal name", () => {
-    expect(planOf(commandOf("d70-edrpou-length"))).toEqual({
-      kind: "fallback",
-      reason: "blocking_need",
-    });
+  it("refuses a parse that names no requisite at all", () => {
+    expect(
+      planOf(
+        commandOf("sho-870-legal-iban", { params: {}, needs: [], ready: true }),
+      ),
+    ).toEqual({ kind: "fallback", reason: "blocking_need" });
   });
 
   it("sends d70-edrpou-length's blocking invalid_value to the LLM", () => {
@@ -224,6 +234,18 @@ describe("every company write pauses on the preview", () => {
       writes: true,
       input: { companyType: "tov", legalName: "тов сота спейс" },
     });
+  });
+
+  it("pauses a field-only legal update on the preview card (SHO-870)", () => {
+    expect(whitelisted(resultOf(commandOf("sho-870-legal-iban")), NOW)).toEqual(
+      {
+        kind: "call",
+        toolName: "companies_updateLegal",
+        reply: "Реквізити оновлено.",
+        writes: true,
+        input: { iban: "UA213223130000026007233566001" },
+      },
+    );
   });
 
   it("names only params the planner maps", () => {

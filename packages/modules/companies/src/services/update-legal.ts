@@ -12,16 +12,29 @@ import type {
 } from "../actions/update-legal.contract.js";
 import {
   companyIdentityReturning,
+  legalFactsReturning,
   legalReturning,
-  namedLegalFields,
-  storedLegalFields,
+  mergeLegalFields,
   toCompanyView,
+  type StoredLegalFacts,
 } from "./company-view.js";
-import { requireStaffWritable } from "./writable.js";
+import { requireStaffWritable, type WritableStaffDb } from "./writable.js";
 
 type StaffCtx = Extract<ActionCtx, { principal: "staff" }>;
 type UpdateInput = z.output<typeof updateLegalInputSchema>;
 type CompanyView = z.output<typeof updateLegalOutputSchema>;
+
+async function lockLegalFacts(
+  db: Pick<WritableStaffDb, "select">,
+  companyId: string,
+): Promise<StoredLegalFacts | undefined> {
+  const locked = db
+    .select(legalFactsReturning)
+    .from(companyLegalInfo)
+    .where(eq(companyLegalInfo.companyId, companyId))
+    .limit(1) as { for: (strength: "update") => Promise<StoredLegalFacts[]> };
+  return (await locked.for("update"))[0];
+}
 
 export async function updateStaffLegal(env: {
   readonly ctx: StaffCtx;
@@ -29,7 +42,10 @@ export async function updateStaffLegal(env: {
 }): Promise<CompanyView> {
   const { ctx, input } = env;
   const db = requireStaffWritable(ctx.db);
-  const fields = storedLegalFields(input);
+  const fields = mergeLegalFields(
+    input,
+    await lockLegalFacts(db, ctx.companyId),
+  );
 
   const upserted = (
     await db
@@ -41,7 +57,7 @@ export async function updateStaffLegal(env: {
       })
       .onConflictDoUpdate({
         target: companyLegalInfo.companyId,
-        set: namedLegalFields(input),
+        set: fields,
       })
       .returning(legalReturning)
   )[0];

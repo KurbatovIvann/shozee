@@ -1,7 +1,10 @@
 import { shoCommandSchema, type ShoCommand } from "@showzy/sho-protocol";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
+  shoClippedField,
+  shoTypedField,
   shoWritePlanner,
   type ShoWriteParamMapper,
   type ShoWritePlan,
@@ -20,6 +23,16 @@ const said =
     Array.isArray(param) || !("text" in param)
       ? "unsupported_param"
       : { [field]: param.text };
+
+const FIELD_MAPPERS: ShoWritePlan = {
+  toolName: "companies_updateLegal",
+  reply: "Готово.",
+  params: {
+    iban: shoTypedField("iban", z.string().max(34)),
+    legal_name: shoClippedField("legalName", 8),
+  },
+  required: [],
+};
 
 const commandOf = (params: Record<string, unknown>): ShoCommand =>
   shoCommandSchema.parse({
@@ -103,6 +116,32 @@ describe("a write plan's constants reach the input the planner hands back", () =
     expect(planOf({ ...WITH_CONSTANT, required: ["note"] })).toEqual({
       kind: "fallback",
       reason: "blocking_need",
+    });
+  });
+});
+
+describe("the field-generic mappers every planner shares", () => {
+  it("takes a typed value its schema accepts and clips a spoken span", () => {
+    expect(
+      planOf(FIELD_MAPPERS, {
+        iban: { text: "ua21", value: "UA21" },
+        legal_name: { text: "ТОВ Довга назва" },
+      }),
+    ).toMatchObject({
+      kind: "call",
+      input: { iban: "UA21", legalName: "ТОВ Довг" },
+    });
+  });
+
+  it("refuses a typed value the schema rejects and a span with no text", () => {
+    expect(
+      planOf(FIELD_MAPPERS, {
+        iban: { text: "довгий", value: `UA${"1".repeat(40)}` },
+      }),
+    ).toEqual({ kind: "fallback", reason: "unsupported_param" });
+    expect(planOf(FIELD_MAPPERS, { legal_name: { text: "  " } })).toEqual({
+      kind: "fallback",
+      reason: "unsupported_param",
     });
   });
 });

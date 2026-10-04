@@ -146,7 +146,10 @@ whole record can call it safely. The assistant holds a compact list row, so
   [SHO-866](https://linear.app/showzy-v2/issue/SHO-866)): a required pair
   (`catalog.updateProduct`'s base price and its currency) is omitted together
   for unchanged and set together to replace, and half a pair is a validation
-  error on the merged row.
+  error on the merged row. An upsert carries it the same way
+  ([SHO-870](https://linear.app/showzy-v2/issue/SHO-870)): with the row in
+  place an omitted required field is unchanged, and without one — nothing to
+  merge with — omitting it is that validation error.
 - New staff updates follow this rule. No read-merge-write façade in
   `packages/ai` and no "get before update" prompt rule: both reconstruct
   state a contract decision threw away.

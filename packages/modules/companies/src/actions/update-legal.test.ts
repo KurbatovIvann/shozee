@@ -186,6 +186,19 @@ describe("companies.updateLegal contract", () => {
     ).toBe("not-an-email");
   });
 
+  it("takes companyType and legalName as omittable, never null (ADR-0033 2026-10-03)", () => {
+    expect(updateLegalInputSchema.parse({ iban: "UA123" })).toEqual({
+      iban: "UA123",
+    });
+    expect(updateLegalInputSchema.parse({ companyType: "tov" })).toEqual({
+      companyType: "tov",
+    });
+    expect(Object.keys(updateLegalInputSchema.parse({}))).toEqual([]);
+    for (const nulled of [{ companyType: null }, { legalName: null }]) {
+      expect(updateLegalInputSchema.safeParse(nulled).success).toBe(false);
+    }
+  });
+
   it("rejects identifier fields — the input is strict", () => {
     for (const extra of [
       { companyId: "c" },
@@ -201,7 +214,9 @@ describe("companies.updateLegal contract", () => {
     }
   });
 
-  it("composes identity plus RETURNING legal without a second legal read", () => {
+  it("merges the input with the locked row before one upsert", () => {
+    expect(updateLegalSource).toContain("mergeLegalFields");
+    expect(updateLegalSource).toContain('for("update")');
     expect(updateLegalSource).toContain("returning(legalReturning)");
     expect(updateLegalSource).toContain("companyIdentityReturning");
     expect(updateLegalSource).toContain("toCompanyView(company, upserted)");

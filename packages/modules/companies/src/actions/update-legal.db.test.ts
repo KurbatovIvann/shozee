@@ -39,6 +39,8 @@ const updateIsolationInput = {
   legalName: "Isolation Legal A",
 };
 
+const freshCompany = randomUUID();
+
 let kit: TestKit;
 
 async function countCompanyLegalRows(companyId: string): Promise<number> {
@@ -97,7 +99,19 @@ beforeAll(async () => {
       email: "admin@companies-update-legal.test",
     },
   ]);
+  await kit.db.runtime.db.insert(companies).values({
+    id: freshCompany,
+    name: "Пекарня Без Реквізитів",
+    slug: "pekarnya-bez-rekvizytiv",
+    prefix: "PBR",
+  });
   await kit.db.runtime.db.insert(companyMembers).values([
+    {
+      companyId: freshCompany,
+      userId: clerks.admin,
+      role: "admin",
+      permissions: { granted: [], denied: [] },
+    },
     {
       companyId: kitIdentities.companies.a,
       userId: clerks.manager,
@@ -332,6 +346,8 @@ describe("companies.updateLegal", () => {
         legalName: "x".repeat(COMPANY_LEGAL_NAME_MAX + 1),
       },
       { companyType: "llc", legalName: "ФОП" },
+      { companyType: null, legalName: "ФОП" },
+      { companyType: "fop", legalName: null },
       { companyType: "", legalName: "ФОП" },
       {
         companyType: "fop",
@@ -345,5 +361,78 @@ describe("companies.updateLegal", () => {
       );
     }
     expect(await countCompanyLegalRows(kitIdentities.companies.a)).toBe(before);
+  });
+  it("keeps the stored type and name when the update names the IBAN alone", async () => {
+    const before = await legalRow(kitIdentities.companies.a);
+    const idempotencyKey = randomUUID();
+    const updated = await kit.invoke(
+      updateLegal,
+      { iban: fixtureIban },
+      {},
+      { request: { idempotencyKey } },
+    );
+
+    expect(updated.legal).toMatchObject({
+      id: before?.id,
+      companyType: before?.companyType,
+      legalName: before?.legalName,
+      iban: fixtureIban,
+    });
+
+    const replay = await kit.invoke(
+      updateLegal,
+      { iban: fixtureIban },
+      {},
+      { request: { idempotencyKey } },
+    );
+    expect(replay).toEqual(updated);
+    expect(await countCompanyLegalRows(kitIdentities.companies.a)).toBe(1);
+
+    const foreign = await legalRow(kitIdentities.companies.b);
+    expect(foreign).toMatchObject({
+      legalName: "ФОП Борис",
+      iban: foreignIban,
+    });
+  });
+
+  it("refuses a first save that names no companyType or legalName", async () => {
+    const firstInputs: unknown[] = [
+      { iban: fixtureIban },
+      { companyType: "fop", iban: fixtureIban },
+      { legalName: "ФОП Нова", iban: fixtureIban },
+    ];
+    for (const input of firstInputs) {
+      await expect(
+        kit.invoke(updateLegal, input, {
+          userId: clerks.admin,
+          companyId: freshCompany,
+        }),
+      ).rejects.toBeInstanceOf(ValidationError);
+    }
+    expect(await countCompanyLegalRows(freshCompany)).toBe(0);
+
+    const created = await kit.invoke(
+      updateLegal,
+      { companyType: "tov", legalName: "ТОВ Нова", iban: fixtureIban },
+      { userId: clerks.admin, companyId: freshCompany },
+    );
+    expect(created.legal).toMatchObject({
+      companyType: "tov",
+      legalName: "ТОВ Нова",
+      iban: fixtureIban,
+      bankName: null,
+    });
+
+    const followUp = await kit.invoke(
+      updateLegal,
+      { bankName: "Монобанк" },
+      { userId: clerks.admin, companyId: freshCompany },
+    );
+    expect(followUp.legal).toMatchObject({
+      companyType: "tov",
+      legalName: "ТОВ Нова",
+      iban: fixtureIban,
+      bankName: "Монобанк",
+    });
   });
 });

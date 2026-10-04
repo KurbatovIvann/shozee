@@ -17,6 +17,10 @@ import {
   companyMembers,
   rolePermissionDefaults,
 } from "@showzy/db/schema/companies";
+import {
+  PREVIEW_CHANGES_LABEL,
+  PREVIEW_NO_CHANGES,
+} from "@showzy/module-kit/preview-changes";
 import { count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
@@ -163,6 +167,28 @@ describe("companies preview cards (core.md §7)", () => {
       { label: "ЄДРПОУ банку", value: "14360570" },
       { label: "Телефон", value: "+380501112233" },
       { label: "Email", value: "anna@example.test" },
+    ]);
+  });
+
+  it("drops the lines the update does not name", async () => {
+    const preview = await previewOf(
+      updateLegal,
+      { iban: "UA222222222222222222222222222" },
+      { userId: admin, companyId: companyA },
+    );
+    expect(preview.lines).toEqual([
+      { label: "IBAN", value: `${storedIban} → UA222222222222222222222222222` },
+    ]);
+  });
+
+  it("says so when the update names nothing at all", async () => {
+    const preview = await previewOf(
+      updateLegal,
+      {},
+      { userId: admin, companyId: companyA },
+    );
+    expect(preview.lines).toEqual([
+      { label: PREVIEW_CHANGES_LABEL, value: PREVIEW_NO_CHANGES },
     ]);
   });
 
