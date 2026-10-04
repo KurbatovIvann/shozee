@@ -52,14 +52,6 @@ export {
   type AssistantPriceListsRowView,
 } from "./price-lists";
 export {
-  ASSISTANT_PRICE_LIST_ENTRIES_HREF,
-  ASSISTANT_PRICE_LIST_ENTRIES_ROW_MAX,
-  PRICE_LIST_ENTRIES_PROMPT_LINE,
-  PRICE_LIST_ENTRIES_SURFACE_TOOLS,
-  type AssistantPriceListEntriesCardView,
-  type AssistantPriceListEntriesRowView,
-} from "./price-list-entries";
-export {
   PRICE_LIST_ENTITY_PROMPT_LINE,
   PRICE_LIST_ENTITY_SURFACE_TOOLS,
   localizePriceListEntityCard,

@@ -31,10 +31,6 @@ import {
   type AssistantPriceListEntityData,
 } from "./price-list-entity.js";
 import {
-  parsePriceListEntriesSurface,
-  type AssistantPriceListEntriesData,
-} from "./price-list-entries.js";
-import {
   parsePriceListsSurface,
   type AssistantPriceListsData,
 } from "./price-lists.js";
@@ -61,7 +57,6 @@ export type AssistantSurfaceData =
   | AssistantCustomersListData
   | AssistantProductsListData
   | AssistantPriceListsData
-  | AssistantPriceListEntriesData
   | AssistantSearchResultsData;
 
 export type AssistantSurfaceKind = AssistantSurfaceData["kind"];
@@ -78,7 +73,6 @@ export function assistantSurfacesFromToolResults(
   const customers = parseCustomersListSurface(results);
   const products = parseProductsListSurface(results);
   const priceLists = parsePriceListsSurface(results);
-  const priceListEntries = parsePriceListEntriesSurface(results);
   const searchResults = parseSearchResultsSurface(results);
   const entities = parseOrderEntitySurfaces(results);
   const customerEntities = parseCustomerEntitySurfaces(results);
@@ -99,9 +93,6 @@ export function assistantSurfacesFromToolResults(
   }
   if (priceLists !== null) {
     surfaces.push(priceLists);
-  }
-  if (priceListEntries !== null) {
-    surfaces.push(priceListEntries);
   }
   if (searchResults !== null) {
     surfaces.push(searchResults);
@@ -141,7 +132,6 @@ export function assistantSurfaceSlot(surface: AssistantSurfaceData): string {
     case "customers-list":
     case "products-list":
     case "price-lists":
-    case "price-list-entries":
     case "search-results":
       return surface.kind;
   }

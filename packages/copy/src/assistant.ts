@@ -44,14 +44,6 @@ export type SharedAssistantPriceListsCopy = {
   readonly clipped: string;
 };
 
-export type SharedAssistantPriceListEntriesCopy = {
-  readonly listEmptyTitle: string;
-  readonly listEmptyDescription: string;
-  readonly openList: string;
-  readonly clipped: string;
-  readonly variantRow: string;
-};
-
 export type SharedAssistantAggregateCopy = {
   readonly totals: string;
   readonly countColumn: string;
@@ -86,7 +78,6 @@ export type SharedAssistantCopy = {
   readonly customersList: SharedAssistantCustomersListCopy;
   readonly productsList: SharedAssistantProductsListCopy;
   readonly priceLists: SharedAssistantPriceListsCopy;
-  readonly priceListEntries: SharedAssistantPriceListEntriesCopy;
   readonly aggregate: SharedAssistantAggregateCopy;
   readonly searchResults: SharedAssistantSearchResultsCopy;
 };
@@ -249,13 +240,6 @@ const en: SharedAssistantCopy = {
     openList: "Open price lists",
     clipped: "The list was clipped. Open price lists to see everything.",
   },
-  priceListEntries: {
-    listEmptyTitle: "No prices",
-    listEmptyDescription: "This price list has no matching prices.",
-    openList: "Open price lists",
-    clipped: "The list was clipped. Open the price list to see everything.",
-    variantRow: "Variant",
-  },
   aggregate: {
     totals: "Total",
     countColumn: "Qty",
@@ -311,13 +295,6 @@ const uk: SharedAssistantCopy = {
     listEmptyDescription: "За цим запитом прайс-листів немає.",
     openList: "Відкрити прайс-листи",
     clipped: "Список обрізано. Відкрий прайс-листи, щоб побачити все.",
-  },
-  priceListEntries: {
-    listEmptyTitle: "Немає цін",
-    listEmptyDescription: "У цьому прайс-листі немає відповідних цін.",
-    openList: "Відкрити прайс-листи",
-    clipped: "Список обрізано. Відкрий прайс-лист, щоб побачити все.",
-    variantRow: "Варіант",
   },
   aggregate: {
     totals: "Разом",

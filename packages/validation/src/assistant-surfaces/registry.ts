@@ -64,13 +64,6 @@ import {
   parsePriceListEntitySurfaces,
 } from "./price-list-entity.js";
 import {
-  PRICE_LIST_ENTRIES_ACTION_NAME,
-  PRICE_LIST_ENTRIES_DESTINATION,
-  PRICE_LIST_ENTRIES_PROMPT_LINE,
-  PRICE_LIST_ENTRIES_SURFACE_TOOLS,
-  parsePriceListEntriesSurface,
-} from "./price-list-entries.js";
-import {
   PRICE_LISTS_ACTION_NAME,
   PRICE_LISTS_DESTINATION,
   PRICE_LISTS_PROMPT_LINE,
@@ -195,15 +188,6 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       promptLine: PRICE_LISTS_PROMPT_LINE,
       destination: PRICE_LISTS_DESTINATION,
       parse: parsePriceListsSurface,
-    },
-    {
-      kind: "price-list-entries",
-      version: 1,
-      toolNames: PRICE_LIST_ENTRIES_SURFACE_TOOLS,
-      actionNames: [PRICE_LIST_ENTRIES_ACTION_NAME],
-      promptLine: PRICE_LIST_ENTRIES_PROMPT_LINE,
-      destination: PRICE_LIST_ENTRIES_DESTINATION,
-      parse: parsePriceListEntriesSurface,
     },
     {
       kind: "search-results",

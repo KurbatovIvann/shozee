@@ -17,7 +17,6 @@ import {
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
 } from "./orders-list.js";
-import { PRICE_LIST_ENTRIES_ENTRIES_TOOL } from "./price-list-entries.js";
 import { PRICE_LISTS_PRICE_LISTS_TOOL } from "./price-lists.js";
 import { PRODUCTS_LIST_PRODUCTS_TOOL } from "./products-list.js";
 import {
@@ -113,14 +112,6 @@ function toolCallIdsForSurface(
       const page = lastSuccessfulResult(
         results,
         (name) => name === PRICE_LISTS_PRICE_LISTS_TOOL,
-      );
-      pushUniqueId(ids, page?.toolCallId);
-      return ids;
-    }
-    case "price-list-entries": {
-      const page = lastSuccessfulResult(
-        results,
-        (name) => name === PRICE_LIST_ENTRIES_ENTRIES_TOOL,
       );
       pushUniqueId(ids, page?.toolCallId);
       return ids;

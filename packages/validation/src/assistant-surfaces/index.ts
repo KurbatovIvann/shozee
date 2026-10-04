@@ -133,18 +133,6 @@ export {
   type AssistantPriceListEntityData,
 } from "./price-list-entity.js";
 export {
-  ASSISTANT_PRICE_LIST_ENTRIES_ROW_MAX,
-  PRICE_LIST_ENTRIES_ACTION_NAME,
-  PRICE_LIST_ENTRIES_COLLECTION_COLUMNS,
-  PRICE_LIST_ENTRIES_DESTINATION,
-  PRICE_LIST_ENTRIES_ENTRIES_TOOL,
-  PRICE_LIST_ENTRIES_PROMPT_LINE,
-  PRICE_LIST_ENTRIES_SURFACE_TOOLS,
-  parsePriceListEntriesSurface,
-  type AssistantPriceListEntriesData,
-  type AssistantPriceListEntriesRowData,
-} from "./price-list-entries.js";
-export {
   ASSISTANT_PRICE_LISTS_ROW_MAX,
   PRICE_LISTS_ACTION_NAME,
   PRICE_LISTS_COLLECTION_COLUMNS,

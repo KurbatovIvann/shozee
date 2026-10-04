@@ -65,7 +65,6 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
     case "customers-list":
     case "products-list":
     case "price-lists":
-    case "price-list-entries":
       return surface.emptyTitle !== null ? null : (
         <AssistantCollectionBlock
           collection={surface.collection}

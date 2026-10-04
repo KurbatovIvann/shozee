@@ -68,9 +68,6 @@ export const STAFF_ASSISTANT_CLIP_IDENTITY_KEYS = [
   "isDefault",
   "entryCount",
   "variantCount",
-  "productId",
-  "variantId",
-  "priceMinor",
 ] as const;
 
 const IDENTITY_KEY_SET = new Set<string>(STAFF_ASSISTANT_CLIP_IDENTITY_KEYS);

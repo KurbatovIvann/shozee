@@ -342,46 +342,6 @@ describe("clipStaffAssistantToolResult", () => {
     );
   });
 
-  it("keeps price-list entry references and the price on identity-key shrink", () => {
-    expect(STAFF_ASSISTANT_CLIP_IDENTITY_KEYS).toEqual(
-      expect.arrayContaining(["productId", "variantId", "priceMinor"]),
-    );
-    const items = Array.from({ length: 40 }, (_, index) => ({
-      id: rowId(index),
-      priceListId: rowId(900),
-      productId: rowId(index + 100),
-      variantId: index === 0 ? rowId(index + 200) : null,
-      priceMinor: String(10_000 + index),
-      currency: "UAH",
-      notes: "n".repeat(800),
-    }));
-    const clipped = clipStaffAssistantToolResult({ items, nextCursor: null });
-    expect(isClipped(clipped)).toBe(true);
-    if (!isClipped(clipped)) {
-      return;
-    }
-    const previewItems =
-      typeof clipped.preview === "object" &&
-      clipped.preview !== null &&
-      "items" in clipped.preview &&
-      Array.isArray(clipped.preview.items)
-        ? clipped.preview.items
-        : [];
-    expect(previewItems[0]).toEqual(
-      expect.objectContaining({
-        id: rowId(0),
-        priceListId: rowId(900),
-        productId: rowId(100),
-        variantId: rowId(200),
-        priceMinor: "10000",
-        currency: "UAH",
-      }),
-    );
-    expect(previewItems[1]).toEqual(
-      expect.objectContaining({ variantId: null }),
-    );
-  });
-
   it("keeps CRM contacts on identity-key shrink", () => {
     expect(STAFF_ASSISTANT_CLIP_IDENTITY_KEYS).toEqual(
       expect.arrayContaining(["phone", "email", "groupId", "priceListId"]),
