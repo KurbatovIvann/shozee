@@ -225,6 +225,7 @@ export type AssistantTurnAcceptInput =
       readonly kind: "chat";
       readonly text: string;
       readonly earned?: readonly ChatPart[];
+      readonly askedMessage?: ModelMessage;
     })
   | (AcceptCommon & {
       readonly kind: "answer";
@@ -250,7 +251,7 @@ function acceptedHistoryInstruction(
     return {
       kind: "append",
       messages: (input.settled === undefined
-        ? [assistantAskedMessage(input.text)]
+        ? [input.askedMessage ?? assistantAskedMessage(input.text)]
         : input.settled.appended
       ).map((message) => asJson(message)),
     };
@@ -694,7 +695,7 @@ export function memoryAssistantTurnStore(
       if (input.kind === "chat") {
         await history.save(scope, [
           ...storedHistory,
-          assistantAskedMessage(input.text),
+          input.askedMessage ?? assistantAskedMessage(input.text),
         ]);
       } else if (input.kind === "answer") {
         await history.save(scope, input.history);

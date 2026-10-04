@@ -76,15 +76,12 @@ const probeFiles = {
   "layouts/panel/__boundary-probe__/layout-forbidden-onboarding.ts": `import { planCreateCompanySubmit } from "../../../features/companies/onboarding/create-company-form";\n`,
 };
 
+const TRANSIENT_LINT_PROBE_DIR = "__boundary-probe__";
+
 const probeDirectories = [
-  path.join(srcRoot, "__boundary-probe__"),
-  path.join(srcRoot, "routes", "__boundary-probe__"),
-  path.join(srcRoot, "components", "ui", "__boundary-probe__"),
-  path.join(srcRoot, "api", "__boundary-probe__"),
-  path.join(srcRoot, "features", "companies", "__boundary-probe__"),
-  path.join(srcRoot, "features", "companies", "api", "__boundary-probe__"),
-  path.join(srcRoot, "features", "auth", "__boundary-probe__"),
-  path.join(srcRoot, "layouts", "panel", "__boundary-probe__"),
+  ...new Set(
+    Object.keys(probeFiles).map((rel) => path.join(srcRoot, path.dirname(rel))),
+  ),
 ];
 
 /** @type {Map<string, import("eslint").Linter.LintMessage[]>} */
@@ -147,6 +144,14 @@ function boundaryErrors(probeName) {
 function layerErrors(probeName) {
   return ruleErrors(probeName, "showzy-web/layer-boundaries");
 }
+
+describe("probe placement (SHO-863)", () => {
+  it("writes every probe into the directory repo-wide scans skip", () => {
+    for (const rel of Object.keys(probeFiles)) {
+      expect(path.basename(path.dirname(rel))).toBe(TRANSIENT_LINT_PROBE_DIR);
+    }
+  });
+});
 
 describe("apps/web clientApp import boundary (SHO-309)", () => {
   it("keeps showzy/import-boundaries as an error in the app config", () => {

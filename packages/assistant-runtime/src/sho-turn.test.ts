@@ -18,7 +18,7 @@ import {
 } from "./assistant-interactions.js";
 import { AssistantConfirmationRequired } from "./assistant-kit-confirmation.js";
 import { createResolveAnswer } from "./assistant-kit-resolve.js";
-import { shoFocusFrom, shoPreviousFrom } from "./sho-focus.js";
+import { shoFocusFrom, shoLogOptions, shoPreviousFrom } from "./sho-focus.js";
 
 import {
   runShoTurn,
@@ -66,6 +66,15 @@ function turnWith(
     engine: engineOf(plan),
   };
 }
+
+const fellBack = (
+  reason: string,
+  gaps: readonly { readonly path: string; readonly why: string }[] = [],
+): Record<string, unknown> => ({
+  kind: "fallback",
+  reason,
+  escalation: { reason, gaps, sessionId: SESSION, at: NOW.toISOString() },
+});
 
 const readPlan = calls({
   kind: "call",
@@ -193,7 +202,7 @@ describe("runShoTurn", () => {
         Promise.resolve({ kind: "ok", result: {} }),
       ),
     );
-    expect(outcome).toEqual({ kind: "fallback", reason: "timeout" });
+    expect(outcome).toEqual(fellBack("timeout"));
   });
 
   it("falls back when the engine throws, and never runs a tool", async () => {
@@ -202,7 +211,7 @@ describe("runShoTurn", () => {
       ...turnWith(readPlan, execute as never),
       engine: { plan: () => Promise.reject(new Error("sho is down")) },
     });
-    expect(outcome).toEqual({ kind: "fallback", reason: "engine_failed" });
+    expect(outcome).toEqual(fellBack("engine_failed"));
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -211,16 +220,13 @@ describe("runShoTurn", () => {
       ...turnWith(readPlan, () => Promise.resolve({ kind: "ok", result: {} })),
       tools: () => Promise.resolve({} as ToolSet),
     });
-    expect(absent).toEqual({ kind: "fallback", reason: "tool_unavailable" });
+    expect(absent).toEqual(fellBack("tool_unavailable"));
 
     const unreadable = await runShoTurn({
       ...turnWith(readPlan, () => Promise.resolve({ kind: "ok", result: {} })),
       tools: () => Promise.reject(new Error("the actor could not be read")),
     });
-    expect(unreadable).toEqual({
-      kind: "fallback",
-      reason: "tools_unreadable",
-    });
+    expect(unreadable).toEqual(fellBack("tools_unreadable"));
   });
 
   it("falls back when the tool refuses or throws", async () => {
@@ -233,12 +239,12 @@ describe("runShoTurn", () => {
         }),
       ),
     );
-    expect(refused).toEqual({ kind: "fallback", reason: "tool_failed" });
+    expect(refused).toEqual(fellBack("tool_failed"));
 
     const threw = await runShoTurn(
       turnWith(readPlan, () => Promise.reject(new Error("boom"))),
     );
-    expect(threw).toEqual({ kind: "fallback", reason: "tool_failed" });
+    expect(threw).toEqual(fellBack("tool_failed"));
   });
 
   const notedPlan = calls({
@@ -272,10 +278,7 @@ describe("runShoTurn", () => {
       ),
     );
 
-    expect(outcome).toEqual({
-      kind: "fallback",
-      reason: "write_did_not_pause",
-    });
+    expect(outcome).toEqual(fellBack("write_did_not_pause"));
   });
 
   it("adds the plan's notes to the preview the card shows", async () => {
@@ -292,6 +295,46 @@ describe("runShoTurn", () => {
         notes: ["Прочитано як нове замовлення.", "Оксана"],
       },
     });
+  });
+
+  it("carries the plan's notes in the continuation, for the pause after this one", async () => {
+    const picker = () =>
+      Promise.resolve({
+        kind: "pause",
+        interaction: "choice",
+        prompt: { subject: "оксани", options: [], optionsTruncated: false },
+        secret: { toolName: TOOL },
+      });
+    const outcome = await runShoTurn(turnWith(notedPlan, picker));
+
+    expect(outcome.kind).toBe("ask");
+    if (outcome.kind !== "ask") return;
+    expect(outcome.prompt).toEqual({
+      subject: "оксани",
+      options: [],
+      optionsTruncated: false,
+    });
+    expect(outcome.continuation.promptNotes).toEqual([
+      "Прочитано як нове замовлення.",
+    ]);
+  });
+
+  const unnotedPlan = calls({
+    kind: "call",
+    writes: true,
+    toolName: TOOL,
+    input: { customerQuery: "оксани" },
+    reply: "Замовлення створено.",
+  });
+
+  it("carries no notes when the plan had none", async () => {
+    const outcome = await runShoTurn(
+      turnWith(unnotedPlan, pauseWith(confirmationPrompt)),
+    );
+
+    expect(outcome.kind).toBe("ask");
+    if (outcome.kind !== "ask") return;
+    expect(outcome.continuation.promptNotes).toBeUndefined();
   });
 
   it("keeps the plan's note when the preview's own list is already full", async () => {
@@ -665,5 +708,118 @@ describe("runShoTurn over the stored log", () => {
     expect(outcome.kind).toBe("settled");
     if (outcome.kind !== "settled") return;
     expect(shoFocusFrom(outcome.appended, SESSION)).toEqual([]);
+  });
+});
+
+describe("runShoTurn never asks the same card a third time", () => {
+  const wantsCustomer = shoCommandSchema.parse({
+    text: "створи замовлення для Каті",
+    action: "orders.create",
+    kind: "write",
+    effect: "write",
+    confirm: "card",
+    params: { customer: { text: "Катя", status: "ambiguous" } },
+    needs: [],
+    ready: false,
+    catalogued: true,
+    confidence: { action: 0.99, margin: 0.8, certainty: 0.9, spans: 0.9 },
+    refPrevious: {},
+  });
+
+  function askedTwice(): ModelMessage[] {
+    return [1, 2].flatMap((seq): ModelMessage[] => [
+      { role: "user", content: "створи замовлення" },
+      {
+        role: "assistant",
+        providerOptions: shoLogOptions({
+          command: wantsCustomer,
+          sessionId: SESSION,
+          at: NOW.toISOString(),
+        }),
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: `sho-${String(seq)}-${TOOL}-x`,
+            toolName: TOOL,
+            input: {},
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: `sho-${String(seq)}-${TOOL}-x`,
+            toolName: TOOL,
+            output: {
+              type: "json",
+              value: { status: "paused", reason: "choice" } as never,
+            },
+          },
+        ],
+      },
+    ]);
+  }
+
+  it("hands the still-open gap to the model instead of planning a third ask", async () => {
+    const execute = vi.fn(() => Promise.resolve({ kind: "ok", result: {} }));
+    const outcome = await runShoTurn({
+      ...turnWith(
+        { ...readPlan, command: wantsCustomer },
+        execute as never,
+        askedTwice(),
+      ),
+      text: "для Каті",
+    });
+
+    expect(outcome).toMatchObject(
+      fellBack("stuck", [{ path: "customer", why: "ambiguous" }]),
+    );
+    if (outcome.kind !== "fallback") return;
+    expect(outcome.escalation.trap).toBe("repeat-gap");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("plans as usual once the gap is filled", async () => {
+    const filled = shoCommandSchema.parse({
+      ...wantsCustomer,
+      params: {
+        customer: {
+          text: "Катя Самбука",
+          status: "resolved",
+          id: "11111111-1111-4111-8111-111111111111",
+        },
+      },
+    });
+    const outcome = await runShoTurn({
+      ...turnWith(
+        { ...readPlan, command: filled },
+        () => Promise.resolve({ kind: "ok", result: { items: [] } }),
+        askedTwice(),
+      ),
+      text: "Катя Самбука",
+    });
+
+    expect(outcome.kind).toBe("settled");
+  });
+
+  it("escalates a repeated text without spending a parse", async () => {
+    const plan = vi.fn(() => Promise.resolve(readPlan));
+    const outcome = await runShoTurn({
+      ...turnWith(
+        readPlan,
+        () => Promise.resolve({ kind: "ok", result: {} }),
+        askedTwice().slice(0, 3),
+      ),
+      text: "створи замовлення",
+      engine: { plan },
+    });
+
+    expect(outcome.kind).toBe("fallback");
+    if (outcome.kind !== "fallback") return;
+    expect(outcome.reason).toBe("stuck");
+    expect(outcome.escalation.trap).toBe("repeat-text");
+    expect(plan).not.toHaveBeenCalled();
   });
 });

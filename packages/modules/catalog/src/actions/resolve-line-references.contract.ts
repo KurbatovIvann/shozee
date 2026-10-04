@@ -7,13 +7,12 @@
  * rows (active or archived) is variable: the parent is not sellable.
  * Bounded DB queries — no per-line SELECT or ctx.call. Output order
  * matches input.
- *
- * Mechanical: `timeout: 5000` matches other catalog facts reads. Query
- * max 100. Product and variant picker cap `VARIANT_SELECTION_OPTIONS_MAX`
- * (20) is not `REFERENCE_CONFLICT_LABELS_MAX` (5). Company id is never input.
  */
 import { defineActionContract } from "@showzy/core/contract";
-import { entityRefSchema } from "@showzy/validation/entity-ref";
+import {
+  ENTITY_LOOKUP_OPTIONS_MAX,
+  entityRefSchema,
+} from "@showzy/validation/entity-ref";
 import { z } from "zod";
 
 export const RESOLVE_LINE_REFERENCES_MAX_LINES = 100;
@@ -23,7 +22,7 @@ export const RESOLVE_LINE_REFERENCES_MAX_LINES = 100;
  * `unmatched_query`. Must fit a normal 6-flavour product. Not
  * `REFERENCE_CONFLICT_LABELS_MAX` (5), which would clip the sixth flavour.
  */
-export const VARIANT_SELECTION_OPTIONS_MAX = 20;
+export const VARIANT_SELECTION_OPTIONS_MAX = ENTITY_LOOKUP_OPTIONS_MAX;
 
 export const VARIANT_AND_SELECTION_EXCLUSIVE_MESSAGE =
   "variant and variantSelection are mutually exclusive.";

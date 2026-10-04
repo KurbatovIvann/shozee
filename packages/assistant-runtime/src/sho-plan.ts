@@ -15,11 +15,38 @@ import {
   type ShoActionPlanners,
   type ShoPlanFallbackReason,
 } from "./sho-planners/kit.js";
-import { SHO_COMPANY_WRITE_PLANNERS } from "./sho-planners/company-writes.js";
-import { SHO_CUSTOMER_WRITE_PLANNERS } from "./sho-planners/customers-writes.js";
-import { SHO_ORDER_LIFECYCLE_PLANNERS } from "./sho-planners/orders-lifecycle.js";
-import { SHO_WRITE_PLANNERS } from "./sho-planners/orders-writes.js";
-import { SHO_READ_PLANNERS } from "./sho-planners/reads.js";
+import {
+  SHO_CATALOG_WRITE_PLANNERS,
+  SHO_CATALOG_WRITE_PLANNER_PARAMS,
+} from "./sho-planners/catalog-writes.js";
+import {
+  SHO_COMPANY_WRITE_PLANNERS,
+  SHO_COMPANY_WRITE_PLANNER_PARAMS,
+} from "./sho-planners/company-writes.js";
+import {
+  SHO_CUSTOMER_WRITE_PLANNERS,
+  SHO_CUSTOMER_WRITE_PLANNER_PARAMS,
+} from "./sho-planners/customers-writes.js";
+import {
+  SHO_DOCUMENT_WRITE_PLANNERS,
+  SHO_DOCUMENT_WRITE_PLANNER_PARAMS,
+} from "./sho-planners/documents-writes.js";
+import {
+  SHO_ORDER_LIFECYCLE_PLANNERS,
+  SHO_ORDER_LIFECYCLE_PLANNER_PARAMS,
+} from "./sho-planners/orders-lifecycle.js";
+import {
+  SHO_WRITE_PLANNERS,
+  SHO_WRITE_PLANNER_PARAMS,
+} from "./sho-planners/orders-writes.js";
+import {
+  SHO_PRICING_WRITE_PLANNERS,
+  SHO_PRICING_WRITE_PLANNER_PARAMS,
+} from "./sho-planners/pricing-writes.js";
+import {
+  SHO_READ_PLANNERS,
+  SHO_READ_PLANNER_PARAMS,
+} from "./sho-planners/reads.js";
 
 export {
   shoLocatorFor,
@@ -43,8 +70,27 @@ export const SHO_ACTION_PLANNERS: ShoActionPlanners = Object.freeze({
   ...SHO_WRITE_PLANNERS,
   ...SHO_ORDER_LIFECYCLE_PLANNERS,
   ...SHO_CUSTOMER_WRITE_PLANNERS,
+  ...SHO_DOCUMENT_WRITE_PLANNERS,
+  ...SHO_CATALOG_WRITE_PLANNERS,
+  ...SHO_PRICING_WRITE_PLANNERS,
   ...SHO_COMPANY_WRITE_PLANNERS,
 });
+
+export const SHO_PLANNER_PARAMS: Readonly<Record<string, readonly string[]>> =
+  Object.freeze({
+    ...SHO_READ_PLANNER_PARAMS,
+    ...SHO_WRITE_PLANNER_PARAMS,
+    ...SHO_ORDER_LIFECYCLE_PLANNER_PARAMS,
+    ...SHO_CUSTOMER_WRITE_PLANNER_PARAMS,
+    ...SHO_DOCUMENT_WRITE_PLANNER_PARAMS,
+    ...SHO_CATALOG_WRITE_PLANNER_PARAMS,
+    ...SHO_PRICING_WRITE_PLANNER_PARAMS,
+    ...SHO_COMPANY_WRITE_PLANNER_PARAMS,
+  });
+
+export const SHO_PLANNER_PARAM_NAMES: ReadonlySet<string> = new Set(
+  Object.values(SHO_PLANNER_PARAMS).flat(),
+);
 
 export interface ShoPlannerDeps {
   readonly actions: readonly string[];

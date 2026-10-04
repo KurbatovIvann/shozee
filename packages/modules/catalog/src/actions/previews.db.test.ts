@@ -12,6 +12,7 @@ import {
   type TestKit,
 } from "@showzy/core/testing";
 import { products, productVariants } from "@showzy/db/schema/catalog";
+import { PREVIEW_CARD_LINES_PER_INPUT_ITEM } from "@showzy/module-kit/preview-card-lines";
 import {
   PREVIEW_CHANGES_LABEL,
   PREVIEW_NO_CHANGES,
@@ -30,6 +31,8 @@ import { updateVariant } from "./update-variant.js";
 
 const companyA = kitIdentities.companies.a;
 const companyB = kitIdentities.companies.b;
+
+const CREATE_PRODUCT_FIXED_LINES = 2;
 
 const fixtures = {
   productA: randomUUID(),
@@ -155,6 +158,26 @@ describe("catalog preview cards", () => {
       { label: "Варіант: 100 г", value: "за базовою ціною товару" },
       { label: "Варіант: 500 г", value: "990,00 грн" },
     ]);
+  });
+
+  it("SHO-840: catalog.createProduct cards its fixed lines plus the declared lines per variant", async () => {
+    const variants = ["50 г", "100 г", "250 г", "500 г"].map((name) => ({
+      name,
+    }));
+    const preview = await previewOf(createProduct, {
+      name: "Чай Молочний Улун",
+      basePriceMinor: "24050",
+      variants,
+    });
+    expect(preview.lines.slice(0, CREATE_PRODUCT_FIXED_LINES)).toEqual([
+      { label: "Назва", value: "Чай Молочний Улун" },
+      { label: "Базова ціна", value: "240,50 грн" },
+    ]);
+    expect(preview.lines).toHaveLength(
+      CREATE_PRODUCT_FIXED_LINES +
+        variants.length *
+          PREVIEW_CARD_LINES_PER_INPUT_ITEM["catalog.createProduct.variants"],
+    );
   });
 
   it("cards the stored-to-new change for catalog.updateProduct", async () => {

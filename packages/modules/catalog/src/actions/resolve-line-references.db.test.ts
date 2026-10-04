@@ -1270,7 +1270,6 @@ describe("catalog.resolveLineReferences", () => {
     expect(source.match(/loadProductsByExactQuery\(/g)).toHaveLength(4);
     expect(source.match(/loadProductsByNameSearch\(/g)).toHaveLength(4);
     expect(source).toMatch(/sellableProducts/);
-    expect(source).toMatch(/VARIANT_SELECTION_OPTIONS_MAX/);
   });
 
   it("resolves a unique query-path product when the combined contains scan is capped", async () => {
@@ -1641,6 +1640,31 @@ describe("catalog.resolveLineReferences", () => {
       ambiguousProductQueryMessage("MatchCap"),
     );
     expect(conflict.clientMessage).not.toContain("Multiple matches");
+
+    await kit.db.runtime.db.insert(products).values(
+      Array.from({ length: VARIANT_SELECTION_OPTIONS_MAX + 1 }, (_, index) => ({
+        id: randomUUID(),
+        companyId: kitIdentities.companies.a,
+        name: `OverCap ${String(index).padStart(2, "0")}`,
+        basePriceMinor: 10n,
+        status: "active" as const,
+      })),
+    );
+    const overflow = await kit
+      .invoke(resolveLineReferences, {
+        lines: [{ product: { by: "query", value: "OverCap" } }],
+      })
+      .then(
+        () => {
+          throw new Error("expected ReferenceResolutionConflictError");
+        },
+        (caught: unknown) => caught,
+      );
+    const overflowConflict = expectResolutionConflict(overflow);
+    expect(overflowConflict.options).toHaveLength(
+      VARIANT_SELECTION_OPTIONS_MAX,
+    );
+    expect(overflowConflict.optionsTruncated).toBe(true);
   });
 
   it("returns archived for a later line instead of a first-line variant picker", async () => {

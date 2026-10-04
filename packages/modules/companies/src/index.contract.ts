@@ -4,7 +4,6 @@ export { getSellerFactsContract } from "./actions/get-seller-facts.contract.js";
 export { listMineContract } from "./actions/list-mine.contract.js";
 export {
   COMPANY_LEGAL_ADDRESS_MAX,
-  COMPANY_LEGAL_BANK_NAME_MAX,
   COMPANY_LEGAL_NAME_MAX,
   updateLegalContract,
 } from "./actions/update-legal.contract.js";

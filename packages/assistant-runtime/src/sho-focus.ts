@@ -162,7 +162,7 @@ export function shoTurnRecords(
   return [...ran, ...namedIn(command)].slice(0, SHO_MOST_FOCUS);
 }
 
-interface Referred {
+export interface ShoCommandRef {
   readonly slot: string;
   readonly direct: boolean;
   readonly ref: ShoRef;
@@ -172,7 +172,7 @@ function refsInto(
   slot: string,
   direct: boolean,
   value: unknown,
-  into: Referred[],
+  into: ShoCommandRef[],
 ): void {
   if (shoIsRef(value)) {
     into.push({ slot, direct, ref: value });
@@ -192,8 +192,8 @@ function refsInto(
   }
 }
 
-function shoCommandRefs(command: ShoCommand): readonly Referred[] {
-  const refs: Referred[] = [];
+export function shoCommandRefs(command: ShoCommand): readonly ShoCommandRef[] {
+  const refs: ShoCommandRef[] = [];
   for (const [path, param] of Object.entries(command.params)) {
     refsInto(path, true, param, refs);
   }
@@ -224,9 +224,9 @@ export function shoLogOptions(log: ShoTurnLog): {
   return { [SHO_LOG_NAMESPACE]: { [SHO_LOG_FIELD]: JSON.stringify(log) } };
 }
 
-function written(message: ModelMessage): unknown {
+export function shoLogPart(message: ModelMessage, field: string): unknown {
   const options = message.providerOptions?.[SHO_LOG_NAMESPACE];
-  const value = options === undefined ? undefined : options[SHO_LOG_FIELD];
+  const value = options === undefined ? undefined : options[field];
   if (typeof value !== "string") {
     return undefined;
   }
@@ -236,6 +236,9 @@ function written(message: ModelMessage): unknown {
     return undefined;
   }
 }
+
+const written = (message: ModelMessage): unknown =>
+  shoLogPart(message, SHO_LOG_FIELD);
 
 interface Ran {
   readonly toolCallId: string;
@@ -273,7 +276,7 @@ function resultIn(
   return undefined;
 }
 
-const stillPaused = (result: unknown): boolean =>
+export const shoResultPaused = (result: unknown): boolean =>
   isJson(result) && result["status"] === "paused";
 
 function recordsOf(
@@ -291,32 +294,58 @@ interface Touched {
   readonly turns: number;
 }
 
+function saidCounts(history: readonly ModelMessage[]): readonly number[] {
+  const counts = new Array<number>(history.length + 1).fill(0);
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    counts[index] =
+      (counts[index + 1] ?? 0) + (history[index]?.role === "user" ? 1 : 0);
+  }
+  return counts;
+}
+
 function shoLogs(history: readonly ModelMessage[]): readonly Touched[] {
-  const touched: Touched[] = [];
-  let turns = 0;
+  const counts = saidCounts(history);
+  return shoLoggedTurns(history).map(
+    ({ log, paused, index, toolName, result }) => ({
+      log,
+      turns: counts[index + 1] ?? 0,
+      records: recordsOf(log.command, toolName, result, paused),
+    }),
+  );
+}
+
+export interface ShoLoggedTurn {
+  readonly log: ShoTurnLog;
+  readonly toolName: string;
+  readonly result: unknown;
+  readonly paused: boolean;
+  readonly index: number;
+}
+
+export function shoLoggedTurns(
+  history: readonly ModelMessage[],
+): readonly ShoLoggedTurn[] {
+  const logged: ShoLoggedTurn[] = [];
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const message = history[index];
     if (message === undefined) {
       continue;
     }
-    if (message.role === "user") {
-      turns += 1;
-      continue;
-    }
-    const parsed = shoTurnLogSchema.safeParse(written(message));
     const ran = calledIn(message);
-    if (!parsed.success || ran === null) {
+    const parsed = shoTurnLogSchema.safeParse(written(message));
+    if (ran === null || !parsed.success) {
       continue;
     }
     const result = resultIn(history, index, ran.toolCallId);
-    const paused = stillPaused(result);
-    touched.push({
+    logged.push({
       log: parsed.data,
-      turns,
-      records: recordsOf(parsed.data.command, ran.toolName, result, paused),
+      toolName: ran.toolName,
+      result,
+      paused: shoResultPaused(result),
+      index,
     });
   }
-  return touched;
+  return logged;
 }
 
 export function shoFocusFrom(
@@ -369,7 +398,7 @@ export function shoOpenCardPrevious(
     const parsed = shoTurnLogSchema.safeParse(written(message));
     if (
       !parsed.success ||
-      !stillPaused(resultIn(history, index, ran.toolCallId))
+      !shoResultPaused(resultIn(history, index, ran.toolCallId))
     ) {
       return undefined;
     }

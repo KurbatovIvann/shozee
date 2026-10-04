@@ -1,13 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  CONFIRMATION_TTL_MS,
-  createConfirmationHook,
-  createInMemoryConfirmationStore,
-  type ActionPipelineDeps,
-  type ConfirmationHook,
-} from "@showzy/core";
-import {
   ConfirmationRequiredError,
   NotFoundError,
   PermissionDeniedError,
@@ -17,6 +10,7 @@ import {
   createTestKit,
   crossTenantSuite,
   idempotencySuite,
+  invokeConfirmedAction,
   isolationCase,
   kitIdentities,
   type TestKit,
@@ -52,45 +46,6 @@ const clerks = {
 };
 
 let kit: TestKit;
-
-/**
- * The core test kit omits the confirmation slot (`kitProtocolHooks`).
- * Inherited isolation/idempotency suites invoke once and do not complete
- * a challenge, so this file attaches an auto-grant for those suites.
- * Protocol tests compose the real in-memory store via `deps`.
- */
-function autoConfirmHook(): ConfirmationHook {
-  return {
-    gate: () => {
-      const confirmedAt = new Date();
-      return Promise.resolve({
-        challengeId: randomUUID(),
-        confirmedAt,
-        expiresAt: new Date(confirmedAt.getTime() + CONFIRMATION_TTL_MS),
-      });
-    },
-  };
-}
-
-function attachAutoConfirm(target: TestKit): void {
-  const hooks = target.pipeline.hooks;
-  if (hooks === undefined) {
-    throw new Error("test kit pipeline is missing protocol hooks");
-  }
-  Object.assign(hooks, { confirmation: autoConfirmHook() });
-}
-
-function confirmationPipeline(target: TestKit): ActionPipelineDeps {
-  return {
-    ...target.pipeline,
-    hooks: {
-      ...target.pipeline.hooks,
-      confirmation: createConfirmationHook({
-        store: createInMemoryConfirmationStore(),
-      }),
-    },
-  };
-}
 
 async function countOkDeleteAudits(): Promise<number> {
   const rows = await kit.db.runtime.db
@@ -164,7 +119,6 @@ async function insertList(values: {
 
 beforeAll(async () => {
   kit = await createTestKit();
-  attachAutoConfirm(kit);
 
   await insertList({
     id: fixtures.isolationOwn,
@@ -275,7 +229,8 @@ idempotencySuite(
 describe("pricing.deletePriceList", () => {
   it("deletes a non-default list, cascades entries, SET NULLs assignments, and audits once", async () => {
     const requestId = randomUUID();
-    const result = await kit.invoke(
+    const result = await invokeConfirmedAction(
+      kit,
       deletePriceList,
       { id: fixtures.happyList },
       {},
@@ -332,7 +287,9 @@ describe("pricing.deletePriceList", () => {
     });
     expect(await countDefaultLists(kitIdentities.companies.a)).toBe(1);
 
-    const result = await kit.invoke(deletePriceList, { id: defaultId });
+    const result = await invokeConfirmedAction(kit, deletePriceList, {
+      id: defaultId,
+    });
     expect(result).toEqual({ id: defaultId });
     expect(await listRow(defaultId)).toBeUndefined();
     expect(await countDefaultLists(kitIdentities.companies.a)).toBe(0);
@@ -346,14 +303,13 @@ describe("pricing.deletePriceList", () => {
       name: "Confirm me",
     });
 
-    const deps = confirmationPipeline(kit);
     const idempotencyKey = randomUUID();
     const unconfirmed = await kit
       .invoke(
         deletePriceList,
         { id: listId },
         {},
-        { deps, request: { idempotencyKey } },
+        { request: { idempotencyKey } },
       )
       .then(
         () => {
@@ -385,7 +341,6 @@ describe("pricing.deletePriceList", () => {
       { id: listId },
       {},
       {
-        deps,
         request: {
           idempotencyKey,
           confirmationChallengeId: unconfirmed.challenge.challengeId,
@@ -418,7 +373,9 @@ describe("pricing.deletePriceList", () => {
       companyId: kitIdentities.companies.a,
       name: "Second delete",
     });
-    await kit.invoke(deletePriceList, { id: secondDeleteId });
+    await invokeConfirmedAction(kit, deletePriceList, {
+      id: secondDeleteId,
+    });
 
     const missingError = await kit
       .invoke(deletePriceList, { id: missingId })
@@ -455,7 +412,8 @@ describe("pricing.deletePriceList", () => {
       name: "Replay delete",
     });
     const idempotencyKey = randomUUID();
-    const first = await kit.invoke(
+    const first = await invokeConfirmedAction(
+      kit,
       deletePriceList,
       { id: listId },
       {},
@@ -510,7 +468,7 @@ describe("pricing.deletePriceList", () => {
       },
     });
 
-    await kit.invoke(deletePriceList, { id: defaultId });
+    await invokeConfirmedAction(kit, deletePriceList, { id: defaultId });
     expect(await countDefaultLists(kitIdentities.companies.a)).toBe(0);
 
     const after = await kit.invoke(resolveProductPrices, {

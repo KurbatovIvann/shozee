@@ -33,6 +33,7 @@ import {
 import { assistantChatErrorMessage, bannerKindFor } from "../shared/chat-error";
 import { assistantChoiceAnswerOptionId } from "../shared/choice-answer";
 import { useVoiceComposer } from "../voice/use-voice-composer";
+import type { VoiceSendResult } from "../voice/voice-composer";
 import type { AssistantComposerVoice } from "./assistant-composer";
 import type { AssistantSheetViewModel } from "./assistant-sheet-view";
 
@@ -156,17 +157,20 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
   }, [conversation, input]);
 
   const sendText = useCallback(
-    (raw: string): Promise<boolean> => {
+    (raw: string): Promise<VoiceSendResult> => {
       const text = clipAssistantKitText(raw);
       if (text.length === 0) {
-        return Promise.resolve(false);
+        return Promise.resolve({ delivered: false, messageId: null });
       }
       return conversation.send(text).then((outcome) => {
-        if (outcome.kind !== "refused") {
-          return true;
+        if (outcome.kind === "refused") {
+          setInput((current) => (current.length === 0 ? text : current));
+          return { delivered: false, messageId: null };
         }
-        setInput((current) => (current.length === 0 ? text : current));
-        return false;
+        return {
+          delivered: true,
+          messageId: outcome.kind === "sent" ? outcome.messageId : null,
+        };
       });
     },
     [conversation],
@@ -277,6 +281,6 @@ export function useAssistantSheet(): AssistantSheetViewModel & {
     loadOlder: conversation.loadOlder,
     loadingOlder: conversation.loadingOlder,
     voice,
-    spokenTexts: dictation.spoken,
+    spokenMessageIds: dictation.spoken,
   };
 }

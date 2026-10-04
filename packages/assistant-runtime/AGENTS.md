@@ -218,29 +218,6 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `read_as_customer_update` needs become the card's notes.
   `SHO_CUSTOMER_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
   config default stays empty.
-- `sho-planners/company-writes.ts` — the invite and company-legal write
-  planners (SHO-862), `writes: true`, both pausing on the ADR-0050 preview.
-  Nothing an invite grants is ever defaulted: `invites.create` requires both
-  `is_reusable` — the boolean enum Шо typed, never a guess — and a canonical
-  `expires` (`days:N` / `date:MM-DD`), which `shoInviteExpiresAt` turns into
-  the action's absolute `expiresAt` through `kyivNamedPeriodRange`, so there
-  is no second Kyiv date map, and refuses anything outside the contract's own
-  one-hour-to-365-day window. The gold d79 parses carry an `expires` span
-  with no canonical value, so they fall to the LLM as they stand.
-  `max_uses` is not mapped: the contract couples it to `isReusable` with a
-  refine no plan table can express, and copying that refine here would be a
-  second derivation of it. A `group` or `price_list` plans only as a resolved
-  uuid and the invite's `phone` only from Шо's typed value; the company is
-  the verified one and never an input.
-  `companies.updateLegal` requires `company_type` and `legal_name`, because
-  the action requires both on every call and no planner may read-merge-write
-  a stale name. Everything else follows SHO-725: a field Шо did not parse is
-  never sent, so it keeps its stored value, and `bankEdrpou`, which Шо has no
-  param for, is always unchanged. ЄДРПОУ, IBAN, МФО, phone and e-mail come
-  only from Шо's typed value and are validated by the contract's own schemas;
-  `legal_name` and `address` are clipped spans. `bank_name` is not mapped —
-  Шо types a bank slug (`monobank`), not the name a document prints.
-  `SHO_COMPANY_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`.
   The same table carries the customer lifecycle and the group planners
   (SHO-859): `customers.archiveCustomer`, `customers.restoreCustomer`,
   `customers.deleteCustomer` and `customers.deleteGroup` plan `{ id }` from
@@ -254,6 +231,149 @@ registry is injected into `createAssistantRuntime`; this package never imports
   risk, so they pause on the same ADR-0050 preview as every other write and
   carry their `read_as_focus_type` misread as a note on the card. The parity
   test reads a planned write intent as `write` or `high` for that reason.
+  The counterparty writes (SHO-860) sit in the same table:
+  `customers.createCounterparty` takes `new_name`, `customers.updateCounterparty`
+  the resolved `counterparty` as `id` plus at least one field, and
+  `customers.deleteCounterparty` — `kind: "high"`, `risk: "high"` — the record
+  alone. `address` is the legal address span, `bank_name` the bank the staff
+  said and `comment` the action's `notes`; `edrpou`, `iban` and `mfo` are taken
+  only from the runtime's typed value and refused when they outrun the
+  action's cap, because clipping an identifier would store a different firm,
+  and an identifier the runtime failed its own check on arrives as a blocking
+  `invalid_value` need, which is the LLM. No identifier, phone or e-mail ever
+  reaches the Шо context: a counterparty enters it as an id and a name.
+- `sho-planners/company-writes.ts` — the company-legal write planner
+  (SHO-862): `companies.updateLegal` onto its own action tool, `writes: true`,
+  so it pauses on the ADR-0050 preview like every other Шо write. It requires
+  `company_type` and `legal_name`, because the action requires both on every
+  call and no planner may read-merge-write a stale name. Everything else
+  follows SHO-725: a field Шо did not parse is never sent, so it keeps its
+  stored value, and `bankEdrpou`, which Шо has no param for, is always
+  unchanged. ЄДРПОУ, IBAN, МФО, phone and e-mail come only from Шо's typed
+  value and are validated by the contract's own schemas; `legal_name` and
+  `address` are clipped spans. `bank_name` is not mapped — Шо types a bank
+  slug (`monobank`), not the name a document prints. The company is the
+  verified one and never an input, so a `company_id` the parse carried is
+  `unsupported_param`. `SHO_COMPANY_WRITE_ACTIONS` joins the dev list for
+  `SHO_ACTIONS`; the config default stays empty.
+- `sho-planners/documents-writes.ts` — the document write planners (SHO-861):
+  `documents.createFromOrder`, `documents.cancel`, `documents.share` and
+  `documents.requestSign` onto their own action tools, `writes: true`, so each
+  pauses on the ADR-0050 preview; the SHO-788/801/809 preview callbacks own
+  the share token and the signing request, and no planner input carries one.
+  `documents.createFromOrder` still takes a uuid `orderId`, so its
+  `order_number` binds only as a ref the parse bound to a live focus entry
+  (`status: "context"`, SHO-770) — a create from the order just made.
+  Since SHO-869 `documents.cancel`, `documents.share` and
+  `documents.requestSign` take a document reference — a `documentId` or a
+  `documentNumber` resolved inside `documents` under the core transaction
+  (ADR-0033) — so `document_ref` sends one of two things and reads nothing
+  first. The protocol still has no `document` record type, so the focus never
+  holds a document and a context `document_ref` is refused by
+  `shoFocusHolds`; what binds is the spoken or written number span («57»,
+  «KA-РХ-000057»), sent verbatim as `documentNumber`, with `documents`
+  raising the picker when that number names several documents (a bare
+  sequence names the invoice and the delivery note alike) and not-found when
+  it names none.
+  `document_type` maps to the two types Shozee issues and `counterparty` to a
+  resolved uuid;
+  `customer`, `period`, `status`, `amount`, `basis`, `channel`, `email` and
+  `phone` are the LLM's — a `basis` span is a bare document number («57»),
+  never the «Підстава» sentence the action stores.
+  `SHO_DOCUMENT_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
+  config default stays empty.
+- `sho-planners/catalog-writes.ts` — the product write planners (SHO-855):
+  `catalog.createProduct`, `catalog.updateProduct`, `catalog.archiveProduct`
+  and `catalog.restoreProduct` onto their own action tools, `writes: true`,
+  so each pauses on the ADR-0050 preview. A `product` plans only as the id
+  the parse resolved or the focus bound (SHO-851), because the three actions
+  take a uuid `productId` and no query to raise a picker from; the
+  catalogue's own demo ids are no uuids, so nothing but a resolved record
+  binds. A price is the Шо money value, not its text: the parsed
+  `{ minor, currency }` becomes `basePriceMinor` plus `currency` together
+  (money.md), half a pair or a currency the catalog does not price in is
+  `unsupported_param`, and a price that was never spoken is never guessed —
+  `catalog.createProduct` requires one, so the catalogue's `card_asks`
+  create is a `blocking_need` and the LLM asks. An update sends the product
+  and only the fields said, so a rename carries no price and the stored one
+  stands (SHO-864/SHO-866: omitted means unchanged, half the pair is
+  `VALIDATION`). The intents name no `brand` or `unit`, and the catalog has
+  no column for either, so such a param is refused rather than dropped from
+  what the staff member said; the counting-unit rule has no quantity to read
+  here. `SHO_CATALOG_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`;
+  the config default stays empty.
+  The same table carries the variant writes (SHO-856):
+  `catalog.createVariant`, `catalog.updateVariant`, `catalog.archiveVariant`
+  and `catalog.restoreVariant`. The catalogue gives `variant` as attrs, which
+  the runtime resolves against the parent product's variants, so a variant
+  binds only as a **resolved** uuid — ambiguous, unknown, unspecified and
+  `none` are all `unsupported_param`, because nothing here may guess between
+  two variants and the four actions take no query.
+  On the three plans that carry a `variant`, the parent product is **only** a
+  `status: "resolved"` ref, unlike the product planners, which take a
+  focus-held one too: a pronoun parent is no product index for the runtime
+  (`command.ts` `productIndex`), so `resolveVariant` matches the attrs across
+  every product in the company and can come back `resolved` on a variant of a
+  product the person never named — archiving it would be the wrong write. A
+  `status: "context"` parent beside a variant is therefore the LLM.
+  `createVariant` scopes no variant, so it takes the focus-held parent like
+  the product planners do.
+  The catalogue marks `product` optional on all four, and so is it here: only
+  a **said** parent must bind. `createVariant` and `updateVariant` send it as
+  `productId` — `catalog.updateVariant` takes a uuid `productId` beside the
+  variant and nothing derives one, so the planner requires the parent there
+  although the catalogue does not — and the lifecycle two, whose actions take
+  the variant alone, bind it and then drop it: it located the variant, it is
+  not a field of the write. An update needs a rename or a price as the
+  product one does, and the override pair follows the same money rule;
+  clearing an override is the LLM, since a parse says no null pair. The D84
+  misread and a non-blocking `unknown_attr` — an attr word no variant of the
+  product has, which the resolution drops — become the card's notes;
+  `read_as_focus_type` is not mapped here, because the focus holds no variant
+  record and the delete family reads a focused product as `archiveProduct`.
+  No gold conformance parse carries a variant intent, so the planner tests
+  borrow the verbatim `variant` and `product` params of `d79-price-list-case`
+  and name that case id.
+- `sho-planners/pricing-writes.ts` — the price list write planners (SHO-857):
+  `pricing.createPriceList`, `pricing.updatePriceList`,
+  `pricing.activatePriceList`, `pricing.deactivatePriceList`,
+  `pricing.setDefaultPriceList` and `pricing.deletePriceList` onto their own
+  action tools, `writes: true`, so each pauses on the ADR-0050 preview — the
+  delete on a strong card, since its risk is `high`. `price_list` is a
+  resolved or focus-held uuid (`shoIdOnly`) and a spoken name is
+  `unsupported_param`; `new_name` takes the nominative the parse created over
+  the span, `rename_to` the span, and the catalogue's `is_default` /
+  `is_active` booleans arrive as the enum values «true» / «false». An update
+  that would change nothing is a `blocking_need`, not an empty card.
+  `pricing.clearDefaultPriceList` is an intent Shozee has no action for: it
+  plans `pricing.setDefaultPriceList` `{ priceListId: null }`, which is what
+  that action already means by null, and a parse that carries any param at
+  all falls back. That null is the plan's `constants` — a field the write kit
+  merges into the input after the mapped params, refusing a constant a mapper
+  already wrote — so there is one planner path and no second plan shape.
+  SHO-858 adds the entry writes to the same table:
+  `pricing.setPriceListEntries` and `pricing.removePriceListEntries` plan the
+  resolved or focus-held `price_list` as `priceListId` and the command's
+  `product` — one ref, or the list of refs the SHO-851 guard walks — as the
+  action's `entries`, one line per product. A line binds only to a uuid the
+  parse resolved or the focus holds, because neither action takes a query to
+  raise a picker from; a `variant` binds only as a resolved uuid, and one
+  variant over several lines is `unsupported_param`, since the parse pins it
+  to one product. When a variant does bind, every line's product must be a
+  **resolved** ref, the SHO-856 rule: a focus-bound parent is no product
+  index for the runtime, so `resolveVariant` matches the attrs across every
+  product in the company and could price a variant of a product the person
+  never named. Without a variant a focus-held product line binds as usual.
+  The price is the Шо money value, never its text: the parsed
+  `{ minor, currency }` becomes `priceMinor` plus `currency` together
+  (money.md), half the pair or a currency the list cannot store is
+  `unsupported_param`, and every line of one command carries the one price
+  said. An unresolvable or invalid line refuses the whole command — the
+  action writes the batch or nothing, so no plan may drop a line the staff
+  member said. The catalogue notes one entry per command, which is what the
+  gold parses carry; the list shape is the protocol's own `ShoRef[]`.
+  `SHO_PRICING_WRITE_ACTIONS` joins the dev list for `SHO_ACTIONS`; the
+  config default stays empty.
 - `assistant-budget-guard.ts`, `stores/budget.ts`, `stores/budget-redis.ts` —
   the pure spend guard, the budget store port with its in-memory reference
   store, and the Redis store both processes mount (SHO-561). A counter never

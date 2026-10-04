@@ -39,6 +39,7 @@ import type {
   ActionCtx,
   BaseCtx,
   ConsumerCtx,
+  CtxAuditTarget,
   CtxCall,
   CtxCallAtomic,
   CtxEmit,
@@ -86,6 +87,7 @@ export interface ContextRuntime<TDb> {
   readonly enqueue: CtxEnqueue;
   readonly call: CtxCall;
   readonly callAtomic: CtxCallAtomic;
+  readonly auditTarget: CtxAuditTarget;
 }
 
 function requireSession(
@@ -182,6 +184,7 @@ function buildBase<TDb>(options: {
     enqueue: runtime.enqueue,
     call: runtime.call,
     callAtomic: runtime.callAtomic,
+    auditTarget: runtime.auditTarget,
   };
 }
 

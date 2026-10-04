@@ -1,11 +1,11 @@
 import { ConflictError, NotFoundError } from "@showzy/core/errors";
 import {
-  normalizeUniqueMatchQuery,
+  ENTITY_LOOKUP_OPTIONS_MAX,
   pickUniqueReferenceMatch,
   type EntityLookupTarget,
 } from "@showzy/validation/entity-ref";
 
-export const ENTITY_LOOKUP_OPTIONS_MAX = 20;
+export { ENTITY_LOOKUP_OPTIONS_MAX };
 
 export type EntityLookupOption = {
   readonly id: string;
@@ -31,18 +31,7 @@ export function classifyEntityLookupMatch<T>(
   if (picked.kind === "none") {
     return { kind: "none" };
   }
-  const needle = normalizeUniqueMatchQuery(query);
-  const exact = picked.rows.filter((row) =>
-    fieldsOf(row).some(
-      (field) =>
-        field !== null &&
-        field !== undefined &&
-        normalizeUniqueMatchQuery(field) === needle,
-    ),
-  );
-  return exact.length > 0
-    ? { kind: "several", rows: exact }
-    : { kind: "nearest", rows: picked.rows };
+  return { kind: picked.ambiguity, rows: picked.rows };
 }
 
 export type EntityLookupPicker = {
@@ -50,17 +39,24 @@ export type EntityLookupPicker = {
   readonly optionsTruncated: boolean;
 };
 
+export function entityLookupPage(
+  options: readonly EntityLookupOption[],
+): EntityLookupPicker {
+  return {
+    options: options.slice(0, ENTITY_LOOKUP_OPTIONS_MAX),
+    optionsTruncated: options.length > ENTITY_LOOKUP_OPTIONS_MAX,
+  };
+}
+
 export function entityLookupPicker(
   options: readonly EntityLookupOption[],
 ): EntityLookupPicker {
-  const sorted = [...options].toSorted((left, right) => {
-    const byLabel = left.label.localeCompare(right.label);
-    return byLabel === 0 ? left.id.localeCompare(right.id) : byLabel;
-  });
-  return {
-    options: sorted.slice(0, ENTITY_LOOKUP_OPTIONS_MAX),
-    optionsTruncated: sorted.length > ENTITY_LOOKUP_OPTIONS_MAX,
-  };
+  return entityLookupPage(
+    [...options].toSorted((left, right) => {
+      const byLabel = left.label.localeCompare(right.label);
+      return byLabel === 0 ? left.id.localeCompare(right.id) : byLabel;
+    }),
+  );
 }
 
 export class EntityLookupAmbiguousError extends ConflictError {

@@ -74,6 +74,8 @@ export type CtxEnqueue = <TPayload extends z.ZodObject>(
   payload: z.input<TPayload>,
 ) => void;
 
+export type CtxAuditTarget = (resolvedId: string) => void;
+
 /**
  * `ctx.call` (core.md §9, ADR-0015 — fnd-T19): synchronous cross-module
  * composition. Takes another module's implemented `risk: "read"` action —
@@ -144,6 +146,7 @@ export interface BaseCtx<TDb> {
   readonly enqueue: CtxEnqueue;
   readonly call: CtxCall;
   readonly callAtomic: CtxCallAtomic;
+  readonly auditTarget: CtxAuditTarget;
 }
 
 /** Authenticated member of the selected company (the panel surface). */

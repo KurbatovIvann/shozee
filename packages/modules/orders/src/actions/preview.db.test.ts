@@ -9,6 +9,7 @@ import {
 import { products } from "@showzy/db/schema/catalog";
 import { companyCustomers } from "@showzy/db/schema/customers";
 import { orderItems, orders } from "@showzy/db/schema/orders";
+import { PREVIEW_CARD_LINES_PER_INPUT_ITEM } from "@showzy/module-kit/preview-card-lines";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -25,11 +26,15 @@ const CUSTOMER_NAME = "Олена Коваль";
 const RENAMED_CUSTOMER_NAME = "Олена Шевченко";
 const ORDER_COMMENT = "Доставити до 14:00";
 
+const CREATE_ORDER_FIXED_LINES = 2;
+
 const fixtures = {
   customerA: randomUUID(),
   customerB: randomUUID(),
   cake: randomUUID(),
   box: randomUUID(),
+  candle: randomUUID(),
+  postcard: randomUUID(),
   foreignProduct: randomUUID(),
   orderA: randomUUID(),
   orderB: randomUUID(),
@@ -111,6 +116,18 @@ beforeAll(async () => {
       companyId: companyA,
       name: "Коробка",
       basePriceMinor: 1_250n,
+    },
+    {
+      id: fixtures.candle,
+      companyId: companyA,
+      name: "Свічка",
+      basePriceMinor: 8_000n,
+    },
+    {
+      id: fixtures.postcard,
+      companyId: companyA,
+      name: "Листівка",
+      basePriceMinor: 3_500n,
     },
     {
       id: fixtures.foreignProduct,
@@ -238,6 +255,39 @@ describe("orders preview cards (SHO-750)", () => {
       .where(eq(orders.customerId, fixtures.customerA));
     expect(created).toHaveLength(1);
     expect(created[0]?.id).toBe(fixtures.orderA);
+  });
+
+  it("SHO-840: orders.create cards its fixed lines plus the declared lines per item", async () => {
+    const items = [
+      fixtures.cake,
+      fixtures.box,
+      fixtures.candle,
+      fixtures.postcard,
+    ].map((id) => ({
+      product: { by: "id" as const, id },
+      quantity: { milli: "1000" },
+    }));
+    const preview = await previewCard(() =>
+      kit.invoke(
+        createOrder,
+        {
+          customer: { by: "id", id: fixtures.customerA },
+          items,
+          comment: ORDER_COMMENT,
+        },
+        {},
+        { request: { requireConfirmation: true } },
+      ),
+    );
+
+    expect(preview.lines.slice(items.length)).toEqual([
+      { label: "Разом", value: "377,50 грн" },
+      { label: "Коментар", value: ORDER_COMMENT },
+    ]);
+    expect(preview.lines).toHaveLength(
+      CREATE_ORDER_FIXED_LINES +
+        items.length * PREVIEW_CARD_LINES_PER_INPUT_ITEM["orders.create.items"],
+    );
   });
 
   it("refuses a foreign product in the create preview without leaking its name", async () => {

@@ -71,8 +71,17 @@ describe("@showzy/validation/entity-ref", () => {
     );
     expect(pickUniqueNormalizedMatch("Kat", rows, fields)).toEqual({
       kind: "ambiguous",
+      ambiguity: "nearest",
       rows,
     });
+    const twin = { name: "Katya", phone: "+380503333333" };
+    expect(pickUniqueNormalizedMatch("Katya", [...rows, twin], fields)).toEqual(
+      {
+        kind: "ambiguous",
+        ambiguity: "several",
+        rows: [rows[0], twin],
+      },
+    );
     expect(pickUniqueNormalizedMatch("nobody", [], fields)).toEqual({
       kind: "none",
     });
@@ -138,11 +147,12 @@ describe("reference inflection", () => {
     });
     expect(pickUniqueReferenceMatch("олена", rows, fields, name)).toEqual({
       kind: "ambiguous",
+      ambiguity: "nearest",
       rows,
     });
     expect(
       pickUniqueReferenceMatch("олена питренко", rows, fields, name),
-    ).toEqual({ kind: "ambiguous", rows });
+    ).toEqual({ kind: "ambiguous", ambiguity: "nearest", rows });
     expect(pickUniqueReferenceMatch("олени", [], fields, name)).toEqual({
       kind: "none",
     });

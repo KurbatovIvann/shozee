@@ -36,6 +36,7 @@ import {
   type ShoActionPlanners,
   type ShoPlanFallbackReason,
 } from "./kit.js";
+import { shoIdOnly } from "./write-kit.js";
 
 export const SHO_ORDER_STATUSES = [
   "new",
@@ -55,7 +56,10 @@ const RECORD_STATUSES = ["active", "archived", "all"];
 
 const COUNT_GROUPS = ["status", "product", "customer"];
 
-const SHOZEE_DOCUMENT_TYPES = ["payment_invoice", "delivery_note"];
+export const SHOZEE_DOCUMENT_TYPES: readonly string[] = [
+  "payment_invoice",
+  "delivery_note",
+];
 
 type Fields = Record<string, unknown>;
 
@@ -158,16 +162,6 @@ const orderNumber: ParamMapper = (param) => {
     : { query: text.slice(0, LIST_ORDERS_QUERY_MAX) };
 };
 
-const refId =
-  (field: string): ParamMapper =>
-  (param) => {
-    const locator = locatorOf(param);
-    if (refused(locator)) {
-      return locator;
-    }
-    return locator.by === "id" ? { [field]: locator.id } : "unsupported_param";
-  };
-
 const searchText =
   (field: string, max: number): ParamMapper =>
   (param) => {
@@ -245,7 +239,7 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
     params: {
       search_text: searchText("search", LIST_CUSTOMERS_SEARCH_MAX),
       status: recordStatus,
-      group: refId("groupId"),
+      group: shoIdOnly("groupId"),
     },
   },
   "catalog.getProduct": {
@@ -271,7 +265,7 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
   "customers.getGroup": {
     toolName: toProviderToolName("customers.getGroup"),
     reply: "Ось група.",
-    params: { group: refId("id") },
+    params: { group: shoIdOnly("id") },
     required: ["group"],
     single: true,
   },
@@ -280,13 +274,13 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
     reply: "Ось контрагенти.",
     params: {
       search_text: searchText("search", LIST_COUNTERPARTIES_SEARCH_MAX),
-      customer: refId("customerId"),
+      customer: shoIdOnly("customerId"),
     },
   },
   "customers.getCounterparty": {
     toolName: toProviderToolName("customers.getCounterparty"),
     reply: "Ось контрагент.",
-    params: { counterparty: refId("id") },
+    params: { counterparty: shoIdOnly("id") },
     required: ["counterparty"],
     single: true,
   },
@@ -298,7 +292,7 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
   "pricing.getPriceList": {
     toolName: toProviderToolName("pricing.getPriceList"),
     reply: "Ось прайс-лист.",
-    params: { price_list: refId("id") },
+    params: { price_list: shoIdOnly("id") },
     required: ["price_list"],
     single: true,
   },
@@ -306,8 +300,8 @@ const SHO_READS: Readonly<Record<string, ReadPlan>> = {
     toolName: toProviderToolName("pricing.listPriceListEntries"),
     reply: "Ось ціни прайс-листа.",
     params: {
-      price_list: refId("priceListId"),
-      product: refId("productId"),
+      price_list: shoIdOnly("priceListId"),
+      product: shoIdOnly("productId"),
     },
     required: ["price_list"],
   },

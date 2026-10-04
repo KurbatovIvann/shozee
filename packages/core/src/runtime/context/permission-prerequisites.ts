@@ -38,7 +38,7 @@ export const PERMISSION_CALL_PREREQUISITES: Readonly<
     "documents:view",
     "orders:view",
   ],
-  "documents:edit": ["documents:view", "files:view"],
+  "documents:edit": ["companies:view", "documents:view", "files:view"],
   "documents:view": ["companies:view"],
   "orders:create": [
     "companies:view",

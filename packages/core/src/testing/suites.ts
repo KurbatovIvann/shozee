@@ -22,12 +22,9 @@ import {
   RateLimitError,
 } from "../errors/index.js";
 import type { Job } from "../jobs/define-job.js";
-import { createConfirmationHook } from "../runtime/confirmation/create-confirmation-hook.js";
-import { createInMemoryConfirmationStore } from "../runtime/confirmation/store.js";
 import type { ImplementedAction } from "../runtime/implement-action.js";
 import { executeJobAction } from "../runtime/jobs/execute-job-action.js";
 import type {
-  ActionPipelineDeps,
   PipelineRequestMeta,
   RateLimitHook,
 } from "../runtime/pipeline/types.js";
@@ -42,6 +39,7 @@ import {
   findPrivateUserLeaks,
   findUnpublishedLeaks,
 } from "./inspect.js";
+import { challengeIdFor } from "./confirmation-gate.js";
 import { kitIdentities } from "./identities.js";
 import {
   buildJobEnvelope,
@@ -386,18 +384,6 @@ function gateRequest(action: SuiteAction): Partial<PipelineRequestMeta> {
   };
 }
 
-function gatedDeps(kit: TestKit): ActionPipelineDeps {
-  return {
-    ...kit.pipeline,
-    hooks: {
-      ...kit.pipeline.hooks,
-      confirmation: createConfirmationHook({
-        store: createInMemoryConfirmationStore(),
-      }),
-    },
-  };
-}
-
 async function rejectionOf(
   kit: TestKit,
   action: SuiteAction,
@@ -418,25 +404,13 @@ async function invokeThroughGate(
   action: SuiteAction,
   call: IsolationInvocation,
 ): Promise<void> {
-  const name = action.contract.name;
-  const deps = gatedDeps(kit);
   const request = gateRequest(action);
-  const challenged = await rejectionOf(
-    kit,
-    action,
-    call,
-    { deps, request },
-    `expected "${name}" to answer the first invocation with a confirmation card`,
+  const challengeId = await challengeIdFor(
+    action.contract.name,
+    invoke(kit, action, call, { request }),
   );
-  if (!(challenged instanceof ConfirmationRequiredError)) {
-    throw challenged;
-  }
   await invoke(kit, action, call, {
-    deps,
-    request: {
-      ...request,
-      confirmationChallengeId: challenged.challenge.challengeId,
-    },
+    request: { ...request, confirmationChallengeId: challengeId },
   });
 }
 
@@ -464,7 +438,7 @@ async function refusalAtPreview(
     kit,
     action,
     call,
-    { deps: gatedDeps(kit), request: gateRequest(action) },
+    { request: gateRequest(action) },
     denyMessage(name),
   );
   if (refusal instanceof ConfirmationRequiredError) {

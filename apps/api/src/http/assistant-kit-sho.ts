@@ -14,6 +14,7 @@ import {
   type AssistantToolContext,
   type AssistantTurnAcceptResult,
   type AssistantTurnStore,
+  type ShoEscalation,
   type ShoTurnAsk,
 } from "@showzy/assistant-runtime";
 
@@ -107,12 +108,23 @@ export interface ShoChatTurnEnv {
   readonly text: string;
 }
 
+export type ShoChatOutcome =
+  | { readonly kind: "answered"; readonly response: Response }
+  | { readonly kind: "escalate"; readonly escalation?: ShoEscalation };
+
+const SHO_ESCALATE: ShoChatOutcome = { kind: "escalate" };
+
+const answeredWith = (response: Response): ShoChatOutcome => ({
+  kind: "answered",
+  response,
+});
+
 export async function shoChatTurn(
   env: ShoChatTurnEnv,
-): Promise<Response | null> {
+): Promise<ShoChatOutcome> {
   const engineFor = env.runtime.sho;
   if (engineFor === undefined) {
-    return null;
+    return SHO_ESCALATE;
   }
 
   const now = new Date();
@@ -170,17 +182,23 @@ export async function shoChatTurn(
     });
     if (outcome.kind === "fallback") {
       env.runtime.logger.info(
-        { request_id: env.requestId, sho_fallback: outcome.reason },
+        {
+          request_id: env.requestId,
+          sho_fallback: outcome.reason,
+          ...(outcome.escalation.trap === undefined
+            ? {}
+            : { sho_trap: outcome.escalation.trap }),
+        },
         "Шо did not close this turn and the model answers it",
       );
-      return null;
+      return { kind: "escalate", escalation: outcome.escalation };
     }
     if (outcome.kind === "settled") {
       settled = { parts: outcome.parts, appended: outcome.appended };
     } else {
       const pause = await openShoPause(env.kit, env.scope, outcome);
       if (pause === null) {
-        return null;
+        return SHO_ESCALATE;
       }
       asked = pause.interactionId;
       settled = {
@@ -201,7 +219,7 @@ export async function shoChatTurn(
       throw error;
     }
     complain(error, "a Шо turn stored nothing and the model answers instead");
-    return null;
+    return SHO_ESCALATE;
   }
 
   let stored: AssistantTurnAcceptResult;
@@ -228,18 +246,21 @@ export async function shoChatTurn(
   }
   if (stored.outcome === "wrong_owner") {
     await giveTheCommandBack();
-    return goneResponse(env.requestId);
+    return { kind: "answered", response: goneResponse(env.requestId) };
   }
   if (stored.outcome === "busy") {
-    return null;
+    return SHO_ESCALATE;
   }
 
-  return json(
-    200,
-    {
-      status: "ok",
-      window: await readAssistantChatWindow(env.kit, env.turns, env.scope),
-    },
-    env.requestId,
+  return answeredWith(
+    json(
+      200,
+      {
+        status: "ok",
+        userMessageId: stored.turn.userMessageId,
+        window: await readAssistantChatWindow(env.kit, env.turns, env.scope),
+      },
+      env.requestId,
+    ),
   );
 }

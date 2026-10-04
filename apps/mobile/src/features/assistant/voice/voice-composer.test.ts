@@ -142,21 +142,30 @@ describe("voice announcements", () => {
 });
 
 describe("spoken messages", () => {
-  it("marks a user row whose text was dictated", () => {
-    const spoken = rememberSpoken(new Set(), "  two boxes  ");
-    expect(voiceRowSpoken({ role: "user", text: "two boxes", spoken })).toBe(
-      true,
-    );
+  it("marks the row the dictated send stored, not another with the same words", () => {
+    const spoken = rememberSpoken(new Set(), "message-1");
     expect(
-      voiceRowSpoken({ role: "assistant", text: "two boxes", spoken }),
+      voiceRowSpoken({ role: "user", messageId: "message-1", spoken }),
+    ).toBe(true);
+    expect(
+      voiceRowSpoken({ role: "assistant", messageId: "message-1", spoken }),
     ).toBe(false);
-    expect(voiceRowSpoken({ role: "user", text: "three boxes", spoken })).toBe(
-      false,
-    );
+    expect(
+      voiceRowSpoken({ role: "user", messageId: "message-2", spoken }),
+    ).toBe(false);
   });
 
-  it("ignores empty transcripts and keeps the memory bounded", () => {
-    expect(rememberSpoken(new Set(), "   ").size).toBe(0);
+  it("remembers both sends of one phrase, because each stored its own row", () => {
+    const spoken = rememberSpoken(
+      rememberSpoken(new Set(), "message-1"),
+      "message-2",
+    );
+    expect([...spoken]).toEqual(["message-1", "message-2"]);
+  });
+
+  it("ignores a send that named no message and keeps the memory bounded", () => {
+    expect(rememberSpoken(new Set(), null).size).toBe(0);
+    expect(rememberSpoken(new Set(), "").size).toBe(0);
     let spoken: ReadonlySet<string> = new Set();
     for (let index = 0; index <= VOICE_SPOKEN_MEMORY; index += 1) {
       spoken = rememberSpoken(spoken, `said ${String(index)}`);

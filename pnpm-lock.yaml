@@ -782,9 +782,6 @@ importers:
       '@showzy/customers':
         specifier: workspace:*
         version: link:../modules/customers
-      '@showzy/invites':
-        specifier: workspace:*
-        version: link:../modules/invites
       '@showzy/module-kit':
         specifier: workspace:*
         version: link:../module-kit

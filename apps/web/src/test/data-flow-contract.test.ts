@@ -10,6 +10,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  assertWalkSkipsLintProbes,
+  TRANSIENT_LINT_PROBE_DIR,
+} from "@showzy/tooling/lint-probe";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,6 +29,9 @@ const webSrcPosix = toPosix(webSrc);
 function listFiles(root: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.name === TRANSIENT_LINT_PROBE_DIR) {
+      continue;
+    }
     const full = join(root, entry.name);
     if (entry.isDirectory()) {
       out.push(...listFiles(full));
@@ -42,6 +49,12 @@ function productionSources(): string[] {
 function readPosix(filePosix: string): string {
   return readFileSync(filePosix, "utf8");
 }
+
+describe("src walk and transient lint probes (SHO-863)", () => {
+  it("never reads a file the boundary suite writes and deletes", () => {
+    assertWalkSkipsLintProbes(listFiles);
+  });
+});
 
 describe("web contract data path (SHO-330)", () => {
   const files = productionSources();

@@ -15,11 +15,15 @@ export type AuditTarget = {
   readonly id: string;
 };
 
-export type AuditTargetStep = {
-  readonly source: "output" | "input";
-  readonly schema: z.ZodType;
-  readonly pick: (data: unknown) => string | undefined;
-};
+export type AuditTargetSource = "output" | "resolved" | "input";
+
+export type AuditTargetStep =
+  | { readonly source: "resolved" }
+  | {
+      readonly source: "output" | "input";
+      readonly schema: z.ZodType;
+      readonly pick: (data: unknown) => string | undefined;
+    };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -65,6 +69,12 @@ export function createAuditTarget(options: {
 }): (env: AuditTargetEnv) => AuditTarget {
   return (env) => {
     for (const step of options.steps) {
+      if (step.source === "resolved") {
+        if (env.resolvedId !== undefined) {
+          return { type: options.type, id: env.resolvedId };
+        }
+        continue;
+      }
       const raw = step.source === "output" ? env.output : env.input;
       const parsed = step.schema.safeParse(raw);
       if (!parsed.success) {
@@ -84,16 +94,20 @@ export function holderAuditTarget(options: {
   readonly type: string;
   readonly field: string;
   readonly fallback: string;
-  readonly sources: readonly ("output" | "input")[];
+  readonly sources: readonly AuditTargetSource[];
 }): (env: AuditTargetEnv) => AuditTarget {
   const schema = z.object({ [options.field]: z.string() });
   return createAuditTarget({
     type: options.type,
     fallback: options.fallback,
-    steps: options.sources.map((source) => ({
-      source,
-      schema,
-      pick: (data) => pickString(options.field, data),
-    })),
+    steps: options.sources.map((source) =>
+      source === "resolved"
+        ? { source }
+        : {
+            source,
+            schema,
+            pick: (data) => pickString(options.field, data),
+          },
+    ),
   });
 }

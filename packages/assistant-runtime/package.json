@@ -21,7 +21,6 @@
     "@showzy/companies": "workspace:*",
     "@showzy/core": "workspace:*",
     "@showzy/customers": "workspace:*",
-    "@showzy/invites": "workspace:*",
     "@showzy/module-kit": "workspace:*",
     "@showzy/pricing": "workspace:*",
     "@showzy/sho-protocol": "workspace:*",

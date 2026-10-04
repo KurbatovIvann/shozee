@@ -29,11 +29,15 @@ import { z } from "zod";
 
 import { defineActionContract } from "../../contract/define-action-contract.js";
 import {
+  ConfirmationRequiredError,
   ConflictError,
   CoreInvariantError,
   PermissionDeniedError,
   ValidationError,
 } from "../../errors/index.js";
+import { createConfirmationHook } from "../confirmation/create-confirmation-hook.js";
+import { createInMemoryConfirmationStore } from "../confirmation/store.js";
+import { createIdempotencyHook } from "../idempotency/create-idempotency-hook.js";
 import { implementAction } from "../implement-action.js";
 import { executeAction } from "../pipeline/execute-action.js";
 import type {
@@ -492,6 +496,7 @@ describe("audit protocol — transactionality", () => {
       auditTarget: () => {
         throw new Error("target builder exploded");
       },
+      resolvedId: undefined,
     });
 
     // The audit row is still written, with the synthetic fallback target.
@@ -526,7 +531,350 @@ describe("audit protocol — transactionality", () => {
         },
         durationMs: 1,
         auditTarget: () => ({ type: "order", id: randomUUID() }),
+        resolvedId: undefined,
       }),
     ).rejects.toThrow(CoreInvariantError);
+  });
+});
+
+describe("audit protocol — the handler-resolved target (core.md §8)", () => {
+  const resolvedTarget = (env: { readonly resolvedId?: string }) => ({
+    type: "order",
+    id: env.resolvedId ?? "unknown",
+  });
+
+  const staffPrincipal = {
+    mode: "staff",
+    session: { userId: users.anna },
+    companySelector: companyA,
+  } as const;
+
+  it("records the id the handler resolved when the write fails after resolution", async () => {
+    const resolved = randomUUID();
+    const req = requestMeta();
+
+    const action = implementAction(writeContract, {
+      handler: (_input, ctx) => {
+        ctx.auditTarget(resolved);
+        return Promise.reject(new ConflictError("Order already confirmed."));
+      },
+      auditTarget: resolvedTarget,
+    });
+
+    await expect(
+      executeAction(depsWithAudit(), {
+        action,
+        input: { orderId: randomUUID(), note: "By number" },
+        request: req,
+        principal: staffPrincipal,
+      }),
+    ).rejects.toThrow(ConflictError);
+
+    const rows = await auditRows(req.requestId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      targetType: "order",
+      targetId: resolved,
+      outcome: "CONFLICT",
+    });
+  });
+
+  it("stays unknown when the handler failed before resolving a target", async () => {
+    const req = requestMeta();
+
+    const action = implementAction(writeContract, {
+      handler: () => Promise.reject(new ConflictError("Nothing resolved.")),
+      auditTarget: resolvedTarget,
+    });
+
+    await expect(
+      executeAction(depsWithAudit(), {
+        action,
+        input: { orderId: randomUUID(), note: "Unresolved" },
+        request: req,
+        principal: staffPrincipal,
+      }),
+    ).rejects.toThrow(ConflictError);
+
+    const rows = await auditRows(req.requestId);
+    expect(rows[0]?.targetId).toBe("unknown");
+  });
+
+  it("carries the resolved id into the success row", async () => {
+    const resolved = randomUUID();
+    const req = requestMeta();
+
+    const action = implementAction(writeContract, {
+      handler: (_input, ctx) => {
+        ctx.auditTarget(resolved);
+        return Promise.resolve({ id: resolved });
+      },
+      auditTarget: resolvedTarget,
+    });
+
+    await executeAction(depsWithAudit(), {
+      action,
+      input: { orderId: randomUUID(), note: "Resolved then written" },
+      request: req,
+      principal: staffPrincipal,
+    });
+
+    const rows = await auditRows(req.requestId);
+    expect(rows[0]).toMatchObject({ targetId: resolved, outcome: "ok" });
+  });
+
+  it("refuses a second resolved target in one invocation", async () => {
+    const first = randomUUID();
+    const req = requestMeta();
+
+    const action = implementAction(writeContract, {
+      handler: (_input, ctx) => {
+        ctx.auditTarget(first);
+        ctx.auditTarget(randomUUID());
+        return Promise.resolve({ id: first });
+      },
+      auditTarget: resolvedTarget,
+    });
+
+    await expect(
+      executeAction(depsWithAudit(), {
+        action,
+        input: { orderId: randomUUID(), note: "Set twice" },
+        request: req,
+        principal: staffPrincipal,
+      }),
+    ).rejects.toThrow(CoreInvariantError);
+
+    const rows = await auditRows(req.requestId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.targetId).toBe(first);
+  });
+});
+
+describe("audit protocol — one resolved target per invocation (core.md §8)", () => {
+  const staffPrincipal = {
+    mode: "staff",
+    session: { userId: users.anna },
+    companySelector: companyA,
+  } as const;
+
+  const fallbackTarget =
+    (type: string) => (env: { readonly resolvedId?: string }) => ({
+      type,
+      id: env.resolvedId ?? "unknown",
+    });
+
+  function rowFor(
+    rows: readonly (typeof auditLog.$inferSelect)[],
+    action: string,
+  ): typeof auditLog.$inferSelect | undefined {
+    return rows.find((row) => row.action === action);
+  }
+
+  it("keeps a ctx.call callee's resolved target out of the caller's row", async () => {
+    const calleeResolved = randomUUID();
+    const req = requestMeta();
+
+    const callee = implementAction(
+      defineActionContract({
+        ...contractDefaults,
+        name: "auditPeer.readResolved",
+        description: "Audited read callee that resolves its own target.",
+        principal: "staff",
+        input: z.object({}),
+        output: z.object({ ok: z.boolean() }),
+        permissions: ["audit:read"],
+        risk: "read",
+        audit: true,
+        timeout: 5_000,
+      }),
+      {
+        handler: (_input, ctx) => {
+          ctx.auditTarget(calleeResolved);
+          return Promise.resolve({ ok: true });
+        },
+        auditTarget: fallbackTarget("callee"),
+      },
+    );
+
+    const caller = implementAction(writeContract, {
+      handler: async (_input, ctx) => {
+        await ctx.call(callee, {});
+        return { id: randomUUID() };
+      },
+      auditTarget: fallbackTarget("caller"),
+    });
+
+    await executeAction(depsWithAudit(), {
+      action: caller,
+      input: { orderId: randomUUID(), note: "Composed read" },
+      request: req,
+      principal: staffPrincipal,
+    });
+
+    const rows = await auditRows(req.requestId);
+    expect(rows).toHaveLength(2);
+    expect(rowFor(rows, "auditPeer.readResolved")).toMatchObject({
+      targetType: "callee",
+      targetId: calleeResolved,
+    });
+    expect(rowFor(rows, writeContract.name)).toMatchObject({
+      targetType: "caller",
+      targetId: "unknown",
+    });
+  });
+
+  it("keeps a ctx.callAtomic callee's resolved target out of the root's row", async () => {
+    const calleeResolved = randomUUID();
+    const req = requestMeta({ idempotencyKey: randomUUID() });
+
+    const callee = implementAction(
+      defineActionContract({
+        ...contractDefaults,
+        name: "auditPeer.atomicWrite",
+        description: "Atomic write callee that resolves its own target.",
+        principal: "staff",
+        input: z.object({}),
+        output: z.object({ ok: z.boolean() }),
+        permissions: ["audit:write"],
+        risk: "write",
+        audit: true,
+        atomicCallers: ["auditFixture.atomicRoot"],
+        timeout: 5_000,
+      }),
+      {
+        handler: (_input, ctx) => {
+          ctx.auditTarget(calleeResolved);
+          return Promise.resolve({ ok: true });
+        },
+        auditTarget: fallbackTarget("atomic-callee"),
+      },
+    );
+
+    const root = implementAction(
+      defineActionContract({
+        ...contractDefaults,
+        name: "auditFixture.atomicRoot",
+        description: "Atomic root that resolves nothing of its own.",
+        principal: "staff",
+        input: z.object({}),
+        output: z.object({ ok: z.boolean() }),
+        permissions: ["audit:write"],
+        risk: "write",
+        idempotent: true,
+        audit: true,
+        atomicCalls: ["auditPeer.atomicWrite"],
+        timeout: 5_000,
+      }),
+      {
+        handler: (_input, ctx) => ctx.callAtomic(callee, {}),
+        auditTarget: fallbackTarget("atomic-root"),
+      },
+    );
+
+    await executeAction(
+      depsWithAudit({
+        hooks: {
+          idempotency: createIdempotencyHook({ db: database.runtime.db }),
+        },
+      }),
+      {
+        action: root,
+        input: {},
+        request: req,
+        principal: staffPrincipal,
+      },
+    );
+
+    const rows = await auditRows(req.requestId);
+    expect(rows).toHaveLength(2);
+    expect(rowFor(rows, "auditPeer.atomicWrite")).toMatchObject({
+      targetType: "atomic-callee",
+      targetId: calleeResolved,
+    });
+    expect(rowFor(rows, "auditFixture.atomicRoot")).toMatchObject({
+      targetType: "atomic-root",
+      targetId: "unknown",
+    });
+  });
+
+  it("leaves the handler's box untouched when a preview runs in the same invocation", async () => {
+    const resolved = randomUUID();
+    const idempotencyKey = randomUUID();
+    let previewCalls = 0;
+
+    const confirmable = implementAction(
+      defineActionContract({
+        ...contractDefaults,
+        name: "auditFixture.confirmable",
+        description: "Idempotent write that pauses on a preview card.",
+        principal: "staff",
+        input: z.object({ orderNumber: z.string() }),
+        output: z.object({ orderId: z.uuid() }),
+        permissions: ["audit:write"],
+        risk: "write",
+        idempotent: true,
+        audit: true,
+        timeout: 5_000,
+      }),
+      {
+        handler: (_input, ctx) => {
+          ctx.auditTarget(resolved);
+          return Promise.resolve({ orderId: resolved });
+        },
+        preview: (input: { orderNumber: string }) => {
+          previewCalls += 1;
+          return {
+            title: `Confirm ${input.orderNumber}`,
+            lines: [],
+            notes: [],
+          };
+        },
+        auditTarget: fallbackTarget("order"),
+      },
+    );
+
+    const deps = depsWithAudit({
+      hooks: {
+        idempotency: createIdempotencyHook({ db: database.runtime.db }),
+        confirmation: createConfirmationHook({
+          store: createInMemoryConfirmationStore(),
+        }),
+      },
+    });
+    const input = { orderNumber: "KA-131" };
+
+    const paused = await executeAction(deps, {
+      action: confirmable,
+      input,
+      request: requestMeta({ idempotencyKey, requireConfirmation: true }),
+      principal: staffPrincipal,
+    }).then(
+      () => {
+        throw new Error("expected a confirmation pause");
+      },
+      (caught: unknown) => caught,
+    );
+    expect(paused).toBeInstanceOf(ConfirmationRequiredError);
+    if (!(paused instanceof ConfirmationRequiredError)) return;
+
+    const req = requestMeta({
+      idempotencyKey,
+      requireConfirmation: true,
+      confirmationChallengeId: paused.challenge.challengeId,
+    });
+    expect(
+      await executeAction(deps, {
+        action: confirmable,
+        input,
+        request: req,
+        principal: staffPrincipal,
+      }),
+    ).toEqual({ orderId: resolved });
+
+    expect(previewCalls).toBe(2);
+    const rows = await auditRows(req.requestId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ targetId: resolved, outcome: "ok" });
   });
 });

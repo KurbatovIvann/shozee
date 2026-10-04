@@ -18,7 +18,7 @@ const confirmAuditTarget = holderAuditTarget({
   type: "order",
   field: "orderId",
   fallback: "unknown",
-  sources: ["output", "input"],
+  sources: ["output", "resolved", "input"],
 });
 
 export const confirmOrder = implementAction(confirmOrderContract, {
@@ -40,6 +40,7 @@ export const confirmOrder = implementAction(confirmOrderContract, {
     if (row === undefined) {
       throw new NotFoundError();
     }
+    ctx.auditTarget(orderId);
     if (row.status === "confirmed") {
       throw new ConflictError("Order is already confirmed.");
     }

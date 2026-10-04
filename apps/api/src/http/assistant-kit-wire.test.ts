@@ -20,8 +20,10 @@ import {
   testDeps,
 } from "@showzy/assistant-kit/testing";
 import {
+  assistantChatMessageSchema,
   assistantChatWindowSchema,
   assistantInteractionFromPause,
+  parseAssistantChatUserMessageId,
 } from "@showzy/validation/assistant-chat";
 import {
   assistantInteractions,
@@ -308,11 +310,39 @@ describe("the window a server writes and the window a client reads", () => {
       turn: null,
       interruptedTurn: null,
     };
-    const body: AssistantKitResponse = { status: "accepted", window };
+    const userMessageId = assistantTurnMessageId(
+      { kind: "chat", commandId },
+      "user",
+    );
+    const body: AssistantKitResponse = {
+      status: "accepted",
+      userMessageId,
+      window,
+    };
 
-    expect(body.status).toBe("accepted");
+    expect("status" in body && body.status).toBe("accepted");
+    expect(parseAssistantChatUserMessageId(body)).toBe(userMessageId);
     expect(chatWindowSchema.safeParse(window).success).toBe(false);
     expect(assistantChatWindowSchema.safeParse(window).success).toBe(true);
+  });
+
+  it("reads no id off a refusal, and the derived id is one a client may hold", () => {
+    const commandId = "66666666-6666-4666-8666-666666666666";
+    const userMessageId = assistantTurnMessageId(
+      { kind: "chat", commandId },
+      "user",
+    );
+
+    expect(
+      assistantChatMessageSchema.safeParse({
+        messageId: userMessageId,
+        role: "user",
+        createdAt: "2026-09-11T10:00:00.000Z",
+        parts: [{ kind: "text", text: "привіт", status: "complete" }],
+        revision: 1,
+      }).success,
+    ).toBe(true);
+    expect(parseAssistantChatUserMessageId({ status: "turn_open" })).toBeNull();
   });
 
   it("agrees on the trace a closed card left, and keeps it on a read", async () => {

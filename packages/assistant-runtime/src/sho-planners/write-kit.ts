@@ -1,8 +1,16 @@
-import type { ShoCommand, ShoNeed, ShoParam } from "@showzy/sho-protocol";
+import type {
+  ShoCommand,
+  ShoNeed,
+  ShoParam,
+  ShoRecordType,
+} from "@showzy/sho-protocol";
 
 import {
+  shoIsRef,
   shoPlanFallback,
+  shoRefLocator,
   shoRefused,
+  SHO_UUID,
   type ShoActionPlan,
   type ShoActionPlanner,
   type ShoActionPlanners,
@@ -24,10 +32,70 @@ export interface ShoWritePlan {
   readonly params: Readonly<Record<string, ShoWriteParamMapper>>;
   readonly required: readonly string[];
   readonly oneOf?: readonly (readonly string[])[];
+  readonly constants?: ShoWriteFields;
   readonly notes?: Readonly<Record<string, string>>;
 }
 
 export type ShoWritePlans = Readonly<Record<string, ShoWritePlan>>;
+
+export const shoIdFrom = (param: ShoParam, field: string): ShoWriteMapped => {
+  const locator = shoRefLocator(param);
+  if (shoRefused(locator)) {
+    return locator;
+  }
+  return locator.by === "id" ? { [field]: locator.id } : "unsupported_param";
+};
+
+export const shoIdOnly =
+  (field: string) =>
+  (param: ShoParam): ShoWriteMapped =>
+    shoIdFrom(param, field);
+
+export const shoResolvedProductId = (param: ShoParam): ShoWriteMapped =>
+  shoIsRef(param) && param.status === "resolved"
+    ? shoIdFrom(param, "productId")
+    : "unsupported_param";
+
+export function shoVariantId(param: ShoParam): ShoWriteMapped {
+  if (
+    Array.isArray(param) ||
+    !("attrs" in param) ||
+    param.status !== "resolved"
+  ) {
+    return "unsupported_param";
+  }
+  return typeof param.id === "string" && SHO_UUID.test(param.id)
+    ? { variantId: param.id }
+    : "unsupported_param";
+}
+
+export interface ShoMoney {
+  readonly minor: number;
+  readonly currency: string;
+}
+
+export function shoMoneyOf(param: ShoParam): ShoMoney | null {
+  if (Array.isArray(param) || !("value" in param)) {
+    return null;
+  }
+  const value: unknown = param.value;
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("minor" in value) ||
+    !("currency" in value)
+  ) {
+    return null;
+  }
+  const minor: unknown = value.minor;
+  const currency: unknown = value.currency;
+  return typeof minor === "number" &&
+    Number.isSafeInteger(minor) &&
+    minor >= 0 &&
+    typeof currency === "string"
+    ? { minor, currency }
+    : null;
+}
 
 const nonEmpty = (said: string | null): string | null => {
   const text = said?.trim() ?? "";
@@ -40,6 +108,33 @@ export function shoSpanText(param: ShoParam): string | null {
     : nonEmpty(param.text);
 }
 
+export const shoReferenceParam =
+  (idField: string, numberField: string): ShoWriteParamMapper =>
+  (param) => {
+    if (!shoIsRef(param)) {
+      const spoken =
+        Array.isArray(param) || "status" in param ? null : shoSpanText(param);
+      return spoken === null ? "unsupported_param" : { [numberField]: spoken };
+    }
+    if (param.status !== "context") {
+      return "unsupported_param";
+    }
+    const locator = shoRefLocator(param);
+    if (shoRefused(locator)) {
+      return locator;
+    }
+    return locator.by === "id"
+      ? { [idField]: locator.id }
+      : "unresolved_reference";
+  };
+
+export function shoTypedText(param: ShoParam): string | null {
+  if (Array.isArray(param) || !("value" in param)) {
+    return null;
+  }
+  return typeof param.value === "string" ? nonEmpty(param.value) : null;
+}
+
 export function shoSpokenText(param: ShoParam): string | null {
   if (Array.isArray(param)) {
     return null;
@@ -48,6 +143,26 @@ export function shoSpokenText(param: ShoParam): string | null {
     ? nonEmpty(param.value)
     : shoSpanText(param);
 }
+
+const clipped = (param: ShoParam, max: number): string | null =>
+  shoSpokenText(param)?.slice(0, max) ?? null;
+
+export const shoCreatedName =
+  (type: ShoRecordType, max: number): ShoWriteParamMapper =>
+  (param, command) => {
+    const nominative =
+      command.creates?.type === type ? (command.creates.name ?? "").trim() : "";
+    const text =
+      nominative.length > 0 ? nominative.slice(0, max) : clipped(param, max);
+    return text === null ? "unsupported_param" : { name: text };
+  };
+
+export const shoRenamedName =
+  (max: number): ShoWriteParamMapper =>
+  (param) => {
+    const text = clipped(param, max);
+    return text === null ? "unsupported_param" : { name: text };
+  };
 
 function noteOf(prefix: string, need: ShoNeed): string {
   const span = need.span?.text.trim() ?? "";
@@ -86,6 +201,12 @@ function inputFor(plan: ShoWritePlan, command: ShoCommand): ShoWriteMapped {
       }
       input[field] = value;
     }
+  }
+  for (const [field, value] of Object.entries(plan.constants ?? {})) {
+    if (Object.hasOwn(input, field)) {
+      return "unsupported_param";
+    }
+    input[field] = value;
   }
   const said = (name: string): boolean => Object.hasOwn(command.params, name);
   return plan.required.every(said) &&
