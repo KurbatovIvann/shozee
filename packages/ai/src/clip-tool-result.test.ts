@@ -299,6 +299,49 @@ describe("clipStaffAssistantToolResult", () => {
     expect(JSON.stringify(clipped.preview)).toContain("UAH");
   });
 
+  it("keeps list-card marker and count facts on identity-key shrink", () => {
+    expect(STAFF_ASSISTANT_CLIP_IDENTITY_KEYS).toEqual(
+      expect.arrayContaining([
+        "isActive",
+        "isDefault",
+        "entryCount",
+        "variantCount",
+      ]),
+    );
+    const items = Array.from({ length: 40 }, (_, index) => ({
+      id: rowId(index),
+      name: `N${"x".repeat(110)}`,
+      isDefault: index === 0,
+      isActive: index !== 1,
+      entryCount: index,
+      variantCount: index,
+      notes: "n".repeat(800),
+    }));
+    const clipped = clipStaffAssistantToolResult({ items, nextCursor: null });
+    expect(isClipped(clipped)).toBe(true);
+    if (!isClipped(clipped)) {
+      return;
+    }
+    const previewItems =
+      typeof clipped.preview === "object" &&
+      clipped.preview !== null &&
+      "items" in clipped.preview &&
+      Array.isArray(clipped.preview.items)
+        ? clipped.preview.items
+        : [];
+    expect(previewItems[0]).toEqual(
+      expect.objectContaining({
+        isDefault: true,
+        isActive: true,
+        entryCount: 0,
+        variantCount: 0,
+      }),
+    );
+    expect(previewItems[1]).toEqual(
+      expect.objectContaining({ isActive: false }),
+    );
+  });
+
   it("keeps CRM contacts on identity-key shrink", () => {
     expect(STAFF_ASSISTANT_CLIP_IDENTITY_KEYS).toEqual(
       expect.arrayContaining(["phone", "email", "groupId", "priceListId"]),

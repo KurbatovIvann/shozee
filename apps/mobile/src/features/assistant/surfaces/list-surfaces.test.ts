@@ -218,6 +218,15 @@ describe("price-lists card (SHO-865)", () => {
     );
   });
 
+  it("shows no marker when the row carries no marker flags", () => {
+    const card = localizePriceListsCard(
+      priceListsData([{ id: PRICE_LIST_B, name: "Опт", entryCount: 2 }]),
+      "uk",
+    );
+    expect(card.rows[0]?.badgeLabel).toBeNull();
+    expect(card.rows[0]?.badgeTone).toBe("neutral");
+  });
+
   it("shows the empty card when the company has no price lists", () => {
     const card = localizePriceListsCard(priceListsData([]), "en");
     expect(card.rows).toEqual([]);

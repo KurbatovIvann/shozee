@@ -70,6 +70,12 @@ export function textOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+export function wholeCountOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
 export function assistantPageItems(payload: unknown): readonly unknown[] {
   if (!isRecord(payload)) {
     return [];

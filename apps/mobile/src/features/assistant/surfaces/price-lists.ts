@@ -56,10 +56,10 @@ function rowBadge(
   row: AssistantPriceListsRowData,
   pricing: ReturnType<typeof pricingCopy>,
 ): { readonly label: string | null; readonly tone: StatusPillTone } {
-  if (!row.isActive) {
+  if (row.isActive === false) {
     return { label: pricing.inactiveBadge, tone: "attention" };
   }
-  if (row.isDefault) {
+  if (row.isDefault === true) {
     return { label: pricing.defaultBadge, tone: "success" };
   }
   return { label: null, tone: "neutral" };

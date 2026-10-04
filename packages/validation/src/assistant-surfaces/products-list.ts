@@ -18,6 +18,7 @@ import {
   moneyMinorFromFields,
   textOrNull,
   unwrapToolOutput,
+  wholeCountOrNull,
   type AssistantMoneyMinor,
   type AssistantSurfaceToolResult,
 } from "./helpers.js";
@@ -72,12 +73,6 @@ export type AssistantProductsListData = {
   readonly nextCursor: string | null;
   readonly collection: AssistantCollectionDescriptor;
 };
-
-function wholeCountOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0
-    ? value
-    : null;
-}
 
 function parseProductRow(row: unknown): AssistantProductsListRowData | null {
   if (!isRecord(row)) {

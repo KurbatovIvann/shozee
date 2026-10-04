@@ -195,6 +195,27 @@ describe("price-lists surface over the real pricing.listPriceLists output (SHO-8
     expect(surface?.collection.truncated).toBe(false);
   });
 
+  it("reads an absent marker flag as unknown rather than as active", () => {
+    const surface = parsePriceListsSurface([
+      {
+        toolName: PRICE_LISTS_PRICE_LISTS_TOOL,
+        output: {
+          items: [{ id: PRICE_LIST_A, name: "Опт", entryCount: 3 }],
+          nextCursor: null,
+        },
+      },
+    ]);
+    expect(surface?.rows).toEqual([
+      {
+        priceListId: PRICE_LIST_A,
+        name: "Опт",
+        isDefault: null,
+        isActive: null,
+        entryCount: 3,
+      },
+    ]);
+  });
+
   it("caps the card below the façade page so a full page is visibly truncated", () => {
     const items = Array.from(
       { length: ASSISTANT_PRICE_LISTS_ROW_MAX + 2 },

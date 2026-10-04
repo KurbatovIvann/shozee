@@ -17,6 +17,7 @@ import {
   lastSuccessfulResult,
   textOrNull,
   unwrapToolOutput,
+  wholeCountOrNull,
   type AssistantSurfaceToolResult,
 } from "./helpers.js";
 
@@ -31,7 +32,7 @@ export const PRICE_LISTS_SURFACE_TOOLS = [
 export const PRICE_LISTS_ACTION_NAME = "pricing.listPriceLists";
 
 export const PRICE_LISTS_PROMPT_LINE =
-  "After pricing_list_price_lists, the UI already shows the price lists card with the default and inactive markers and the entry count. Reply with a short product-language summary. Do not dump a markdown table of the rows.";
+  "After pricing_list_price_lists, the UI already shows the price lists card with one marker per row (default, or inactive) and the entry count. Reply with a short product-language summary. Do not dump a markdown table of the rows.";
 
 export const PRICE_LISTS_DESTINATION = {
   kind: "screen",
@@ -50,8 +51,8 @@ export const PRICE_LISTS_COLLECTION_COLUMNS: readonly AssistantCollectionColumn[
 export type AssistantPriceListsRowData = {
   readonly priceListId: string;
   readonly name: string;
-  readonly isDefault: boolean;
-  readonly isActive: boolean;
+  readonly isDefault: boolean | null;
+  readonly isActive: boolean | null;
   readonly entryCount: number | null;
 };
 
@@ -65,10 +66,8 @@ export type AssistantPriceListsData = {
   readonly collection: AssistantCollectionDescriptor;
 };
 
-function wholeCountOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0
-    ? value
-    : null;
+function booleanOrNull(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function parsePriceListRow(row: unknown): AssistantPriceListsRowData | null {
@@ -82,8 +81,8 @@ function parsePriceListRow(row: unknown): AssistantPriceListsRowData | null {
   return {
     priceListId,
     name: textOrNull(row["name"]) ?? "",
-    isDefault: row["isDefault"] === true,
-    isActive: row["isActive"] !== false,
+    isDefault: booleanOrNull(row["isDefault"]),
+    isActive: booleanOrNull(row["isActive"]),
     entryCount: wholeCountOrNull(row["entryCount"]),
   };
 }
