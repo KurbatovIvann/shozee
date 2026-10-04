@@ -8,7 +8,10 @@ import {
   customerGroups,
 } from "@showzy/db/schema/customers";
 import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
-import { changeLines } from "@showzy/module-kit/preview-changes";
+import {
+  changeLines,
+  PREVIEW_ABSENT,
+} from "@showzy/module-kit/preview-changes";
 import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import { getPriceList } from "@showzy/pricing/get-price-list";
 import { and, eq } from "drizzle-orm";
@@ -47,7 +50,6 @@ type UpdateCounterpartyFields = Omit<
 type CounterpartyPreviewFields =
   CreateCounterpartyFields | UpdateCounterpartyFields;
 
-export const PREVIEW_ABSENT = "—";
 export const PREVIEW_CLEARED = "очистити";
 export const CUSTOMER_STATUS_LABEL = "Статус";
 export const CUSTOMER_CONTACT_LABEL = "Контакт";

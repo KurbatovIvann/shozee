@@ -3,6 +3,7 @@ import { implementAction, type AuditTargetEnv } from "@showzy/core";
 import type { ActionPreviewLine } from "@showzy/core/errors";
 import { getCounterparty, getCustomer } from "@showzy/customers";
 import { resolveLayout } from "@showzy/doc-generation/resolve-layout";
+import { PREVIEW_ABSENT } from "@showzy/module-kit/preview-changes";
 import { getOrder } from "@showzy/orders";
 import { z } from "zod";
 
@@ -25,8 +26,6 @@ const orderIdHolder = z.object({ orderId: z.string() });
 
 type DocumentType = z.output<typeof documentTypeSchema>;
 type CreateFromOrderInput = z.output<typeof createFromOrderInputSchema>;
-
-const ABSENT = "—";
 
 /**
  * Catalog defaults named on SHO-362. Nested `resolveLayout` still
@@ -135,7 +134,7 @@ export const createFromOrder = implementAction(createFromOrderContract, {
     lines.push({ label: "Шаблон", value: layout.key });
     lines.push({
       label: "Підстава",
-      value: persistableBasis(input.basis) ?? ABSENT,
+      value: persistableBasis(input.basis) ?? PREVIEW_ABSENT,
     });
     return {
       title: `Створити документ за замовленням ${order.orderNumber}`,

@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   changeLines,
+  PREVIEW_ABSENT,
   PREVIEW_CHANGES_LABEL,
   PREVIEW_NO_CHANGES,
 } from "./preview-changes.js";
+
+describe("PREVIEW_ABSENT", () => {
+  it("is the em dash every preview card shows for an absent value", () => {
+    expect(PREVIEW_ABSENT).toBe("—");
+  });
+});
 
 describe("changeLines", () => {
   it("cards one placeholder line when the update changes nothing", () => {
