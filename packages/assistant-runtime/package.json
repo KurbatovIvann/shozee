@@ -18,6 +18,7 @@
     "@showzy/assistant": "workspace:*",
     "@showzy/assistant-kit": "workspace:*",
     "@showzy/catalog": "workspace:*",
+    "@showzy/companies": "workspace:*",
     "@showzy/core": "workspace:*",
     "@showzy/customers": "workspace:*",
     "@showzy/module-kit": "workspace:*",

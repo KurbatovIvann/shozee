@@ -244,6 +244,20 @@ registry is injected into `createAssistantRuntime`; this package never imports
   and an identifier the runtime failed its own check on arrives as a blocking
   `invalid_value` need, which is the LLM. No identifier, phone or e-mail ever
   reaches the Шо context: a counterparty enters it as an id and a name.
+- `sho-planners/company-writes.ts` — the company-legal write planner
+  (SHO-862): `companies.updateLegal` onto its own action tool, `writes: true`,
+  so it pauses on the ADR-0050 preview like every other Шо write. It requires
+  `company_type` and `legal_name`, because the action requires both on every
+  call and no planner may read-merge-write a stale name. Everything else
+  follows SHO-725: a field Шо did not parse is never sent, so it keeps its
+  stored value, and `bankEdrpou`, which Шо has no param for, is always
+  unchanged. ЄДРПОУ, IBAN, МФО, phone and e-mail come only from Шо's typed
+  value and are validated by the contract's own schemas; `legal_name` and
+  `address` are clipped spans. `bank_name` is not mapped — Шо types a bank
+  slug (`monobank`), not the name a document prints. The company is the
+  verified one and never an input, so a `company_id` the parse carried is
+  `unsupported_param`. `SHO_COMPANY_WRITE_ACTIONS` joins the dev list for
+  `SHO_ACTIONS`; the config default stays empty.
 - `sho-planners/documents-writes.ts` — the document write planners (SHO-861):
   `documents.createFromOrder`, `documents.cancel`, `documents.share` and
   `documents.requestSign` onto their own action tools, `writes: true`, so each

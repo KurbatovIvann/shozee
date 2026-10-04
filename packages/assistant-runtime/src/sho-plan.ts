@@ -20,6 +20,10 @@ import {
   SHO_CATALOG_WRITE_PLANNER_PARAMS,
 } from "./sho-planners/catalog-writes.js";
 import {
+  SHO_COMPANY_WRITE_PLANNERS,
+  SHO_COMPANY_WRITE_PLANNER_PARAMS,
+} from "./sho-planners/company-writes.js";
+import {
   SHO_CUSTOMER_WRITE_PLANNERS,
   SHO_CUSTOMER_WRITE_PLANNER_PARAMS,
 } from "./sho-planners/customers-writes.js";
@@ -69,6 +73,7 @@ export const SHO_ACTION_PLANNERS: ShoActionPlanners = Object.freeze({
   ...SHO_DOCUMENT_WRITE_PLANNERS,
   ...SHO_CATALOG_WRITE_PLANNERS,
   ...SHO_PRICING_WRITE_PLANNERS,
+  ...SHO_COMPANY_WRITE_PLANNERS,
 });
 
 export const SHO_PLANNER_PARAMS: Readonly<Record<string, readonly string[]>> =
@@ -80,6 +85,7 @@ export const SHO_PLANNER_PARAMS: Readonly<Record<string, readonly string[]>> =
     ...SHO_DOCUMENT_WRITE_PLANNER_PARAMS,
     ...SHO_CATALOG_WRITE_PLANNER_PARAMS,
     ...SHO_PRICING_WRITE_PLANNER_PARAMS,
+    ...SHO_COMPANY_WRITE_PLANNER_PARAMS,
   });
 
 export const SHO_PLANNER_PARAM_NAMES: ReadonlySet<string> = new Set(

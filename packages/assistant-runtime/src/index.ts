@@ -27,6 +27,7 @@ export * from "./sho-focus.js";
 export * from "./sho-gaps.js";
 export * from "./sho-plan.js";
 export * from "./sho-planners/catalog-writes.js";
+export * from "./sho-planners/company-writes.js";
 export * from "./sho-planners/customers-writes.js";
 export * from "./sho-planners/documents-writes.js";
 export * from "./sho-planners/orders-lifecycle.js";
