@@ -25,8 +25,10 @@ import {
   devShoBakeryCompany,
   devShoBakeryCompanyId,
   devShoBakeryCustomers,
+  devShoBakeryGroups,
   devShoBakeryId,
   devShoBakeryOwner,
+  devShoBakeryPriceLists,
   rolePermissionDefaultRows,
   seedDevShoBakery,
   seedRolePermissionDefaults,
@@ -575,6 +577,13 @@ describe("dev bakery fixture seed", () => {
       const signedUpOwnerEmail = `${devShoBakeryOwner.phone}@phone.sho-dev.local`;
       await fresh.runtime.db.insert(user).values([
         {
+          id: "email-holder-id",
+          name: "Email holder",
+          email: devShoBakeryOwner.email,
+          emailVerified: false,
+          createdAt: new Date("2026-02-01T00:00:00.000Z"),
+        },
+        {
           id: signedUpOwnerId,
           name: "Phone first",
           email: signedUpOwnerEmail,
@@ -582,13 +591,6 @@ describe("dev bakery fixture seed", () => {
           phoneNumber: devShoBakeryOwner.phone,
           phoneNumberVerified: true,
           createdAt: new Date("2026-01-01T00:00:00.000Z"),
-        },
-        {
-          id: "email-holder-id",
-          name: "Email holder",
-          email: devShoBakeryOwner.email,
-          emailVerified: false,
-          createdAt: new Date("2026-02-01T00:00:00.000Z"),
         },
       ]);
 
@@ -605,6 +607,64 @@ describe("dev bakery fixture seed", () => {
 
       const again = await seedDevShoBakery(fresh.runtime.db);
       expect(again).toEqual(seeded);
+    } finally {
+      await fresh.close();
+    }
+  });
+
+  it("repeats after a dev row collides on a non-primary unique (db.md §9)", async () => {
+    const fresh = await createTestDatabase();
+    try {
+      const seeded = await seedDevShoBakery(fresh.runtime.db);
+      const takenGroup = devShoBakeryGroups[0];
+      const takenPriceList = devShoBakeryPriceLists[1];
+      assert(takenGroup !== undefined);
+      assert(takenPriceList !== undefined);
+
+      await fresh.runtime.db
+        .delete(customerGroups)
+        .where(eq(customerGroups.id, devShoBakeryId("group", takenGroup.name)));
+      await fresh.runtime.db.insert(customerGroups).values({
+        id: devShoBakeryId("devGroup", takenGroup.slug),
+        companyId: seeded.companyId,
+        name: `${takenGroup.name} (dev)`,
+        slug: takenGroup.slug,
+      });
+
+      await fresh.runtime.db
+        .delete(priceLists)
+        .where(eq(priceLists.id, devShoBakeryId("priceList", takenPriceList)));
+      await fresh.runtime.db.insert(priceLists).values({
+        id: devShoBakeryId("devPriceList", takenPriceList),
+        companyId: seeded.companyId,
+        name: `${takenPriceList} (dev)`,
+        isDefault: true,
+      });
+
+      await expect(seedDevShoBakery(fresh.runtime.db)).resolves.toEqual(seeded);
+
+      const groupSlugs = await fresh.runtime.db
+        .select({ slug: customerGroups.slug })
+        .from(customerGroups)
+        .where(eq(customerGroups.companyId, seeded.companyId));
+      expect(groupSlugs.map((row) => row.slug).sort()).toEqual([
+        "optovi",
+        "rozdrib",
+        "vip",
+      ]);
+
+      const defaultLists = await fresh.runtime.db
+        .select({ id: priceLists.id })
+        .from(priceLists)
+        .where(
+          and(
+            eq(priceLists.companyId, seeded.companyId),
+            eq(priceLists.isDefault, true),
+          ),
+        );
+      expect(defaultLists).toEqual([
+        { id: devShoBakeryId("devPriceList", takenPriceList) },
+      ]);
     } finally {
       await fresh.close();
     }
