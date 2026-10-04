@@ -48,6 +48,7 @@ import {
   type SystemScopeInput,
 } from "../runtime/context/factories.js";
 import type { ActionChannel, ActionCtx } from "../runtime/context/types.js";
+import { createAuditTargetBox } from "../runtime/audit/audit-target-box.js";
 import { createConfirmationHook } from "../runtime/confirmation/create-confirmation-hook.js";
 import { createInMemoryConfirmationStore } from "../runtime/confirmation/store.js";
 import { createIdempotencyHook } from "../runtime/idempotency/create-idempotency-hook.js";
@@ -315,6 +316,7 @@ function runtimeFor<TDb>(
         "test-kit contexts cannot call atomically — use kit.invoke",
       );
     },
+    auditTarget: createAuditTargetBox("testKit.buildContext").record,
   };
 }
 
@@ -374,12 +376,12 @@ export async function createTestKit(db?: TestDatabase): Promise<TestKit> {
   await seedTestKit(database);
 
   const jobs = createRecordingJobPort();
-  const pipeline: ActionPipelineDeps = {
+  const pipeline: ActionPipelineDeps = Object.freeze({
     db: jobs.commitBound(database.runtime.db),
     logger: silentLogger,
     projectionGrants: createProjectionGrantManifest([fixtureDiscoveryGrant]),
-    hooks: kitProtocolHooks(database, jobs),
-  };
+    hooks: Object.freeze(kitProtocolHooks(database, jobs)),
+  });
 
   const kit: TestKit = {
     db: database,

@@ -143,6 +143,27 @@ describe("the assistant kit client", () => {
     });
   });
 
+  it("carries the id of the message the send stored, and none when there is none", async () => {
+    const stored = "11111111-1111-4111-8111-111111111111";
+    respond(202, {
+      status: "accepted",
+      userMessageId: stored,
+      window: conversationWindow(),
+    });
+    respond(409, { status: "turn_open", window: conversationWindow() });
+
+    const send = () =>
+      postAssistantKitChat({
+        ...call,
+        conversationId: CONVERSATION,
+        commandId: COMMAND,
+        text: "привіт",
+      });
+
+    expect((await send()).userMessageId).toBe(stored);
+    expect((await send()).userMessageId).toBeNull();
+  });
+
   it("names the open card the words answer", async () => {
     respond(202, { status: "accepted", window: conversationWindow() });
 
@@ -226,7 +247,11 @@ describe("the assistant kit client", () => {
       text: "привіт",
     });
 
-    expect(outcome).toEqual({ window: null, failure: { kind: "unreadable" } });
+    expect(outcome).toEqual({
+      window: null,
+      failure: { kind: "unreadable" },
+      userMessageId: null,
+    });
   });
 
   it("clips text to what the route accepts", () => {
@@ -327,6 +352,7 @@ describe("the assistant kit client", () => {
     expect(outcome).toEqual({
       window: null,
       failure: { kind: "unreachable" },
+      userMessageId: null,
     });
   });
 
@@ -341,6 +367,7 @@ describe("the assistant kit client", () => {
     expect(outcome).toEqual({
       window: null,
       failure: { kind: "unreadable" },
+      userMessageId: null,
     });
   });
 
@@ -360,6 +387,7 @@ describe("the assistant kit client", () => {
     expect(await read()).toEqual({
       window: null,
       failure: { kind: "server", message: "unknown kind" },
+      userMessageId: null,
     });
   });
 
@@ -372,7 +400,11 @@ describe("the assistant kit client", () => {
       interactionId: INTERACTION,
     });
 
-    expect(outcome).toEqual({ window: null, failure: null });
+    expect(outcome).toEqual({
+      window: null,
+      failure: null,
+      userMessageId: null,
+    });
     expect(sentBody(0)).toEqual({
       conversationId: CONVERSATION,
       interactionId: INTERACTION,

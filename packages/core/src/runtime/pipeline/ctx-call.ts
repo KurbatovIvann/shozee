@@ -47,6 +47,7 @@ import {
   type ActionRequestMeta,
   type ContextRuntime,
 } from "../context/factories.js";
+import { createAuditTargetBox } from "../audit/audit-target-box.js";
 import { assertDeclaredPermissions } from "../context/permissions.js";
 import type { ActionCtx, CtxCall, CtxCallAtomic } from "../context/types.js";
 import { createEmitBuffer } from "../events/emit.js";
@@ -174,6 +175,7 @@ export function createCtxCall(env: CtxCallEnv): CtxCall {
     const { request } = invocation;
 
     let calleeCtx: ActionCtx | undefined;
+    const auditTargetBox = createAuditTargetBox(callee.name);
 
     try {
       // The callee sees only the ReadTx facade over the caller's
@@ -198,6 +200,7 @@ export function createCtxCall(env: CtxCallEnv): CtxCall {
           path: [...env.path, callee.name],
         }),
         callAtomic: rejectNestedCallAtomic(callee.name),
+        auditTarget: auditTargetBox.record,
       };
       const ctx = await constructCalleeContext({
         callerCtx: execution.ctx,
@@ -234,6 +237,7 @@ export function createCtxCall(env: CtxCallEnv): CtxCall {
               durationMs: env.now() - invocation.startedAt,
               auditTarget,
               auditSnapshot: action.auditSnapshot,
+              resolvedId: auditTargetBox.resolvedId(),
             });
           });
         } catch (auditError) {

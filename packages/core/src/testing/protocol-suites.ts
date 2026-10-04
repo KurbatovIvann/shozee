@@ -19,6 +19,7 @@ import { describe, it } from "vitest";
 
 import {
   ConcurrentRetryError,
+  ConfirmationRequiredError,
   CoreInvariantError,
   IdempotencyConflictError,
 } from "../errors/index.js";
@@ -27,6 +28,11 @@ import {
   executeDelivery,
 } from "../runtime/events/delivery.js";
 import type { EventSubscription } from "../runtime/events/define-event-handler.js";
+import type { PipelineRequestMeta } from "../runtime/pipeline/types.js";
+import {
+  confirmedRequest,
+  invokeConfirmedAction,
+} from "./confirmation-gate.js";
 import { invokeAction, type IsolationActor, type TestKit } from "./kit.js";
 import type { SuiteAction } from "./suites.js";
 
@@ -92,19 +98,50 @@ function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+async function invokeThroughGate(
+  kit: TestKit,
+  action: SuiteAction,
+  input: unknown,
+  actor: IsolationActor | undefined,
+  request: Partial<PipelineRequestMeta>,
+): Promise<unknown> {
+  if (!action.contract.requiresConfirmation) {
+    return await invokeAction(kit, action, input, actor, { request });
+  }
+  return await invokeConfirmedAction(kit, action, input, actor, { request });
+}
+
+async function replayWithoutChallenge(
+  kit: TestKit,
+  c: IdempotencyCase,
+  key: string,
+): Promise<unknown> {
+  try {
+    return await invokeAction(kit, c.action, c.input, c.actor, {
+      request: { idempotencyKey: key },
+    });
+  } catch (error) {
+    if (error instanceof ConfirmationRequiredError) {
+      throw new Error(
+        `"${c.action.contract.name}" issued a new confirmation card for a completed key instead of replaying it (core.md §5)`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+}
+
 export async function runIdempotencyCase(
   kit: TestKit,
   c: IdempotencyCase,
 ): Promise<void> {
   const key = randomUUID();
   const before = await c.readEffect(kit);
-  const first = await invokeAction(kit, c.action, c.input, c.actor, {
-    request: { idempotencyKey: key },
+  const first = await invokeThroughGate(kit, c.action, c.input, c.actor, {
+    idempotencyKey: key,
   });
   const afterFirst = await c.readEffect(kit);
-  const replay = await invokeAction(kit, c.action, c.input, c.actor, {
-    request: { idempotencyKey: key },
-  });
+  const replay = await replayWithoutChallenge(kit, c, key);
   const afterReplay = await c.readEffect(kit);
   if (!sameJson(first, replay)) {
     throw new Error(
@@ -138,21 +175,35 @@ export async function runIdempotencyCase(
   );
 }
 
+async function concurrentRequests(
+  kit: TestKit,
+  c: IdempotencyCase,
+  input: unknown,
+  key: string,
+): Promise<readonly Partial<PipelineRequestMeta>[]> {
+  const base = { idempotencyKey: key };
+  if (!c.action.contract.requiresConfirmation) {
+    return [base, base];
+  }
+  const options = { request: base };
+  const first = await confirmedRequest(kit, c.action, input, c.actor, options);
+  const second = await confirmedRequest(kit, c.action, input, c.actor, options);
+  return [first, second];
+}
+
 async function runConcurrentIdempotency(
   kit: TestKit,
   c: IdempotencyCase,
 ): Promise<void> {
   const key = randomUUID();
   const input = c.freshInput?.() ?? c.input;
+  const requests = await concurrentRequests(kit, c, input, key);
   const before = await c.readEffect(kit);
-  const results = await Promise.allSettled([
-    invokeAction(kit, c.action, input, c.actor, {
-      request: { idempotencyKey: key },
-    }),
-    invokeAction(kit, c.action, input, c.actor, {
-      request: { idempotencyKey: key },
-    }),
-  ]);
+  const results = await Promise.allSettled(
+    requests.map((request) =>
+      invokeAction(kit, c.action, input, c.actor, { request }),
+    ),
+  );
   const fulfilled: PromiseFulfilledResult<unknown>[] = [];
   const rejected: PromiseRejectedResult[] = [];
   for (const result of results) {
@@ -216,30 +267,38 @@ async function assertTransactionalEmit(
   kit: TestKit,
   spec: EventSuiteSpec,
 ): Promise<void> {
+  const action = spec.failingEmitAction;
   const requestId = randomUUID();
+  const base = { requestId, idempotencyKey: randomUUID() };
+  const request = action.contract.requiresConfirmation
+    ? await confirmedRequest(kit, action, spec.failingEmitInput, spec.actor, {
+        request: base,
+      })
+    : base;
   try {
-    await invokeAction(
-      kit,
-      spec.failingEmitAction,
-      spec.failingEmitInput,
-      spec.actor,
-      { request: { requestId, idempotencyKey: randomUUID() } },
-    );
-  } catch {
+    await invokeAction(kit, action, spec.failingEmitInput, spec.actor, {
+      request,
+    });
+  } catch (error) {
+    if (error instanceof ConfirmationRequiredError) {
+      throw new Error(
+        `"${action.contract.name}" never reached its handler: the confirmation gate refused the confirmed invocation`,
+        { cause: error },
+      );
+    }
     const leftover = await kit.db.runtime.db
       .select({ id: domainEvents.id })
       .from(domainEvents)
       .where(eq(domainEvents.requestId, requestId));
     if (leftover.length > 0) {
       throw new Error(
-        `"${spec.failingEmitAction.contract.name}" rolled back the handler but left outbox rows`,
+        `"${action.contract.name}" rolled back the handler but left outbox rows`,
+        { cause: error },
       );
     }
     return;
   }
-  throw new Error(
-    `"${spec.failingEmitAction.contract.name}" was expected to fail after emit`,
-  );
+  throw new Error(`"${action.contract.name}" was expected to fail after emit`);
 }
 
 async function assertConsumerDedup(
@@ -248,8 +307,9 @@ async function assertConsumerDedup(
 ): Promise<void> {
   const requestId = randomUUID();
   const before = await spec.readProjection(kit);
-  await invokeAction(kit, spec.emitAction, spec.emitInput, spec.actor, {
-    request: { requestId, idempotencyKey: randomUUID() },
+  await invokeThroughGate(kit, spec.emitAction, spec.emitInput, spec.actor, {
+    requestId,
+    idempotencyKey: randomUUID(),
   });
   const eventRows = await kit.db.runtime.db
     .select({ id: domainEvents.id, name: domainEvents.name })

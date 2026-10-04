@@ -38,7 +38,14 @@ export const entityRefSchema = z.discriminatedUnion("by", [
 
 export type EntityRef = z.output<typeof entityRefSchema>;
 
-export const ENTITY_LOOKUP_KINDS = ["customer", "product", "order"] as const;
+export const ENTITY_LOOKUP_OPTIONS_MAX = 20;
+
+export const ENTITY_LOOKUP_KINDS = [
+  "customer",
+  "product",
+  "order",
+  "document",
+] as const;
 
 export type EntityLookupKind = (typeof ENTITY_LOOKUP_KINDS)[number];
 
@@ -60,10 +67,16 @@ export function normalizeUniqueMatchQuery(query: string): string {
   return normalizeReferenceQuery(query).toLowerCase();
 }
 
+export type AmbiguousMatchSplit = "several" | "nearest";
+
 export type UniqueMatchResult<T> =
   | { readonly kind: "unique"; readonly row: T }
   | { readonly kind: "none" }
-  | { readonly kind: "ambiguous"; readonly rows: readonly T[] };
+  | {
+      readonly kind: "ambiguous";
+      readonly ambiguity: AmbiguousMatchSplit;
+      readonly rows: readonly T[];
+    };
 
 /**
  * Exact unique match may write. Contains-only hits (candidates that are
@@ -123,10 +136,10 @@ export function pickUniqueNormalizedMatch<T>(
     return { kind: "unique", row };
   }
   if (exact.length > 1) {
-    return { kind: "ambiguous", rows: exact };
+    return { kind: "ambiguous", ambiguity: "several", rows: exact };
   }
   if (candidates.length > 0) {
-    return { kind: "ambiguous", rows: candidates };
+    return { kind: "ambiguous", ambiguity: "nearest", rows: candidates };
   }
   return { kind: "none" };
 }
@@ -239,18 +252,7 @@ export function pickUniqueReferenceMatch<T>(
   nameOf: (row: T) => string,
 ): UniqueMatchResult<T> {
   const exact = pickUniqueNormalizedMatch(query, candidates, fieldsOf);
-  if (exact.kind !== "ambiguous") {
-    return exact;
-  }
-  const hasExactField = candidates.some((row) =>
-    fieldsOf(row).some(
-      (field) =>
-        field !== null &&
-        field !== undefined &&
-        normalizeUniqueMatchQuery(field) === normalizeUniqueMatchQuery(query),
-    ),
-  );
-  if (hasExactField) {
+  if (exact.kind !== "ambiguous" || exact.ambiguity === "several") {
     return exact;
   }
   const inflected = candidates.filter((row) =>

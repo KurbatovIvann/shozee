@@ -48,6 +48,10 @@ import {
 } from "@showzy/assistant-runtime";
 import { COMPANY_SELECTOR_HEADER } from "@showzy/contract";
 import { ConflictError, CoreInvariantError } from "@showzy/core/errors";
+import {
+  ASSISTANT_PREVIEW_LIST_MAX,
+  assistantConfirmationPromptSchema,
+} from "@showzy/validation/assistant-chat";
 import pino, { type Logger } from "pino";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -595,6 +599,7 @@ type KitBody = {
   readonly status?: string;
   readonly reason?: string;
   readonly code?: string;
+  readonly userMessageId?: string | null;
   readonly window?: {
     readonly messages: readonly {
       readonly role: string;
@@ -682,6 +687,35 @@ describe("POST /assistant/kit/chat", () => {
     expect(history.saved).toEqual([
       [{ role: "user", content: "покажи замовлення" }],
     ]);
+  });
+
+  it("names the message it stored, and names the same one on a replay", async () => {
+    const { app, kit, bind } = harness();
+
+    const first = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+    const retry = await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи"));
+
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    const stored = window.messages[0]?.messageId;
+    expect(stored).toBeDefined();
+    expect(((await first.json()) as KitBody).userMessageId).toBe(stored);
+    expect(((await retry.json()) as KitBody).userMessageId).toBe(stored);
+  });
+
+  it("names no message when the send stored none", async () => {
+    const { app } = harness();
+    await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("перший"));
+
+    const refused = await post(app, ASSISTANT_KIT_CHAT_PATH, {
+      ...chatBody("другий"),
+      commandId: "77777777-7777-4777-8777-777777777777",
+    });
+
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as KitBody).userMessageId).toBeUndefined();
   });
 
   it("does not accept a client-supplied transcript", async () => {
@@ -2316,6 +2350,60 @@ describe("a send while a card is open answers it", () => {
     ]);
   });
 
+  it("names the message the accepted answer stored, fresh and on a replay", async () => {
+    const { app, kit, bind } = harness();
+    const pause = await openConfirmation(kit, bind);
+
+    const first = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
+    const retry = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "так"),
+    );
+
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    const stored = window.messages.find(
+      (message) => message.role === "user",
+    )?.messageId;
+    expect(stored).toBeDefined();
+    expect(((await first.json()) as KitBody).userMessageId).toBe(stored);
+    expect(((await retry.json()) as KitBody).userMessageId).toBe(stored);
+  });
+
+  it("names no message when the answer only opened the next question", async () => {
+    const { app, kit, bind } = harness({ resolveAnswer: SECOND_QUESTION });
+    const pause = await openPause(kit, bind);
+
+    const first = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "перший"),
+    );
+    const retry = await post(
+      app,
+      ASSISTANT_KIT_CHAT_PATH,
+      answeringBody(pause, "перший"),
+    );
+
+    expect([first.status, retry.status]).toEqual([200, 200]);
+    const window = await kit.messages.read({
+      conversationId: CONVERSATION,
+      bind,
+    });
+    expect(window.messages.some((message) => message.role === "user")).toBe(
+      false,
+    );
+    expect(((await first.json()) as KitBody).userMessageId).toBeNull();
+    expect(((await retry.json()) as KitBody).userMessageId).toBeNull();
+  });
+
   it("«ні» declines it exactly as the card's own cancel does", async () => {
     const { app, kit, queue, bind } = harness();
     const pause = await openConfirmation(kit, bind);
@@ -3064,5 +3152,124 @@ describe("a leftover command is no card answer (SHO-776)", () => {
     expect(queue.added).toEqual([
       { kind: "chat", conversationId: CONVERSATION, commandId: COMMAND },
     ]);
+  });
+});
+
+describe("a Шо plan note crosses the picker it paused on (SHO-847)", () => {
+  const NOTE = "Прочитано як нове замовлення.";
+  const OWN_NOTE = "Оксана";
+
+  const shoCreating =
+    (notes: readonly string[] = [NOTE]): ShoEngineFor =>
+    () => ({
+      plan: () =>
+        Promise.resolve({
+          kind: "call",
+          writes: true,
+          toolName: "orders_create",
+          input: { label: "два збіги" },
+          reply: "Замовлення створено.",
+          notes,
+        }),
+    });
+
+  const previewPrompt = (notes: readonly string[]) => ({
+    summary: "Створити замовлення?",
+    preview: { title: "Нове замовлення", lines: [], notes },
+    also: [],
+    level: "card",
+  });
+
+  const previewSecret = {
+    actionName: CONFIRM_ACTION,
+    canonicalInput: { orderId: RECORD },
+    idempotencyKey: "key-sho",
+    challengeId: "challenge-sho",
+    also: [],
+  } satisfies ConfirmationSecret;
+
+  const PREVIEW_TOOLS: ToolSet = {
+    orders_create: {
+      description: "create one",
+      inputSchema: pausingInput,
+      execute: (): ToolOutcome => ({
+        kind: "pause",
+        interaction: "confirmation",
+        prompt: previewPrompt([OWN_NOTE]),
+        secret: previewSecret,
+      }),
+    },
+  };
+
+  const previewAfterPick =
+    (notes: readonly string[]): ResolveAnswer =>
+    () =>
+      Promise.resolve({
+        kind: "pause",
+        interaction: "confirmation",
+        prompt: previewPrompt(notes),
+        secret: previewSecret,
+      } satisfies ToolOutcome);
+
+  async function openPauseOf(response: Response) {
+    const open = ((await response.json()) as KitBody).window?.openPause;
+    if (open === null || open === undefined) {
+      throw new Error("expected an open question");
+    }
+    return open;
+  }
+
+  const notesOf = (prompt: unknown): readonly string[] =>
+    assistantConfirmationPromptSchema.parse(prompt).preview.notes;
+
+  async function pickerThenTap(resolveAnswer: ResolveAnswer) {
+    const { app } = harness({
+      sho: shoCreating(),
+      tools: PAUSING_TOOLS,
+      resolveAnswer,
+    });
+    const picker = await openPauseOf(
+      await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи для оксани")),
+    );
+    const tapped = await post(app, ASSISTANT_KIT_ANSWER_PATH, {
+      commandId: OTHER_COMMAND,
+      conversationId: CONVERSATION,
+      interactionId: picker.interactionId,
+      revision: picker.revision,
+      answer: { optionId: "opt-a" },
+    });
+    return { picker, next: await openPauseOf(tapped) };
+  }
+
+  it("shows the note on the preview the tap opens, and not on the picker", async () => {
+    const { picker, next } = await pickerThenTap(previewAfterPick([OWN_NOTE]));
+
+    expect(picker.kind).toBe("choice");
+    expect(JSON.stringify(picker.prompt)).not.toContain(NOTE);
+    expect(next.kind).toBe("confirmation");
+    expect(notesOf(next.prompt)).toEqual([NOTE, OWN_NOTE]);
+  });
+
+  it("keeps the carried note inside the list cap", async () => {
+    const full = Array.from({ length: ASSISTANT_PREVIEW_LIST_MAX }, (_, at) =>
+      String(at),
+    );
+
+    const { next } = await pickerThenTap(previewAfterPick(full));
+
+    const notes = notesOf(next.prompt);
+    expect(notes).toHaveLength(ASSISTANT_PREVIEW_LIST_MAX);
+    expect(notes[0]).toBe(NOTE);
+  });
+
+  it("shows the note once when the write pauses on the preview with no picker", async () => {
+    const { app } = harness({ sho: shoCreating(), tools: PREVIEW_TOOLS });
+
+    const asked = await openPauseOf(
+      await post(app, ASSISTANT_KIT_CHAT_PATH, chatBody("створи для оксани")),
+    );
+
+    expect(asked.kind).toBe("confirmation");
+    expect(notesOf(asked.prompt)).toEqual([NOTE, OWN_NOTE]);
   });
 });

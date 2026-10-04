@@ -160,7 +160,7 @@ function matchPlanFor(
   };
 }
 
-function seqDocumentNumbers(
+export function seqDocumentNumbers(
   prefix: string,
   sequence: string,
 ): readonly [string, string] | undefined {

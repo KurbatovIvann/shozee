@@ -13,6 +13,10 @@
 import { defineActionContract } from "@showzy/core/contract";
 import { z } from "zod";
 
+import {
+  DOCUMENT_REFERENCE_DESCRIPTION,
+  documentReferenceInputSchema,
+} from "./document-reference.contract.js";
 import { documentViewSchema } from "./document-view.contract.js";
 
 export const DOCUMENT_SHARE_PATH_PREFIX = "/d/";
@@ -26,9 +30,7 @@ export function documentShareUrl(
   return `${origin.replace(/\/$/, "")}${DOCUMENT_SHARE_PATH_PREFIX}${plaintextToken}`;
 }
 
-export const shareDocumentInputSchema = z.strictObject({
-  documentId: z.uuid(),
-});
+export const shareDocumentInputSchema = documentReferenceInputSchema;
 
 export const shareDocumentOutputSchema = documentViewSchema.extend({
   token: z.string().min(1),
@@ -37,8 +39,7 @@ export const shareDocumentOutputSchema = documentViewSchema.extend({
 
 export const shareDocumentContract = defineActionContract({
   name: "documents.share",
-  description:
-    "Rotate the active 90-day page token for a staff document in the active company and return the document view, the plaintext token once, and the public /d/{token} URL. Pre-mints a short-lived PDF download URL when a generated artifact exists; otherwise the token row stores null PDF fields. When a recorded supplier ASiC exists, also pre-mints a short-lived signed download URL beside the unsigned PDF. Re-share remints the token and the signatures. Missing or foreign-company documents fail with not-found. Company id is never input.",
+  description: `Rotate the active 90-day page token for a staff document in the active company and return the document view, the plaintext token once, and the public /d/{token} URL. Pre-mints a short-lived PDF download URL when a generated artifact exists; otherwise the token row stores null PDF fields. When a recorded supplier ASiC exists, also pre-mints a short-lived signed download URL beside the unsigned PDF. Re-share remints the token and the signatures. Missing or foreign-company documents fail with not-found. Company id is never input. ${DOCUMENT_REFERENCE_DESCRIPTION}`,
   principal: "staff",
   transport: "client",
   input: shareDocumentInputSchema,
@@ -51,7 +52,7 @@ export const shareDocumentContract = defineActionContract({
   emits: [],
   atomicCalls: [],
   atomicCallers: [],
-  errors: ["VALIDATION", "NOT_FOUND"],
+  errors: ["VALIDATION", "NOT_FOUND", "CONFLICT"],
   audit: true,
   timeout: 10_000,
 });

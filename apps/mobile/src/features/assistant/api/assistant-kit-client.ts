@@ -17,6 +17,7 @@
  */
 import { fetch as expoFetch } from "expo/fetch";
 import {
+  parseAssistantChatUserMessageId,
   parseAssistantChatWindow,
   type AssistantChatWindow,
 } from "@showzy/validation/assistant-chat";
@@ -75,6 +76,7 @@ export type AssistantKitFailure = {
 export type AssistantKitOutcome = {
   readonly window: AssistantChatWindow | null;
   readonly failure: AssistantKitFailure | null;
+  readonly userMessageId: string | null;
 };
 
 const bodySchema = z.looseObject({
@@ -167,7 +169,11 @@ async function call(
   } catch {
     // Nothing was learned about the conversation, so nothing is reported about
     // it. Whatever the caller is showing stays.
-    return { window: null, failure: { kind: "unreachable" } };
+    return {
+      window: null,
+      failure: { kind: "unreachable" },
+      userMessageId: null,
+    };
   }
 
   let raw: unknown;
@@ -176,6 +182,7 @@ async function call(
   } catch {
     return {
       window: null,
+      userMessageId: null,
       failure: {
         kind: response.ok
           ? "unreadable"
@@ -186,9 +193,14 @@ async function call(
 
   const body = bodySchema.safeParse(raw);
   if (!body.success) {
-    return { window: null, failure: { kind: "unreadable" } };
+    return {
+      window: null,
+      failure: { kind: "unreadable" },
+      userMessageId: null,
+    };
   }
   const window = windowFrom(body.data.window);
+  const userMessageId = parseAssistantChatUserMessageId(raw);
 
   // The two answers that carry the conversation as the command left it.
   // `accepted` (202) is a turn stored and queued; `ok` (200) is a command that
@@ -204,18 +216,19 @@ async function call(
     // A 2xx whose window this build cannot read is a fault, not an empty
     // conversation: showing nothing would look like the turn never happened.
     return window === null
-      ? { window: null, failure: { kind: "unreadable" } }
-      : { window, failure: null };
+      ? { window: null, failure: { kind: "unreadable" }, userMessageId: null }
+      : { window, failure: null, userMessageId };
   }
   if (response.ok) {
     // `abandon` answers `{ status: "abandoned" }` and carries no window.
-    return { window, failure: null };
+    return { window, failure: null, userMessageId };
   }
 
   const message = body.data.message ?? body.data.reason;
   const kind = failureFromStatus(response.status, body.data.status);
   return {
     window,
+    userMessageId,
     failure: { kind, ...(message === undefined ? {} : { message }) },
   };
 }

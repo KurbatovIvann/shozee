@@ -367,6 +367,8 @@ describe("assistant mic composer (SHO-779)", () => {
     expect(messageRow).toContain("props.spoken");
     expect(messageRow).toContain("props.spokenLabel");
     expect(sheetView).toContain("voiceRowSpoken");
+    expect(sheetView).toContain("messageId: item.id");
+    expect(sheetView).not.toContain("text: item.text,");
     expect(sheetView).toContain("copy.voice.spoken");
     expect(sheetView).toContain("voiceMicActive");
   });

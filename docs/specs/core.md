@@ -57,7 +57,7 @@ bound by `implementAction`. All fields are required unless noted:
 | `errors` | `string[]` of `VALIDATION` \| `NOT_FOUND` \| `CONFLICT` | Domain codes this action may let escape `executeAction`. Empty is a real answer. `INTERNAL` and pipeline codes are not declarable. Enforced from observed `invokeAction` throws; a caller's set must include every code declared by its `ctx.call` / `ctx.callAtomic` callees |
 | `atomicCalls` / `atomicCallers` | action-name arrays | ADR-0021 allowlist edges; empty unless this action is a root caller/internal atomic callee |
 | `audit` | boolean | §8. Mandatory `true` for `risk: write`/`high` |
-| `auditTarget` | server fn, conditional | Required when `audit: true`; derives `{ type, id }` from validated input/output/context |
+| `auditTarget` | server fn, conditional | Required when `audit: true`; derives `{ type, id }` from validated input/output/context and the handler-resolved id (§8) |
 | `auditSnapshot` | optional server fn | Returns explicitly redacted safe JSON; hash-only is the default. **Required** on `share` writes (redacted certificate identity; never the raw token) |
 | `timeout` | ms | Whole-pipeline deadline, shared with nested `ctx.call`s; DB statement timeout and abort signal enforce it |
 | `rateLimit` | optional `{ limit, windowSec, scope }` | Defaults per principal (§10) |
@@ -742,6 +742,16 @@ by default (hash-only); it is populated only when the action binds an
   concurrent executions cannot collide (first used by `doc-signing`
   `complete`). A typed core accessor may replace this if a third module
   needs it.
+- **Handler-resolved target:** a write that resolves a human reference
+  (order number, document number) to a record only inside the execution
+  transaction records that id with `ctx.auditTarget(id)`, so a failure
+  after resolution (CONFLICT, a later guard) is attributed to the record
+  the action acted on instead of the declared fallback. Set once per
+  invocation — a second call is `CoreInvariantError` — and scoped to the
+  invocation, so a nested callee records its own. The id reaches the
+  action's `auditTarget` callback as `resolvedId`: that callback stays the
+  only place a row's target is derived, and a failure before resolution
+  keeps the fallback (`unknown`).
 - **Audited reads** run in a database read-only transaction to preserve
   the `risk: read` write-prevention guarantee; the audit row is written in a
   separate short transaction after the read-only transaction commits. This is
@@ -856,8 +866,9 @@ Exported from `packages/core/testing`, used by every module (this is how
   module tests); account user A vs user B's companies/personal data; or
   share token A vs document/resource of token B. A confirmation-gated
   action runs the own case through the two-step gate (challenge → confirm)
-  on the suite's own `createConfirmationHook`, so a module that swaps the
-  kit's hook cannot disable the check; when the action binds `preview`,
+  on the kit's own composed hook — `createTestKit` freezes `pipeline` and
+  `pipeline.hooks`, so a test that swaps an auto-grant onto them throws
+  instead of disabling the check for every later case; when the action binds `preview`,
   the foreign reference must be refused at the preview step, never
   answered with a confirmation card. Every preview-bound case declares
   `foreignReference`, and a case declaring neither variant fails the
@@ -914,9 +925,18 @@ Exported from `packages/core/testing`, used by every module (this is how
   `JobHandler.handle` that maps the payload to a different input is not
   covered by the suite and belongs to `packages/jobs` conformance. A refused
   run's envelopes never reach `kit.jobs.sent` (§6 test kit).
-- `idempotencySuite(action)` — replay, conflict, concurrent-retry cases.
+- `idempotencySuite(action)` — replay, conflict, concurrent-retry cases. A
+  `requiresConfirmation` action runs each case through the gate, and the
+  replay arm then re-invokes the completed key with no challenge: the §5
+  probe must replay the stored response rather than issue a second card.
 - `eventSuite(module)` — declared events emitted transactionally (rollback
-  removes them), consumer dedup respected.
+  removes them), consumer dedup respected. A gated emit action goes through
+  the same challenge → confirm; a failing emit that never reaches the
+  handler fails the suite instead of passing its no-leftover-rows assertion.
+- `invokeConfirmedAction(kit, action, input, actor?, options?)` is the module
+  entry point for a gated action outside the suites: it takes the challenge
+  and re-invokes under it on one idempotency key. Tests never mutate
+  `kit.pipeline.hooks`; a test needing other hooks passes its own `deps`.
 - `atomicCallSuite(edge)` — declared edge succeeds in one transaction;
   rollback removes root/callee effects and events; undeclared, tenant/principal
   mismatch, and nested atomic calls fail.
@@ -1018,6 +1038,8 @@ does not apply — fails the check.
 
 | Date | Change | Why | Reported by |
 | --- | --- | --- | --- |
+| 2026-10-04 | §12: suites drive the kit's own composed confirmation hook; `createTestKit` freezes `pipeline`/`pipeline.hooks`; `invokeConfirmedAction` is the module entry point, and `idempotencySuite`/`eventSuite` gate `requiresConfirmation` actions | Reviewer on SHO-790: five module tests `Object.assign`ed an auto-grant onto the shared hooks, so replay-before-confirmation went untested per module and any later case in that kit ran unguarded | SHO-808 |
+| 2026-10-03 | §2/§8: `ctx.auditTarget(id)` — a handler hands the id it resolved from a human reference to its `auditTarget` callback as `resolvedId`, set once per invocation | Reviewer on SHO-853/SHO-869: `sources: ["output","input"]` cannot reach a resolved id, so a by-number write failing before output audited `unknown` (blueprint §2.1(4)) | SHO-867 |
 | 2026-10-03 | §5/§7: `confirmationOnly: true` request meta — replay stays, resume is dropped, the gate always issues a fresh challenge and the handler is unreachable | Reviewer on SHO-824: omitting `confirmationChallengeId` means "no token", not "do not run", so re-summarizing a carried attempt could execute it | SHO-839 |
 | 2026-10-02 | §7: `ActionPreviewEnv` carries `caller` — `userId` and `can(permission)` over the §3 resolved staff permission set; non-staff human modes hold no company permission | Guardians on SHO-751/SHO-790: a card could only guess what the caller may see (role defaults), and an own-scope account preview had no caller to scope its reads by | SHO-814 |
 | 2026-10-02 | §2: the contract check fails an AI-exposed `risk: write`/`high` action that binds no `preview`; the `preview` row records that the callback is now required, not merely allowed | ADR-0050: the assistant must show the server's card before every write, so the binding belongs to the registry rather than each module's taste | SHO-754 |

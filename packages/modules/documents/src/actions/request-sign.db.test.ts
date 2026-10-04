@@ -1,14 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  CONFIRMATION_TTL_MS,
-  createConfirmationHook,
-  createInMemoryConfirmationStore,
   defineEventHandler,
   eventEnvelopeSchema,
   implementAction,
-  type ActionPipelineDeps,
-  type ConfirmationHook,
 } from "@showzy/core";
 import { defineActionContract } from "@showzy/core/contract";
 import {
@@ -23,6 +18,7 @@ import {
   crossTenantSuite,
   eventSuite,
   idempotencySuite,
+  invokeConfirmedAction,
   isolationCase,
   kitIdentities,
   type TestKit,
@@ -133,39 +129,6 @@ const buyerSnapshot = {
 
 let kit: TestKit;
 const seedOrderNumbers = new Map<string, number>();
-
-function autoConfirmHook(): ConfirmationHook {
-  return {
-    gate: () => {
-      const confirmedAt = new Date();
-      return Promise.resolve({
-        challengeId: randomUUID(),
-        confirmedAt,
-        expiresAt: new Date(confirmedAt.getTime() + CONFIRMATION_TTL_MS),
-      });
-    },
-  };
-}
-
-function attachAutoConfirm(target: TestKit): void {
-  const hooks = target.pipeline.hooks;
-  if (hooks === undefined) {
-    throw new Error("test kit pipeline is missing protocol hooks");
-  }
-  Object.assign(hooks, { confirmation: autoConfirmHook() });
-}
-
-function confirmationPipeline(target: TestKit): ActionPipelineDeps {
-  return {
-    ...target.pipeline,
-    hooks: {
-      ...target.pipeline.hooks,
-      confirmation: createConfirmationHook({
-        store: createInMemoryConfirmationStore(),
-      }),
-    },
-  };
-}
 
 function nextSeedOrderNumber(companyId: string): string {
   const next = (seedOrderNumbers.get(companyId) ?? 0) + 1;
@@ -311,7 +274,6 @@ async function insertReadyJob(
 
 beforeAll(async () => {
   kit = await createTestKit();
-  attachAutoConfirm(kit);
   const companyA = kitIdentities.companies.a;
   const companyB = kitIdentities.companies.b;
   const createdAt = new Date("2026-08-30T12:00:00.000Z");
@@ -605,7 +567,8 @@ eventSuite(() => kit, {
 describe("documents.requestSign", () => {
   it("sets sign_requested_at, emits documents.signRequested, and records audit", async () => {
     const requestId = randomUUID();
-    const result = await kit.invoke(
+    const result = await invokeConfirmedAction(
+      kit,
       requestSign,
       { documentId: fixtures.docHappy },
       {},
@@ -645,14 +608,13 @@ describe("documents.requestSign", () => {
   });
 
   it("rejects an unconfirmed call with a structured preview card and executes after the challenge", async () => {
-    const deps = confirmationPipeline(kit);
     const idempotencyKey = randomUUID();
     const unconfirmed = await kit
       .invoke(
         requestSign,
         { documentId: fixtures.docDeny },
         {},
-        { deps, request: { idempotencyKey } },
+        { request: { idempotencyKey } },
       )
       .then(
         () => {
@@ -698,7 +660,6 @@ describe("documents.requestSign", () => {
       { documentId: fixtures.docDeny },
       {},
       {
-        deps,
         request: {
           idempotencyKey,
           confirmationChallengeId: unconfirmed.challenge.challengeId,
@@ -746,7 +707,9 @@ describe("documents.requestSign", () => {
 
   it("conflicts on cancelled and already-signed documents", async () => {
     await expect(
-      kit.invoke(requestSign, { documentId: fixtures.docCancelled }),
+      invokeConfirmedAction(kit, requestSign, {
+        documentId: fixtures.docCancelled,
+      }),
     ).rejects.toSatisfy((error: unknown) => {
       return (
         error instanceof ConflictError &&
@@ -754,7 +717,9 @@ describe("documents.requestSign", () => {
       );
     });
     await expect(
-      kit.invoke(requestSign, { documentId: fixtures.docSigned }),
+      invokeConfirmedAction(kit, requestSign, {
+        documentId: fixtures.docSigned,
+      }),
     ).rejects.toSatisfy((error: unknown) => {
       return (
         error instanceof ConflictError &&
@@ -765,7 +730,9 @@ describe("documents.requestSign", () => {
 
   it("fails validation when the PDF is not ready", async () => {
     await expect(
-      kit.invoke(requestSign, { documentId: fixtures.docPdfPending }),
+      invokeConfirmedAction(kit, requestSign, {
+        documentId: fixtures.docPdfPending,
+      }),
     ).rejects.toSatisfy((error: unknown) => {
       return (
         error instanceof ValidationError &&

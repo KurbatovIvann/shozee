@@ -7,8 +7,8 @@ import {
   rememberSpoken,
   voiceMicActive,
   voiceMicMode,
-  voiceSpokenKey,
   type VoiceMicMode,
+  type VoiceSendResult,
 } from "./voice-composer";
 import { openVoiceSettings } from "./voice-platform";
 import {
@@ -20,7 +20,7 @@ import type { VoiceWebSocketFactory } from "./voice-socket";
 
 export interface VoiceComposerRequest {
   readonly call: AssistantKitCall | null;
-  readonly send: (text: string) => Promise<boolean>;
+  readonly send: (text: string) => Promise<VoiceSendResult>;
   readonly blocked: boolean;
   readonly announcements: VoiceComposerAnnouncements;
   readonly createSocket?: VoiceWebSocketFactory | undefined;
@@ -70,15 +70,15 @@ export function useVoiceComposer(
       return;
     }
     resetRef.current();
-    const text = voiceSpokenKey(transcript);
+    const text = transcript.trim();
     if (text.length === 0) {
       setSpokeLast(false);
       return;
     }
-    void sendRef.current(text).then((delivered) => {
-      setSpokeLast(delivered);
-      if (delivered) {
-        setSpoken((current) => rememberSpoken(current, text));
+    void sendRef.current(text).then((sent) => {
+      setSpokeLast(sent.delivered);
+      if (sent.delivered) {
+        setSpoken((current) => rememberSpoken(current, sent.messageId));
       }
     });
   }, [transcript]);

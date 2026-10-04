@@ -21,7 +21,10 @@ import {
 } from "./sho-engine.js";
 import type { ShoContextBuild } from "./sho-context.js";
 import type { ShoContextSource } from "./sho-context-source.js";
-import { shoCustomerWriteParse } from "./sho-planners/__tests__/customer-write-parses.js";
+import {
+  cloneShoParse,
+  shoCustomerWriteParse,
+} from "./sho-planners/__tests__/customer-write-parses.js";
 import { shoOrderWriteParse } from "./sho-planners/__tests__/order-write-parses.js";
 import type { ShoPlan } from "./sho-turn.js";
 
@@ -367,7 +370,7 @@ describe("what createShoEngine asks Шо", () => {
   const CONFIDENT = { action: 0.99, margin: 0.8, certainty: 0.9, spans: 0.9 };
 
   const parseOf = (caseId: string): Json =>
-    JSON.parse(JSON.stringify(shoOrderWriteParse(caseId))) as Json;
+    cloneShoParse(shoOrderWriteParse(caseId));
 
   const commandOf = (caseId: string, params?: Json): ShoCommand =>
     shoCommandSchema.parse({

@@ -1,4 +1,4 @@
-import { implementAction, type AuditTargetEnv } from "@showzy/core";
+import { implementAction } from "@showzy/core";
 import {
   ConflictError,
   CoreInvariantError,
@@ -6,15 +6,16 @@ import {
 } from "@showzy/core/errors";
 import { documents } from "@showzy/db/schema/documents";
 import { getSigning } from "@showzy/doc-signing/get";
+import { holderAuditTarget } from "@showzy/module-kit/audit-target";
 import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
 
 import { documentsCancelled } from "../events/cancelled.js";
 import {
   documentPreviewLines,
   loadDocumentPreviewFacts,
 } from "../services/preview-document.js";
+import { resolveDocumentReference } from "../services/resolve-document-reference.js";
 import { requireWritable } from "../services/writable.js";
 import { cancelDocumentContract } from "./cancel.contract.js";
 
@@ -23,19 +24,22 @@ export const CANNOT_CANCEL_MESSAGE = "Document cannot be cancelled.";
 export const SIGNED_CANNOT_CANCEL_MESSAGE =
   "A signed document cannot be cancelled.";
 
-const documentIdHolder = z.object({ documentId: z.string() });
-
-function cancelAuditTarget(env: AuditTargetEnv): { type: string; id: string } {
-  const parsed = documentIdHolder.safeParse(env.input);
-  return {
-    type: "document",
-    id: parsed.success ? parsed.data.documentId : "unknown",
-  };
-}
+const cancelAuditTarget = holderAuditTarget({
+  type: "document",
+  field: "documentId",
+  fallback: "unknown",
+  sources: ["output", "resolved", "input"],
+});
 
 export const cancelDocument = implementAction(cancelDocumentContract, {
   handler: async (input, ctx) => {
     const db = requireWritable(ctx.db);
+    const documentId = await resolveDocumentReference({
+      db,
+      companyId: ctx.companyId,
+      call: ctx.call,
+      input,
+    });
     // Header lock copies `orders.cancel`. `loadStaffDocument` is the T3
     // get assembler (full view + line snapshots, no FOR UPDATE) — not a
     // second cancel loader.
@@ -48,7 +52,7 @@ export const cancelDocument = implementAction(cancelDocumentContract, {
       .where(
         and(
           eq(documents.companyId, ctx.companyId),
-          eq(documents.id, input.documentId),
+          eq(documents.id, documentId),
         ),
       )
       .limit(1)
@@ -57,6 +61,7 @@ export const cancelDocument = implementAction(cancelDocumentContract, {
     if (row === undefined) {
       throw new NotFoundError();
     }
+    ctx.auditTarget(documentId);
     if (row.status === "cancelled") {
       throw new ConflictError(ALREADY_CANCELLED_MESSAGE);
     }
@@ -65,7 +70,7 @@ export const cancelDocument = implementAction(cancelDocumentContract, {
     }
 
     const signing = await ctx.call(getSigning, {
-      documentId: input.documentId,
+      documentId: documentId,
     });
     if (signing.status === "supplier_signed") {
       throw new ConflictError(SIGNED_CANNOT_CANCEL_MESSAGE);
@@ -77,7 +82,7 @@ export const cancelDocument = implementAction(cancelDocumentContract, {
       .where(
         and(
           eq(documents.companyId, ctx.companyId),
-          eq(documents.id, input.documentId),
+          eq(documents.id, documentId),
         ),
       )
       .returning({
@@ -89,24 +94,33 @@ export const cancelDocument = implementAction(cancelDocumentContract, {
     }
 
     ctx.emit(documentsCancelled, {
-      aggregate: { type: "document", id: input.documentId },
+      aggregate: { type: "document", id: documentId },
       payload: {
-        documentId: input.documentId,
+        documentId: documentId,
         orderId: saved.orderId,
       },
     });
 
     return {
-      documentId: input.documentId,
+      documentId: documentId,
       orderId: saved.orderId,
       status: "cancelled" as const,
     };
   },
   preview: async (input, env) => {
+    const companyId = previewCompanyScope(
+      env.companyId,
+      cancelDocumentContract,
+    );
     const facts = await loadDocumentPreviewFacts({
       tx: env.tx,
-      companyId: previewCompanyScope(env.companyId, cancelDocumentContract),
-      documentId: input.documentId,
+      companyId,
+      documentId: await resolveDocumentReference({
+        db: env.tx,
+        companyId,
+        call: env.call,
+        input,
+      }),
     });
     return {
       title: `Скасувати документ ${facts.documentNumber}`,

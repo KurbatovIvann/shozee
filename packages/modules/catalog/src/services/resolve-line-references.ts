@@ -1,6 +1,11 @@
 import type { ActionCtx } from "@showzy/core";
 import { CoreInvariantError, NotFoundError } from "@showzy/core/errors";
 import { products, productVariants } from "@showzy/db/schema/catalog";
+import {
+  entityLookupPage,
+  entityLookupPicker,
+  type EntityLookupPicker,
+} from "@showzy/module-kit/entity-lookup";
 import { referenceNameSearch } from "@showzy/module-kit/name-match";
 import { uniqueIds } from "@showzy/module-kit/unique-ids";
 import {
@@ -27,7 +32,6 @@ import {
 import { alias, unionAll } from "drizzle-orm/pg-core";
 
 import {
-  VARIANT_SELECTION_OPTIONS_MAX,
   type ResolveLineItemInput,
   type VariantSelection,
 } from "../actions/resolve-line-references.contract.js";
@@ -44,7 +48,6 @@ import {
   ReferenceResolutionConflictError,
   unmatchedVariantQueryMessage,
   variantRequiredMessage,
-  type VariantSelectionOption,
 } from "./reference-resolution-conflict.js";
 
 type StaffDb = Extract<ActionCtx, { principal: "staff" }>["db"];
@@ -106,15 +109,10 @@ type ProductQueryCandidates = {
   readonly byQuery: ReadonlyMap<string, readonly ProductCandidate[]>;
 };
 
-function pickerFromProducts(rows: readonly ProductCandidate[]): {
-  readonly options: readonly VariantSelectionOption[];
-  readonly optionsTruncated: boolean;
-} {
-  const options = productCandidateOptions(rows);
-  return {
-    options: options.slice(0, VARIANT_SELECTION_OPTIONS_MAX),
-    optionsTruncated: options.length > VARIANT_SELECTION_OPTIONS_MAX,
-  };
+function pickerFromProducts(
+  rows: readonly ProductCandidate[],
+): EntityLookupPicker {
+  return entityLookupPage(productCandidateOptions(rows));
 }
 
 function variantSelectionOf(line: LineReferenceInput): VariantSelection {
@@ -124,29 +122,12 @@ function variantSelectionOf(line: LineReferenceInput): VariantSelection {
   return line.variantSelection ?? { kind: "unspecified" };
 }
 
-function compareVariantNameThenId(
-  left: VariantCandidate,
-  right: VariantCandidate,
-): number {
-  const byName = left.name.localeCompare(right.name);
-  if (byName !== 0) {
-    return byName;
-  }
-  return left.id.localeCompare(right.id);
-}
-
-function pickerFromVariants(rows: readonly VariantCandidate[]): {
-  readonly options: readonly VariantSelectionOption[];
-  readonly optionsTruncated: boolean;
-} {
-  const sorted = [...rows].toSorted(compareVariantNameThenId);
-  return {
-    options: sorted.slice(0, VARIANT_SELECTION_OPTIONS_MAX).map((row) => ({
-      id: row.id,
-      label: row.name,
-    })),
-    optionsTruncated: sorted.length > VARIANT_SELECTION_OPTIONS_MAX,
-  };
+function pickerFromVariants(
+  rows: readonly VariantCandidate[],
+): EntityLookupPicker {
+  return entityLookupPicker(
+    rows.map((row) => ({ id: row.id, label: row.name })),
+  );
 }
 
 function throwProductSelectionConflict(args: {

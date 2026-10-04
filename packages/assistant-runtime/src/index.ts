@@ -24,6 +24,7 @@ export * from "./sho-context.js";
 export * from "./sho-context-source.js";
 export * from "./sho-engine.js";
 export * from "./sho-focus.js";
+export * from "./sho-gaps.js";
 export * from "./sho-plan.js";
 export * from "./sho-planners/catalog-writes.js";
 export * from "./sho-planners/customers-writes.js";

@@ -1,13 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  CONFIRMATION_TTL_MS,
-  createConfirmationHook,
-  createInMemoryConfirmationStore,
-  type ActionPipelineDeps,
-  type ConfirmationHook,
-} from "@showzy/core";
-import {
   ConfirmationRequiredError,
   NotFoundError,
   PermissionDeniedError,
@@ -17,6 +10,7 @@ import {
   createTestKit,
   crossTenantSuite,
   idempotencySuite,
+  invokeConfirmedAction,
   isolationCase,
   kitIdentities,
   type TestKit,
@@ -49,45 +43,6 @@ const clerks = {
 
 let kit: TestKit;
 
-/**
- * The core test kit omits the confirmation slot (`kitProtocolHooks`).
- * Inherited isolation/idempotency suites invoke once and do not complete
- * a challenge, so this file attaches an auto-grant for those suites.
- * Protocol tests compose the real in-memory store via `deps`.
- */
-function autoConfirmHook(): ConfirmationHook {
-  return {
-    gate: () => {
-      const confirmedAt = new Date();
-      return Promise.resolve({
-        challengeId: randomUUID(),
-        confirmedAt,
-        expiresAt: new Date(confirmedAt.getTime() + CONFIRMATION_TTL_MS),
-      });
-    },
-  };
-}
-
-function attachAutoConfirm(target: TestKit): void {
-  const hooks = target.pipeline.hooks;
-  if (hooks === undefined) {
-    throw new Error("test kit pipeline is missing protocol hooks");
-  }
-  Object.assign(hooks, { confirmation: autoConfirmHook() });
-}
-
-function confirmationPipeline(target: TestKit): ActionPipelineDeps {
-  return {
-    ...target.pipeline,
-    hooks: {
-      ...target.pipeline.hooks,
-      confirmation: createConfirmationHook({
-        store: createInMemoryConfirmationStore(),
-      }),
-    },
-  };
-}
-
 async function countOkDeleteAudits(): Promise<number> {
   const rows = await kit.db.runtime.db
     .select({ id: auditLog.id })
@@ -119,7 +74,6 @@ async function customerRow(customerId: string) {
 
 beforeAll(async () => {
   kit = await createTestKit();
-  attachAutoConfirm(kit);
 
   await kit.db.runtime.db.insert(customerGroups).values([
     {
@@ -239,7 +193,8 @@ idempotencySuite(
 describe("customers.deleteGroup", () => {
   it("deletes the group, SET NULLs member group_id, and audits once", async () => {
     const requestId = randomUUID();
-    const result = await kit.invoke(
+    const result = await invokeConfirmedAction(
+      kit,
       deleteGroup,
       { id: fixtures.happyGroup },
       {},
@@ -298,15 +253,9 @@ describe("customers.deleteGroup", () => {
       slug: `confirm-${groupId}`,
     });
 
-    const deps = confirmationPipeline(kit);
     const idempotencyKey = randomUUID();
     const unconfirmed = await kit
-      .invoke(
-        deleteGroup,
-        { id: groupId },
-        {},
-        { deps, request: { idempotencyKey } },
-      )
+      .invoke(deleteGroup, { id: groupId }, {}, { request: { idempotencyKey } })
       .then(
         () => {
           throw new Error("expected ConfirmationRequiredError");
@@ -335,7 +284,6 @@ describe("customers.deleteGroup", () => {
       { id: groupId },
       {},
       {
-        deps,
         request: {
           idempotencyKey,
           confirmationChallengeId: unconfirmed.challenge.challengeId,
@@ -375,7 +323,7 @@ describe("customers.deleteGroup", () => {
       name: "Second delete",
       slug: `second-delete-${secondDeleteId}`,
     });
-    await kit.invoke(deleteGroup, { id: secondDeleteId });
+    await invokeConfirmedAction(kit, deleteGroup, { id: secondDeleteId });
 
     const missingError = await kit
       .invoke(deleteGroup, { id: missingId })

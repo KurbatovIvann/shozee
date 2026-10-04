@@ -249,6 +249,7 @@ export interface AuditHook {
     readonly durationMs: number;
     readonly auditTarget: AuditTargetFn;
     readonly auditSnapshot: AuditSnapshotFn<z.ZodType> | undefined;
+    readonly resolvedId: string | undefined;
   }): Promise<void>;
   recordFailure(
     env: Omit<PipelineHookEnv, "input"> & {
@@ -258,6 +259,7 @@ export interface AuditHook {
       readonly authorization: PreflightAuthorization | undefined;
       readonly durationMs: number;
       readonly auditTarget: AuditTargetFn | undefined;
+      readonly resolvedId: string | undefined;
     },
   ): Promise<void>;
 }

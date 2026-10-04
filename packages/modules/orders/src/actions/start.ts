@@ -18,7 +18,7 @@ const startAuditTarget = holderAuditTarget({
   type: "order",
   field: "orderId",
   fallback: "unknown",
-  sources: ["output", "input"],
+  sources: ["output", "resolved", "input"],
 });
 
 export const startOrder = implementAction(startOrderContract, {
@@ -40,6 +40,7 @@ export const startOrder = implementAction(startOrderContract, {
     if (row === undefined) {
       throw new NotFoundError();
     }
+    ctx.auditTarget(orderId);
     if (row.status === "in_progress") {
       throw new ConflictError("Order is already started.");
     }

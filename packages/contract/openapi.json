@@ -27263,7 +27263,7 @@
     "/documents/cancel": {
       "post": {
         "operationId": "documents.cancel",
-        "summary": "Cancel an issued staff document in the active company. Cancellation is a status transition only: issued moves to cancelled. The document number stays consumed. A recorded supplier signature fails with conflict. Already cancelled documents fail with conflict. Unsigned cancel clears the HITL grant. Missing or foreign-company documents fail with not-found. Company id is never input.",
+        "summary": "Cancel an issued staff document in the active company. Cancellation is a status transition only: issued moves to cancelled. The document number stays consumed. A recorded supplier signature fails with conflict. Already cancelled documents fail with conflict. Unsigned cancel clears the HITL grant. Missing or foreign-company documents fail with not-found. Company id is never input. Takes exactly one of a canonical documentId or a human documentNumber (the spoken or printed document number: the full code with or without the company prefix, or the bare sequence, which names the invoice and the delivery note alike). An exact document number returns that document. Several documents starting with the given number fail with a conflict carrying them as options. No match fails with not-found.",
         "requestBody": {
           "required": true,
           "content": {
@@ -27274,11 +27274,13 @@
                   "documentId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "documentNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 },
-                "required": [
-                  "documentId"
-                ],
                 "additionalProperties": false
               }
             }
@@ -32411,7 +32413,7 @@
     "/documents/requestSign": {
       "post": {
         "operationId": "documents.requestSign",
-        "summary": "Request a qualified electronic signature for an issued staff document whose PDF is ready. Sets the HITL grant timestamp (TTL 15 minutes, enforced on start). Cancelled, already supplier-signed, or PDF-not-ready documents fail. Missing or foreign-company documents fail with not-found. Company id is never input. Requires confirmation. Confirmation does not replace key possession. Re-submitting the identical payload with the same idempotency key after success returns the stored acknowledgement.",
+        "summary": "Request a qualified electronic signature for an issued staff document whose PDF is ready. Sets the HITL grant timestamp (TTL 15 minutes, enforced on start). Cancelled, already supplier-signed, or PDF-not-ready documents fail. Missing or foreign-company documents fail with not-found. Company id is never input. Requires confirmation. Confirmation does not replace key possession. Re-submitting the identical payload with the same idempotency key after success returns the stored acknowledgement. Takes exactly one of a canonical documentId or a human documentNumber (the spoken or printed document number: the full code with or without the company prefix, or the bare sequence, which names the invoice and the delivery note alike). An exact document number returns that document. Several documents starting with the given number fail with a conflict carrying them as options. No match fails with not-found.",
         "requestBody": {
           "required": true,
           "content": {
@@ -32422,11 +32424,13 @@
                   "documentId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "documentNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 },
-                "required": [
-                  "documentId"
-                ],
                 "additionalProperties": false
               }
             }
@@ -33148,7 +33152,7 @@
     "/documents/share": {
       "post": {
         "operationId": "documents.share",
-        "summary": "Rotate the active 90-day page token for a staff document in the active company and return the document view, the plaintext token once, and the public /d/{token} URL. Pre-mints a short-lived PDF download URL when a generated artifact exists; otherwise the token row stores null PDF fields. When a recorded supplier ASiC exists, also pre-mints a short-lived signed download URL beside the unsigned PDF. Re-share remints the token and the signatures. Missing or foreign-company documents fail with not-found. Company id is never input.",
+        "summary": "Rotate the active 90-day page token for a staff document in the active company and return the document view, the plaintext token once, and the public /d/{token} URL. Pre-mints a short-lived PDF download URL when a generated artifact exists; otherwise the token row stores null PDF fields. When a recorded supplier ASiC exists, also pre-mints a short-lived signed download URL beside the unsigned PDF. Re-share remints the token and the signatures. Missing or foreign-company documents fail with not-found. Company id is never input. Takes exactly one of a canonical documentId or a human documentNumber (the spoken or printed document number: the full code with or without the company prefix, or the bare sequence, which names the invoice and the delivery note alike). An exact document number returns that document. Several documents starting with the given number fail with a conflict carrying them as options. No match fails with not-found.",
         "requestBody": {
           "required": true,
           "content": {
@@ -33159,11 +33163,13 @@
                   "documentId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "documentNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 },
-                "required": [
-                  "documentId"
-                ],
                 "additionalProperties": false
               }
             }
@@ -34095,6 +34101,31 @@
                         "status",
                         "message",
                         "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "CONFLICT"
+                        },
+                        "status": {
+                          "const": 409
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "Conflict"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
                       ]
                     },
                     {

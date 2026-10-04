@@ -46,6 +46,8 @@ interface FacadeInput {
   productQuery?: string;
   orderId?: string;
   orderNumber?: string;
+  documentId?: string;
+  documentNumber?: string;
   items?: Array<{
     productId?: string;
     productQuery?: string;
@@ -87,6 +89,11 @@ export function withChosenId(
       case "order": {
         next.orderId = entityId;
         delete next.orderNumber;
+        return { kind: "patched", input: next };
+      }
+      case "document": {
+        next.documentId = entityId;
+        delete next.documentNumber;
         return { kind: "patched", input: next };
       }
       default: {

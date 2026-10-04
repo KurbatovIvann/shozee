@@ -11,6 +11,7 @@
  */
 import { defineActionContract } from "@showzy/core/contract";
 import {
+  ENTITY_LOOKUP_OPTIONS_MAX,
   ENTITY_REF_QUERY_MAX,
   entityRefSchema,
 } from "@showzy/validation/entity-ref";
@@ -23,7 +24,7 @@ export const RESOLVE_CUSTOMER_REFERENCE_QUERY_MAX = ENTITY_REF_QUERY_MAX;
  * Not `REFERENCE_CONFLICT_LABELS_MAX` (5). Matches catalog
  * `VARIANT_SELECTION_OPTIONS_MAX` / AI `CHOICE_OPTIONS_MAX`.
  */
-export const CUSTOMER_REFERENCE_OPTIONS_MAX = 20;
+export const CUSTOMER_REFERENCE_OPTIONS_MAX = ENTITY_LOOKUP_OPTIONS_MAX;
 
 export const resolveCustomerReferenceInputSchema = entityRefSchema;
 

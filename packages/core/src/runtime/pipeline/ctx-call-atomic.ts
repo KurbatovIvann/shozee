@@ -42,6 +42,7 @@ import type { z } from "zod";
 import { atomicCallTargetProblems } from "../../contract-check/call-rules.js";
 import { CoreInvariantError } from "../../errors/index.js";
 import type { AnyActionContract } from "../action-registry.js";
+import { createAuditTargetBox } from "../audit/audit-target-box.js";
 import {
   type ActionRequestMeta,
   type ContextRuntime,
@@ -166,6 +167,7 @@ export function createCtxCallAtomic(env: CtxCallAtomicEnv): CtxCallAtomic {
       // (e.g. catalog.stockAdjusted) and the flush below inserts into the
       // root transaction, so its events commit only with the root.
       const emitBuffer = createEmitBuffer({ contract: callee, now: env.now });
+      const auditTargetBox = createAuditTargetBox(callee.name);
 
       // The writable root transaction travels down as-is (ADR-0021,
       // db.md §3: "an atomic callee receives the root `Tx` object") —
@@ -193,6 +195,7 @@ export function createCtxCallAtomic(env: CtxCallAtomicEnv): CtxCallAtomic {
           path: [...env.path, callee.name],
         }),
         callAtomic: rejectNestedCallAtomic(callee.name),
+        auditTarget: auditTargetBox.record,
       };
       const ctx = await constructCalleeContext({
         callerCtx: execution.ctx,
@@ -236,6 +239,7 @@ export function createCtxCallAtomic(env: CtxCallAtomicEnv): CtxCallAtomic {
           durationMs: env.now() - invocation.startedAt,
           auditTarget,
           auditSnapshot: action.auditSnapshot,
+          resolvedId: auditTargetBox.resolvedId(),
         });
       }
 

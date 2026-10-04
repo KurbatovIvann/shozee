@@ -219,7 +219,7 @@ describe("«виставити рахунок» issues from the order the focus 
   });
 });
 
-describe("the cancel, share and request-sign mappers take an id alone", () => {
+describe("the cancel, share and request-sign mappers take an id or a number", () => {
   const verbs: Readonly<Record<string, readonly [string, string, string]>> = {
     [SHO_CANCEL_DOCUMENT]: [
       "cancel",
@@ -285,13 +285,67 @@ describe("the cancel, share and request-sign mappers take an id alone", () => {
     });
   });
 
-  it("refuses a spoken document number: the action takes only an id", () => {
+  it("plans the spoken document number as the number documents resolves", () => {
+    for (const [action, [verb, toolName, reply]] of Object.entries(verbs)) {
+      expect(
+        planOf(
+          commandOf(onFocusDocument(action, verb, OUR_DOCUMENT), {
+            params: { document_ref: { text: "57", value: 57 } },
+          }),
+        ),
+      ).toEqual({
+        kind: "call",
+        toolName,
+        reply,
+        input: { documentNumber: "57" },
+      });
+    }
+  });
+
+  it("plans the written number «KA-РХ-000057» verbatim", () => {
     expect(
       planOf(
         commandOf(
           onFocusDocument(SHO_CANCEL_DOCUMENT, "cancel", OUR_DOCUMENT),
           {
+            params: { document_ref: { text: "KA-РХ-000057" } },
+          },
+        ),
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "documents_cancel",
+      reply: "Документ скасовано.",
+      input: { documentNumber: "KA-РХ-000057" },
+    });
+  });
+
+  it("sends a spoken number through the preview like every other Шо write", () => {
+    expect(
+      whitelisted(
+        resultOf(
+          commandOf(onFocusDocument(SHO_SHARE_DOCUMENT, "send", OUR_DOCUMENT), {
             params: { document_ref: { text: "57", value: 57 } },
+          }),
+        ),
+        NOW,
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "documents_share",
+      reply: "Посилання на документ готове.",
+      input: { documentNumber: "57" },
+      writes: true,
+    });
+  });
+
+  it("refuses a spoken number the parse left blank", () => {
+    expect(
+      planOf(
+        commandOf(
+          onFocusDocument(SHO_CANCEL_DOCUMENT, "cancel", OUR_DOCUMENT),
+          {
+            params: { document_ref: { text: "  " } },
           },
         ),
       ),
@@ -319,7 +373,7 @@ describe("the cancel, share and request-sign mappers take an id alone", () => {
   });
 });
 
-describe("end to end, no document write ever binds today (SHO-869)", () => {
+describe("end to end, the focus never binds a document write (SHO-869)", () => {
   it("refuses another company's document id against this turn's focus", () => {
     expect(
       shoFocusHolds(

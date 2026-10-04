@@ -77,6 +77,7 @@ export interface AuditTargetEnv {
   readonly input: unknown;
   readonly output?: unknown;
   readonly ctx?: ActionCtx;
+  readonly resolvedId?: string;
 }
 
 /**

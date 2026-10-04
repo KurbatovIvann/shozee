@@ -15,6 +15,7 @@ import {
   assistantPreviewSchema,
   mergeAssistantChatWindow,
   orderAssistantChatWindow,
+  parseAssistantChatUserMessageId,
   parseAssistantChatWindow,
   type AssistantChatMessage,
   type AssistantChatThread,
@@ -548,5 +549,32 @@ describe("the preview a pause puts on the wire", () => {
         notes: [tooLong],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("parseAssistantChatUserMessageId", () => {
+  const stored = "11111111-1111-4111-8111-111111111111";
+
+  it("reads the id a send echoes, past the window beside it", () => {
+    expect(
+      parseAssistantChatUserMessageId({
+        status: "accepted",
+        userMessageId: stored,
+        window: { conversationId: stored },
+      }),
+    ).toBe(stored);
+  });
+
+  it("names nothing for a response that stored nothing of the person's", () => {
+    expect(
+      parseAssistantChatUserMessageId({
+        status: "ok",
+        userMessageId: null,
+      }),
+    ).toBeNull();
+    expect(parseAssistantChatUserMessageId({ status: "turn_open" })).toBeNull();
+    expect(
+      parseAssistantChatUserMessageId({ userMessageId: "not-an-id" }),
+    ).toBeNull();
   });
 });

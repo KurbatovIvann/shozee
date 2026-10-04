@@ -53,7 +53,6 @@ describe("catalog.resolveLineReferences contract", () => {
       "earliest terminal failure by input lineIndex",
     );
     expect(RESOLVE_LINE_REFERENCES_MAX_LINES).toBe(100);
-    expect(VARIANT_SELECTION_OPTIONS_MAX).toBe(20);
     expect(VARIANT_SELECTION_OPTIONS_MAX).toBeGreaterThan(6);
     expect(VARIANT_SELECTION_OPTIONS_MAX).not.toBe(
       REFERENCE_CONFLICT_LABELS_MAX,

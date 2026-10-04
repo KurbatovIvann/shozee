@@ -2,6 +2,7 @@ import { implementAction } from "@showzy/core";
 
 import { readCustomersNameIndex } from "../services/name-index.js";
 import {
+  LIST_NAME_INDEX_COUNTERPARTIES_MAX,
   LIST_NAME_INDEX_CUSTOMERS_MAX,
   LIST_NAME_INDEX_GROUPS_MAX,
   listNameIndexContract,
@@ -15,6 +16,7 @@ export const listNameIndex = implementAction(listNameIndexContract, {
       caps: {
         customers: LIST_NAME_INDEX_CUSTOMERS_MAX,
         groups: LIST_NAME_INDEX_GROUPS_MAX,
+        counterparties: LIST_NAME_INDEX_COUNTERPARTIES_MAX,
       },
     }),
 });

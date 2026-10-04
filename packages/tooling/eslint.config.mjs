@@ -1,6 +1,7 @@
 import { showzyEslintConfig } from "./eslint/base.mjs";
 
 export default [
+  { ignores: ["**/*.d.mts"] },
   ...showzyEslintConfig({ tsconfigRootDir: import.meta.dirname }),
   {
     files: ["ci/**/*.mjs"],
