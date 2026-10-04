@@ -7,7 +7,10 @@ export {
   LIST_NAME_INDEX_PRICE_LISTS_MAX,
   listNameIndexContract,
 } from "./actions/list-name-index.contract.js";
-export { listPriceListEntriesContract } from "./actions/list-price-list-entries.contract.js";
+export {
+  LIST_PRICE_LIST_ENTRIES_DEFAULT_LIMIT,
+  listPriceListEntriesContract,
+} from "./actions/list-price-list-entries.contract.js";
 export {
   LIST_PRICE_LISTS_CURSOR_MAX,
   LIST_PRICE_LISTS_DEFAULT_LIMIT,

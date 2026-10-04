@@ -484,7 +484,7 @@ describe("SHO_READ_PLANNERS plans only a surfaced read", () => {
     },
   );
 
-  it("plans catalog.listProducts and pricing.listPriceLists now that their lists compose (SHO-865)", () => {
+  it("plans the catalog, price-list and price-list-entry reads now that their surfaces compose (SHO-872)", () => {
     expect([...SHO_SURFACED_READ_ACTIONS]).toEqual([
       "orders.list",
       "orders.count",
@@ -494,6 +494,8 @@ describe("SHO_READ_PLANNERS plans only a surfaced read", () => {
       "catalog.getProduct",
       "catalog.listProducts",
       "pricing.listPriceLists",
+      "pricing.getPriceList",
+      "pricing.listPriceListEntries",
       "search.query",
     ]);
   });
@@ -526,6 +528,34 @@ describe("SHO_READ_PLANNERS plans only a surfaced read", () => {
       toolName: "pricing_list_price_lists",
       input: {},
       reply: "Ось прайс-листи.",
+    });
+  });
+
+  it("plans the price list card instead of falling back to Haiku", () => {
+    expect(
+      SHO_READ_PLANNERS["pricing.getPriceList"]?.plan(
+        commandOf(gold("d89-open-price-list")),
+        NOW,
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "pricing_getPriceList",
+      input: { id: PRICE_LIST_ID },
+      reply: "Ось прайс-лист.",
+    });
+  });
+
+  it("plans the price list entries instead of falling back to Haiku", () => {
+    expect(
+      SHO_READ_PLANNERS["pricing.listPriceListEntries"]?.plan(
+        commandOf(gold("d79-price-list-noun")),
+        NOW,
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "pricing_listPriceListEntries",
+      input: { priceListId: PRICE_LIST_ID },
+      reply: "Ось ціни прайс-листа.",
     });
   });
 });

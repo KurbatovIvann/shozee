@@ -12,7 +12,7 @@ import {
 import type { AssistantResultMarks } from "./marks";
 
 export type AssistantEntityCardView = {
-  readonly kind: "customer-entity" | "product-entity";
+  readonly kind: "customer-entity" | "product-entity" | "price-list-entity";
   readonly destination: AssistantSurfaceDestination;
   readonly handoffLabel: string;
   readonly id: string;

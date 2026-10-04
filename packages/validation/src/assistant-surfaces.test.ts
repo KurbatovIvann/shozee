@@ -195,9 +195,11 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
       "order-entity",
       "customer-entity",
       "product-entity",
+      "price-list-entity",
       "customers-list",
       "products-list",
       "price-lists",
+      "price-list-entries",
       "search-results",
     ]);
     expect(new Set(kinds).size).toBe(kinds.length);
@@ -222,6 +224,8 @@ describe("ASSISTANT_SURFACE_REGISTRY integrity", () => {
     expect(
       ASSISTANT_SURFACE_REGISTRY.map((entry) => entry.destination),
     ).toEqual([
+      { kind: "screen" },
+      { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
