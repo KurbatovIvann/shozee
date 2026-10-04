@@ -35,7 +35,15 @@ import {
   localizeOrdersListCard,
   type AssistantOrdersListCardView,
 } from "./orders-list";
+import {
+  localizePriceListsCard,
+  type AssistantPriceListsCardView,
+} from "./price-lists";
 import { localizeProductEntityCard } from "./product-entity";
+import {
+  localizeProductsListCard,
+  type AssistantProductsListCardView,
+} from "./products-list";
 import {
   localizeSearchResultsCard,
   type AssistantSearchResultsCardView,
@@ -47,6 +55,8 @@ export type AssistantSurface =
   | AssistantOrderEntityCardView
   | AssistantEntityCardView
   | AssistantCustomersListCardView
+  | AssistantProductsListCardView
+  | AssistantPriceListsCardView
   | AssistantSearchResultsCardView;
 
 export function assistantSurfaceKey(surface: AssistantSurface): string {
@@ -61,6 +71,10 @@ export function assistantSurfaceKey(surface: AssistantSurface): string {
       return surface.id;
     case "customers-list":
       return "customers-list";
+    case "products-list":
+      return "products-list";
+    case "price-lists":
+      return "price-lists";
     case "search-results":
       return "search-results";
   }
@@ -94,6 +108,10 @@ function localizeSurface(
       return localizeProductEntityCard(data, locale);
     case "customers-list":
       return localizeCustomersListCard(data, locale);
+    case "products-list":
+      return localizeProductsListCard(data, locale);
+    case "price-lists":
+      return localizePriceListsCard(data, locale);
     case "search-results":
       return localizeSearchResultsCard(data, locale);
   }

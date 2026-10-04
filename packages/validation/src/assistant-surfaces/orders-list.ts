@@ -16,6 +16,7 @@ import {
   type AssistantSurfaceDestinationDeclaration,
 } from "./destination.js";
 import {
+  assistantPageNextCursor,
   customerNameSnapshotFromPayload,
   isRecord,
   lastSuccessfulResult,
@@ -170,14 +171,6 @@ function pageItems(payload: unknown): unknown[] {
   return Array.isArray(items) ? items : [];
 }
 
-function pageNextCursor(payload: unknown): string | null {
-  if (!isRecord(payload)) {
-    return null;
-  }
-  const cursor = payload["nextCursor"];
-  return typeof cursor === "string" && cursor.length > 0 ? cursor : null;
-}
-
 function pageHasMore(payload: unknown, clipped: boolean): boolean {
   if (clipped) {
     return true;
@@ -185,7 +178,7 @@ function pageHasMore(payload: unknown, clipped: boolean): boolean {
   if (isRecord(payload) && typeof payload["hasMore"] === "boolean") {
     return payload["hasMore"];
   }
-  return pageNextCursor(payload) !== null;
+  return assistantPageNextCursor(payload) !== null;
 }
 
 function pageCustomerMatchTruncated(payload: unknown): boolean {
@@ -232,7 +225,7 @@ export function parseOrdersListSurface(
       countsResult === null ? [] : statusChipsFromCounts(countsResult.output),
     clipped,
     hasMore,
-    nextCursor: pageNextCursor(payload),
+    nextCursor: assistantPageNextCursor(payload),
     customerMatchTruncated: pageCustomerMatchTruncated(payload),
     collection: assistantCollectionDescriptor({
       columns: ORDERS_LIST_COLLECTION_COLUMNS,

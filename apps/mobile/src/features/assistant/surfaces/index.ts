@@ -36,6 +36,22 @@ export {
   type AssistantCustomersListRowView,
 } from "./customers-list";
 export {
+  ASSISTANT_PRODUCTS_LIST_HREF,
+  ASSISTANT_PRODUCTS_LIST_ROW_MAX,
+  PRODUCTS_LIST_PROMPT_LINE,
+  PRODUCTS_LIST_SURFACE_TOOLS,
+  type AssistantProductsListCardView,
+  type AssistantProductsListRowView,
+} from "./products-list";
+export {
+  ASSISTANT_PRICE_LISTS_HREF,
+  ASSISTANT_PRICE_LISTS_ROW_MAX,
+  PRICE_LISTS_PROMPT_LINE,
+  PRICE_LISTS_SURFACE_TOOLS,
+  type AssistantPriceListsCardView,
+  type AssistantPriceListsRowView,
+} from "./price-lists";
+export {
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_AGGREGATE_SURFACE_TOOLS,
   type AssistantOrdersAggregateBucketView,

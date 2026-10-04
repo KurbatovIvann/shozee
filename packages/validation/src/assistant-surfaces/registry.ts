@@ -57,12 +57,26 @@ import {
   parseOrdersListSurface,
 } from "./orders-list.js";
 import {
+  PRICE_LISTS_ACTION_NAME,
+  PRICE_LISTS_DESTINATION,
+  PRICE_LISTS_PROMPT_LINE,
+  PRICE_LISTS_SURFACE_TOOLS,
+  parsePriceListsSurface,
+} from "./price-lists.js";
+import {
   PRODUCT_ENTITY_ACTION_NAMES,
   PRODUCT_ENTITY_DESTINATION,
   PRODUCT_ENTITY_PROMPT_LINE,
   PRODUCT_ENTITY_SURFACE_TOOLS,
   parseProductEntitySurfaces,
 } from "./product-entity.js";
+import {
+  PRODUCTS_LIST_ACTION_NAME,
+  PRODUCTS_LIST_DESTINATION,
+  PRODUCTS_LIST_PROMPT_LINE,
+  PRODUCTS_LIST_SURFACE_TOOLS,
+  parseProductsListSurface,
+} from "./products-list.js";
 import {
   SEARCH_QUERY_ACTION_NAME,
   SEARCH_RESULTS_DESTINATION,
@@ -140,6 +154,24 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       promptLine: CUSTOMERS_LIST_PROMPT_LINE,
       destination: CUSTOMERS_LIST_DESTINATION,
       parse: parseCustomersListSurface,
+    },
+    {
+      kind: "products-list",
+      version: 1,
+      toolNames: PRODUCTS_LIST_SURFACE_TOOLS,
+      actionNames: [PRODUCTS_LIST_ACTION_NAME],
+      promptLine: PRODUCTS_LIST_PROMPT_LINE,
+      destination: PRODUCTS_LIST_DESTINATION,
+      parse: parseProductsListSurface,
+    },
+    {
+      kind: "price-lists",
+      version: 1,
+      toolNames: PRICE_LISTS_SURFACE_TOOLS,
+      actionNames: [PRICE_LISTS_ACTION_NAME],
+      promptLine: PRICE_LISTS_PROMPT_LINE,
+      destination: PRICE_LISTS_DESTINATION,
+      parse: parsePriceListsSurface,
     },
     {
       kind: "search-results",

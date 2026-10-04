@@ -484,7 +484,7 @@ describe("SHO_READ_PLANNERS plans only a surfaced read", () => {
     },
   );
 
-  it("keeps catalog.listProducts and pricing.listPriceLists unsurfaced", () => {
+  it("plans catalog.listProducts and pricing.listPriceLists now that their lists compose (SHO-865)", () => {
     expect([...SHO_SURFACED_READ_ACTIONS]).toEqual([
       "orders.list",
       "orders.count",
@@ -492,8 +492,41 @@ describe("SHO_READ_PLANNERS plans only a surfaced read", () => {
       "customers.getCustomer",
       "customers.listCustomers",
       "catalog.getProduct",
+      "catalog.listProducts",
+      "pricing.listPriceLists",
       "search.query",
     ]);
+  });
+
+  it("plans the products list instead of falling back to Haiku", () => {
+    expect(
+      SHO_READ_PLANNERS["catalog.listProducts"]?.plan(
+        commandOf({ text: "покажи товари", action: "catalog.listProducts" }),
+        NOW,
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "catalog_list_products",
+      input: {},
+      reply: "Ось товари.",
+    });
+  });
+
+  it("plans the price lists instead of falling back to Haiku", () => {
+    expect(
+      SHO_READ_PLANNERS["pricing.listPriceLists"]?.plan(
+        commandOf({
+          text: "покажи прайс-листи",
+          action: "pricing.listPriceLists",
+        }),
+        NOW,
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "pricing_list_price_lists",
+      input: {},
+      reply: "Ось прайс-листи.",
+    });
   });
 });
 
