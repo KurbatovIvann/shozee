@@ -18,6 +18,11 @@ import {
 import type { Locale } from "../../../i18n/locale";
 import { ordersCopy } from "../../../i18n/orders";
 import { localizeCustomerEntityCard } from "./customer-entity";
+import { localizeCustomerGroupEntityCard } from "./customer-group-entity";
+import {
+  localizeCustomerGroupsCard,
+  type AssistantCustomerGroupsCardView,
+} from "./customer-groups";
 import type { AssistantEntityCardView } from "./entity-card-view";
 import {
   localizeCustomersListCard,
@@ -35,11 +40,6 @@ import {
   localizeOrdersListCard,
   type AssistantOrdersListCardView,
 } from "./orders-list";
-import { localizeCustomerGroupEntityCard } from "./customer-group-entity";
-import {
-  localizeCustomerGroupsCard,
-  type AssistantCustomerGroupsCardView,
-} from "./customer-groups";
 import { localizePriceListEntityCard } from "./price-list-entity";
 import {
   localizePriceListsCard,

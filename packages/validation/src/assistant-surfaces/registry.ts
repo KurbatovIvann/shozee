@@ -28,6 +28,20 @@ import {
   parseCustomerEntitySurfaces,
 } from "./customer-entity.js";
 import {
+  CUSTOMER_GROUP_ENTITY_ACTION_NAMES,
+  CUSTOMER_GROUP_ENTITY_DESTINATION,
+  CUSTOMER_GROUP_ENTITY_PROMPT_LINE,
+  CUSTOMER_GROUP_ENTITY_SURFACE_TOOLS,
+  parseCustomerGroupEntitySurfaces,
+} from "./customer-group-entity.js";
+import {
+  CUSTOMER_GROUPS_ACTION_NAME,
+  CUSTOMER_GROUPS_DESTINATION,
+  CUSTOMER_GROUPS_PROMPT_LINE,
+  CUSTOMER_GROUPS_SURFACE_TOOLS,
+  parseCustomerGroupsSurface,
+} from "./customer-groups.js";
+import {
   CUSTOMERS_LIST_ACTION_NAME,
   CUSTOMERS_LIST_DESTINATION,
   CUSTOMERS_LIST_PROMPT_LINE,
@@ -56,20 +70,6 @@ import {
   ORDERS_LIST_SURFACE_TOOLS,
   parseOrdersListSurface,
 } from "./orders-list.js";
-import {
-  CUSTOMER_GROUP_ENTITY_ACTION_NAMES,
-  CUSTOMER_GROUP_ENTITY_DESTINATION,
-  CUSTOMER_GROUP_ENTITY_PROMPT_LINE,
-  CUSTOMER_GROUP_ENTITY_SURFACE_TOOLS,
-  parseCustomerGroupEntitySurfaces,
-} from "./customer-group-entity.js";
-import {
-  CUSTOMER_GROUPS_ACTION_NAME,
-  CUSTOMER_GROUPS_DESTINATION,
-  CUSTOMER_GROUPS_PROMPT_LINE,
-  CUSTOMER_GROUPS_SURFACE_TOOLS,
-  parseCustomerGroupsSurface,
-} from "./customer-groups.js";
 import {
   PRICE_LIST_ENTITY_ACTION_NAMES,
   PRICE_LIST_ENTITY_DESTINATION,
