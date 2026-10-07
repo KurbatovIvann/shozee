@@ -15,6 +15,7 @@ import type { DbHarnessContext } from "./context.js";
 
 const templateDatabase = "showzy_template";
 const runtimeRole = "showzy_test_app";
+const sessionIdLabel = "org.testcontainers.session-id";
 const migrationsFolder = fileURLToPath(
   new URL("../../migrations", import.meta.url),
 );
@@ -33,8 +34,13 @@ function databaseUrl(
   return url.toString();
 }
 
+function isolateReaperSessionFromOtherRuns(): void {
+  process.env["TESTCONTAINERS_RYUK_TEST_LABEL"] = "true";
+}
+
 export default async function setup(project: TestProject) {
   recordHarnessSetupCount();
+  isolateReaperSessionFromOtherRuns();
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(
     "postgres:17-alpine",
   ).start();
@@ -66,11 +72,19 @@ export default async function setup(project: TestProject) {
       `ALTER DATABASE "${templateDatabase}" IS_TEMPLATE TRUE`,
     );
 
+    const reaperSessionId = container.getLabels()[sessionIdLabel];
+    if (reaperSessionId === undefined) {
+      throw new Error(
+        `harness container is missing the ${sessionIdLabel} label`,
+      );
+    }
+
     const context: DbHarnessContext = {
       adminUrl,
       templateDatabase,
       runtimeRole,
       runtimePassword,
+      reaperSessionId,
     };
     project.provide("dbHarness", context);
   } catch (error) {
