@@ -13,6 +13,7 @@ import {
 import {
   assistantPageItems,
   assistantPageNextCursor,
+  booleanOrNull,
   isRecord,
   lastSuccessfulResult,
   textOrNull,
@@ -65,10 +66,6 @@ export type AssistantPriceListsData = {
   readonly nextCursor: string | null;
   readonly collection: AssistantCollectionDescriptor;
 };
-
-function booleanOrNull(value: unknown): boolean | null {
-  return typeof value === "boolean" ? value : null;
-}
 
 function parsePriceListRow(row: unknown): AssistantPriceListsRowData | null {
   if (!isRecord(row)) {

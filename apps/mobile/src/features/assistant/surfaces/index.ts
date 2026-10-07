@@ -52,6 +52,11 @@ export {
   type AssistantPriceListsRowView,
 } from "./price-lists";
 export {
+  PRICE_LIST_ENTITY_PROMPT_LINE,
+  PRICE_LIST_ENTITY_SURFACE_TOOLS,
+  localizePriceListEntityCard,
+} from "./price-list-entity";
+export {
   ORDERS_AGGREGATE_PROMPT_LINE,
   ORDERS_AGGREGATE_SURFACE_TOOLS,
   type AssistantOrdersAggregateBucketView,

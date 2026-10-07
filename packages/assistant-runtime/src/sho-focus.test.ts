@@ -27,7 +27,9 @@ const AT = "2026-10-02T09:00:00.000Z";
 const KATE = "11111111-1111-4111-8111-111111111111";
 const OLHA = "22222222-2222-4222-8222-222222222222";
 const ORDER = "33333333-3333-4333-8333-333333333333";
+const PRICE_LIST = "44444444-4444-4444-8444-444444444444";
 const CREATE_CUSTOMER_TOOL = toProviderToolName("customers.createCustomer");
+const GET_PRICE_LIST_TOOL = toProviderToolName("pricing.getPriceList");
 
 function commandOf(fields: Readonly<Record<string, unknown>>): ShoCommand {
   return shoCommandSchema.parse({
@@ -162,6 +164,24 @@ describe("shoTurnRecords", () => {
     ).toEqual([{ type: "customer", id: OLHA, name: "Оля", how: "shown" }]);
   });
 
+  it("binds the price list a settled card showed so the next pronoun resolves", () => {
+    expect(
+      shoTurnRecords(
+        commandOf({ action: "pricing.getPriceList" }),
+        GET_PRICE_LIST_TOOL,
+        {
+          id: PRICE_LIST,
+          name: "Опт",
+          isDefault: false,
+          isActive: true,
+          entryCount: 3,
+        },
+      ),
+    ).toEqual([
+      { type: "price_list", id: PRICE_LIST, name: "Опт", how: "shown" },
+    ]);
+  });
+
   it("keeps a long list as a marker so a later pronoun is offered, not bound", () => {
     expect(
       shoTurnRecords(commandOf({}), CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME, {
@@ -244,6 +264,30 @@ describe("shoFocusFrom", () => {
 
     expect(shoFocusFrom([...createdKate, ...shownKate], SESSION)).toEqual([
       { type: "customer", id: KATE, name: "Катя", how: "shown", turns: 0 },
+    ]);
+  });
+
+  it("carries the price list a card settled on into the next turn's focus", () => {
+    const shownOpt = turn("покажи прайс Опт", {
+      command: commandOf({ action: "pricing.getPriceList" }),
+      toolName: GET_PRICE_LIST_TOOL,
+      result: {
+        id: PRICE_LIST,
+        name: "Опт",
+        isDefault: false,
+        isActive: true,
+        entryCount: 3,
+      },
+    });
+
+    expect(shoFocusFrom(shownOpt, SESSION)).toEqual([
+      {
+        type: "price_list",
+        id: PRICE_LIST,
+        name: "Опт",
+        how: "shown",
+        turns: 0,
+      },
     ]);
   });
 

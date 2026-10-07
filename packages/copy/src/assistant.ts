@@ -101,6 +101,7 @@ export type AssistantCardsCopy = {
   readonly openOrder: string;
   readonly openCustomer: string;
   readonly openProduct: string;
+  readonly openPriceList: string;
   readonly variantsClipped: string;
   readonly customerMatchTruncated: string;
   readonly clipped: string;
@@ -417,6 +418,7 @@ const assistantEn: AssistantCopy = {
     openOrder: "Open order",
     openCustomer: "Open customer",
     openProduct: "Open product",
+    openPriceList: "Open price list",
     variantsClipped: "The variant list was clipped — the count is not shown.",
     customerMatchTruncated: en.ordersList.customerMatchTruncated,
     clipped: en.ordersList.clipped,
@@ -543,6 +545,7 @@ const assistantUk: AssistantCopy = {
     openOrder: "Відкрити замовлення",
     openCustomer: "Відкрити клієнта",
     openProduct: "Відкрити товар",
+    openPriceList: "Відкрити прайс-лист",
     variantsClipped: "Список варіантів обрізано — кількість не показано.",
     customerMatchTruncated: uk.ordersList.customerMatchTruncated,
     clipped: uk.ordersList.clipped,

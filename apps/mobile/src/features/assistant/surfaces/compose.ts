@@ -35,6 +35,7 @@ import {
   localizeOrdersListCard,
   type AssistantOrdersListCardView,
 } from "./orders-list";
+import { localizePriceListEntityCard } from "./price-list-entity";
 import {
   localizePriceListsCard,
   type AssistantPriceListsCardView,
@@ -68,6 +69,7 @@ export function assistantSurfaceKey(surface: AssistantSurface): string {
     case "order-entity":
     case "customer-entity":
     case "product-entity":
+    case "price-list-entity":
       return surface.id;
     case "customers-list":
       return "customers-list";
@@ -112,6 +114,8 @@ function localizeSurface(
       return localizeProductsListCard(data, locale);
     case "price-lists":
       return localizePriceListsCard(data, locale);
+    case "price-list-entity":
+      return localizePriceListEntityCard(data, locale);
     case "search-results":
       return localizeSearchResultsCard(data, locale);
   }

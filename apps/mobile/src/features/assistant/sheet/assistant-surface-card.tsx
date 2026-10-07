@@ -79,6 +79,7 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
       return <OrderEntityCard card={surface} onOpenHref={onOpenHref} />;
     case "customer-entity":
     case "product-entity":
+    case "price-list-entity":
       return <EntityCard card={surface} onOpenHref={onOpenHref} />;
     case "search-results":
       return surface.emptyTitle !== null ? null : (
@@ -104,7 +105,13 @@ function surfaceChips(
 
 type AssistantEntitySurface = Extract<
   AssistantSurface,
-  { readonly kind: "order-entity" | "customer-entity" | "product-entity" }
+  {
+    readonly kind:
+      | "order-entity"
+      | "customer-entity"
+      | "product-entity"
+      | "price-list-entity";
+  }
 >;
 
 function isEntitySurface(
@@ -113,7 +120,8 @@ function isEntitySurface(
   return (
     surface.kind === "order-entity" ||
     surface.kind === "customer-entity" ||
-    surface.kind === "product-entity"
+    surface.kind === "product-entity" ||
+    surface.kind === "price-list-entity"
   );
 }
 

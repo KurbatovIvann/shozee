@@ -74,7 +74,8 @@ function toolCallIdsForSurface(
   switch (surface.kind) {
     case "order-entity":
     case "customer-entity":
-    case "product-entity": {
+    case "product-entity":
+    case "price-list-entity": {
       pushUniqueId(ids, surface.toolCallId);
       return ids;
     }

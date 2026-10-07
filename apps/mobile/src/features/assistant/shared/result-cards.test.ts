@@ -1556,6 +1556,7 @@ describe("assistant result-card surface registry", () => {
       "order-entity",
       "customer-entity",
       "product-entity",
+      "price-list-entity",
       "customers-list",
       "products-list",
       "price-lists",
@@ -1575,6 +1576,7 @@ describe("assistant result-card surface registry", () => {
     expect(
       ASSISTANT_RESULT_SURFACE_REGISTRY.map((entry) => entry.destination),
     ).toEqual([
+      { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },

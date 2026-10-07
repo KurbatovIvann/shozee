@@ -76,6 +76,10 @@ export function wholeCountOrNull(value: unknown): number | null {
     : null;
 }
 
+export function booleanOrNull(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
 export function assistantPageItems(payload: unknown): readonly unknown[] {
   if (!isRecord(payload)) {
     return [];

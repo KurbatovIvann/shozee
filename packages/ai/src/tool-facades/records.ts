@@ -57,5 +57,6 @@ export const STAFF_ASSISTANT_RECORD_SHAPES: Readonly<
   [CUSTOMERS_LIST_GROUPS_TOOL_NAME]: page(view("group"), "items"),
   [ORDERS_CREATE_TOOL_NAME]: ORDER,
   [ORDERS_LIST_PAGE_TOOL_NAME]: page(ORDER, "rows"),
+  [toProviderToolName("pricing.getPriceList")]: view("price_list"),
   [PRICING_LIST_PRICE_LISTS_TOOL_NAME]: page(view("price_list"), "items"),
 };

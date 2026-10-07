@@ -17,6 +17,7 @@ import {
 } from "@showzy/orders/contract";
 import {
   createPriceListContract,
+  getPriceListContract,
   listPriceListsContract,
 } from "@showzy/pricing/contract";
 import { describe, expect, it } from "vitest";
@@ -125,6 +126,11 @@ const MAPPED: readonly Mapped[] = [
     kind: "order",
     output: listOrdersContract.output,
     map: mapOrdersListPageOutput,
+  },
+  {
+    tool: toProviderToolName("pricing.getPriceList"),
+    kind: "price_list",
+    output: getPriceListContract.output,
   },
   {
     tool: PRICING_LIST_PRICE_LISTS_TOOL_NAME,

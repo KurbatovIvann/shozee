@@ -16,6 +16,7 @@ import {
   ORDERS_LIST_COUNTS_TOOL,
   ORDERS_LIST_PAGE_TOOL,
   ORDERS_LIST_PROMPT_LINE,
+  PRICE_LIST_ENTITY_PROMPT_LINE,
   PRICE_LISTS_PROMPT_LINE,
   PRODUCT_ENTITY_PROMPT_LINE,
   PRODUCTS_LIST_PROMPT_LINE,
@@ -54,6 +55,7 @@ After orders_list_counts with no page on the same turn, the UI already shows the
 After orders.get or orders.create, the UI already shows an order entity card. Reply with a short product-language summary. Do not dump tool JSON.
 ${CUSTOMER_ENTITY_PROMPT_LINE}
 ${PRODUCT_ENTITY_PROMPT_LINE}
+${PRICE_LIST_ENTITY_PROMPT_LINE}
 After customers_list_customers, the UI already shows the customers list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.
 ${PRODUCTS_LIST_PROMPT_LINE}
 ${PRICE_LISTS_PROMPT_LINE}
@@ -163,6 +165,7 @@ describe("staff assistant presentation cache prefix (SHO-457 / SHO-523)", () => 
         ORDER_ENTITY_PROMPT_LINE,
         CUSTOMER_ENTITY_PROMPT_LINE,
         PRODUCT_ENTITY_PROMPT_LINE,
+        PRICE_LIST_ENTITY_PROMPT_LINE,
         CUSTOMERS_LIST_PROMPT_LINE,
         PRODUCTS_LIST_PROMPT_LINE,
         PRICE_LISTS_PROMPT_LINE,
