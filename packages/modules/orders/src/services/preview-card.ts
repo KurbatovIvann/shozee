@@ -5,6 +5,7 @@ import {
   formatMoneyMinor,
   formatQuantityMilli,
 } from "@showzy/module-kit/money-format";
+import { PREVIEW_ABSENT } from "@showzy/module-kit/preview-changes";
 import { previewCompanyScope } from "@showzy/module-kit/preview-scope";
 import type { z } from "zod";
 
@@ -46,7 +47,6 @@ const STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
 export const ORDER_PREVIEW_TOTAL_LABEL = "Разом";
 export const ORDER_PREVIEW_STATUS_LABEL = "Поточний статус";
 export const ORDER_PREVIEW_COMMENT_LABEL = "Коментар";
-export const ORDER_PREVIEW_EMPTY_VALUE = "—";
 export const ORDER_PREVIEW_PRICES_NOTE_PREFIX = "Ціни";
 
 export interface OrderPreviewLineFacts {
@@ -79,7 +79,7 @@ export function orderPreviewCommentLine(
 ): PreviewLine {
   return {
     label: ORDER_PREVIEW_COMMENT_LABEL,
-    value: normalizeOrderComment(comment) ?? ORDER_PREVIEW_EMPTY_VALUE,
+    value: normalizeOrderComment(comment) ?? PREVIEW_ABSENT,
   };
 }
 

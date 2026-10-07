@@ -1,6 +1,7 @@
 import type { ActionPreviewEnv } from "@showzy/core";
 import type { ActionPreviewLine } from "@showzy/core/errors";
 import { companyLegalInfo } from "@showzy/db/schema/companies";
+import { PREVIEW_ABSENT } from "@showzy/module-kit/preview-changes";
 import { eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -40,7 +41,6 @@ const LEGAL_FIELD_LABELS = {
 const LEGAL_FIELD_ORDER = Object.keys(LEGAL_FIELD_LABELS) as LegalField[];
 
 const CLEARED = "очистити";
-const ABSENT = "—";
 
 export function companyTypeLabel(companyType: CompanyLegalType): string {
   return COMPANY_TYPE_LABELS[companyType];
@@ -75,7 +75,7 @@ function patchedLabel(patched: string | null, stored: string | null): string {
   if (patched !== null) {
     return patched;
   }
-  return stored === null ? ABSENT : CLEARED;
+  return stored === null ? PREVIEW_ABSENT : CLEARED;
 }
 
 function changeLine(

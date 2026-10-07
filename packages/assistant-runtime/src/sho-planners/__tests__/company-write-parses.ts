@@ -16,25 +16,6 @@ export const SHO_COMPANY_WRITE_PARSES: Readonly<Record<string, unknown>> =
       domain: "company",
       verb: "update",
     },
-    "sho-870-legal-iban": {
-      text: "зміни iban на ua21 3223 1300 0002 6007 2335 6600 1",
-      action: "companies.updateLegal",
-      kind: "write",
-      effect: "write",
-      confirm: "card",
-      params: {
-        iban: {
-          text: "ua21 3223 1300 0002 6007 2335 6600 1",
-          value: "UA213223130000026007233566001",
-        },
-      },
-      needs: [],
-      ready: true,
-      refPrevious: {},
-      catalogued: false,
-      domain: "company",
-      verb: "update",
-    },
     "d70-iban-ok": {
       text: "додай контрагента молокія айбан ua21 3223 1300 0002 6007 2335 6600 1",
       action: "customers.createCounterparty",

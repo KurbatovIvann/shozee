@@ -386,6 +386,9 @@ describe("companies.updateLegal", () => {
       { request: { idempotencyKey } },
     );
     expect(replay).toEqual(updated);
+
+    const untouched = await kit.invoke(updateLegal, {});
+    expect(untouched).toEqual(updated);
     expect(await countCompanyLegalRows(kitIdentities.companies.a)).toBe(1);
 
     const foreign = await legalRow(kitIdentities.companies.b);

@@ -12,11 +12,11 @@ import type {
 } from "../actions/update-legal.contract.js";
 import {
   companyIdentityReturning,
-  legalFactsReturning,
   legalReturning,
   mergeLegalFields,
+  namedLegalFields,
   toCompanyView,
-  type StoredLegalFacts,
+  type LegalRow,
 } from "./company-view.js";
 import { requireStaffWritable, type WritableStaffDb } from "./writable.js";
 
@@ -24,16 +24,17 @@ type StaffCtx = Extract<ActionCtx, { principal: "staff" }>;
 type UpdateInput = z.output<typeof updateLegalInputSchema>;
 type CompanyView = z.output<typeof updateLegalOutputSchema>;
 
-async function lockLegalFacts(
+async function lockLegalRow(
   db: Pick<WritableStaffDb, "select">,
   companyId: string,
-): Promise<StoredLegalFacts | undefined> {
-  const locked = db
-    .select(legalFactsReturning)
+): Promise<LegalRow | undefined> {
+  const locked = await db
+    .select(legalReturning)
     .from(companyLegalInfo)
     .where(eq(companyLegalInfo.companyId, companyId))
-    .limit(1) as { for: (strength: "update") => Promise<StoredLegalFacts[]> };
-  return (await locked.for("update"))[0];
+    .limit(1)
+    .for("update");
+  return locked[0];
 }
 
 export async function updateStaffLegal(env: {
@@ -42,25 +43,27 @@ export async function updateStaffLegal(env: {
 }): Promise<CompanyView> {
   const { ctx, input } = env;
   const db = requireStaffWritable(ctx.db);
-  const fields = mergeLegalFields(
-    input,
-    await lockLegalFacts(db, ctx.companyId),
-  );
+  const current = await lockLegalRow(db, ctx.companyId);
+  const created = mergeLegalFields(input, current);
+  const named = namedLegalFields(input);
 
-  const upserted = (
-    await db
-      .insert(companyLegalInfo)
-      .values({
-        id: randomUUID(),
-        companyId: ctx.companyId,
-        ...fields,
-      })
-      .onConflictDoUpdate({
-        target: companyLegalInfo.companyId,
-        set: fields,
-      })
-      .returning(legalReturning)
-  )[0];
+  const upserted =
+    current !== undefined && Object.keys(named).length === 0
+      ? current
+      : (
+          await db
+            .insert(companyLegalInfo)
+            .values({
+              id: randomUUID(),
+              companyId: ctx.companyId,
+              ...created,
+            })
+            .onConflictDoUpdate({
+              target: companyLegalInfo.companyId,
+              set: named,
+            })
+            .returning(legalReturning)
+        )[0];
   if (upserted === undefined) {
     throw new CoreInvariantError(
       "companies.updateLegal upsert returned no row",

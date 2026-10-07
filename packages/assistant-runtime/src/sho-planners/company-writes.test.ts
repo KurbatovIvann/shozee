@@ -90,6 +90,16 @@ const GOLD_EDRPOU = paramsOf("d70-edrpou-length")["edrpou"];
 
 const GOLD_IBAN = paramsOf("d70-iban-ok")["iban"];
 
+const ibanOnly = (params: Json = { iban: GOLD_IBAN }): ShoCommand =>
+  commandOf("d70-iban-ok", {
+    action: SHO_UPDATE_LEGAL,
+    domain: "company",
+    verb: "update",
+    params,
+    needs: [],
+    ready: true,
+  });
+
 const updatingLegal = (fields: Json = {}): ShoCommand =>
   commandOf("d70-edrpou-length", {
     params: {
@@ -128,7 +138,7 @@ describe("SHO_COMPANY_WRITE_PLANNERS plans companies.updateLegal", () => {
   });
 
   it("plans the IBAN alone, leaving the stored type and name unnamed (SHO-870)", () => {
-    expect(planOf(commandOf("sho-870-legal-iban"))).toEqual({
+    expect(planOf(ibanOnly())).toEqual({
       kind: "call",
       toolName: "companies_updateLegal",
       reply: "Реквізити оновлено.",
@@ -148,11 +158,10 @@ describe("SHO_COMPANY_WRITE_PLANNERS plans companies.updateLegal", () => {
 
 describe("a legal update is refused rather than guessed", () => {
   it("refuses a parse that names no requisite at all", () => {
-    expect(
-      planOf(
-        commandOf("sho-870-legal-iban", { params: {}, needs: [], ready: true }),
-      ),
-    ).toEqual({ kind: "fallback", reason: "blocking_need" });
+    expect(planOf(ibanOnly({}))).toEqual({
+      kind: "fallback",
+      reason: "blocking_need",
+    });
   });
 
   it("sends d70-edrpou-length's blocking invalid_value to the LLM", () => {
@@ -237,15 +246,13 @@ describe("every company write pauses on the preview", () => {
   });
 
   it("pauses a field-only legal update on the preview card (SHO-870)", () => {
-    expect(whitelisted(resultOf(commandOf("sho-870-legal-iban")), NOW)).toEqual(
-      {
-        kind: "call",
-        toolName: "companies_updateLegal",
-        reply: "Реквізити оновлено.",
-        writes: true,
-        input: { iban: "UA213223130000026007233566001" },
-      },
-    );
+    expect(whitelisted(resultOf(ibanOnly()), NOW)).toEqual({
+      kind: "call",
+      toolName: "companies_updateLegal",
+      reply: "Реквізити оновлено.",
+      writes: true,
+      input: { iban: "UA213223130000026007233566001" },
+    });
   });
 
   it("names only params the planner maps", () => {

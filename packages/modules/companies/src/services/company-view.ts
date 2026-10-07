@@ -13,7 +13,8 @@ import {
   type companyViewSchema,
 } from "../actions/company-view.contract.js";
 import {
-  LEGAL_IDENTITY_REQUIRED_MESSAGE,
+  LEGAL_NAME_MISSING_MESSAGE,
+  LEGAL_TYPE_MISSING_MESSAGE,
   type updateLegalInputSchema,
 } from "../actions/update-legal.contract.js";
 
@@ -117,11 +118,6 @@ export interface MergedLegalFields {
   readonly email: string | null;
 }
 
-const legalIdentitySchema = z.object({
-  companyType: companyLegalTypeSchema,
-  legalName: companyLegalNameSchema,
-});
-
 function keptText(
   value: string | null | undefined,
   stored: string | null | undefined,
@@ -133,19 +129,22 @@ export function mergeLegalFields(
   input: UpdateLegalInput,
   stored: StoredLegalFacts | undefined,
 ): MergedLegalFields {
-  const identity = requireOrValidationError(
-    legalIdentitySchema,
-    {
-      companyType: keepOmitted(
-        input.companyType,
-        stored === undefined ? undefined : parseCompanyType(stored.companyType),
-      ),
-      legalName: keepOmitted(input.legalName, stored?.legalName ?? undefined),
-    },
-    LEGAL_IDENTITY_REQUIRED_MESSAGE,
+  const companyType = requireOrValidationError(
+    companyLegalTypeSchema,
+    keepOmitted(
+      input.companyType,
+      stored === undefined ? undefined : parseCompanyType(stored.companyType),
+    ),
+    LEGAL_TYPE_MISSING_MESSAGE,
+  );
+  const legalName = requireOrValidationError(
+    companyLegalNameSchema,
+    keepOmitted(input.legalName, stored?.legalName ?? undefined),
+    LEGAL_NAME_MISSING_MESSAGE,
   );
   return {
-    ...identity,
+    companyType,
+    legalName,
     edrpou: keptText(input.edrpou, stored?.edrpou),
     legalAddress: keptText(input.legalAddress, stored?.legalAddress),
     iban: keptText(input.iban, stored?.iban),

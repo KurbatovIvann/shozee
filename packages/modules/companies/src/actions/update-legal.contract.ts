@@ -36,8 +36,11 @@ export {
   COMPANY_LEGAL_PHONE_MAX,
 };
 
-export const LEGAL_IDENTITY_REQUIRED_MESSAGE =
-  "Name companyType and legalName on the first save of the legal requisites.";
+export const LEGAL_TYPE_MISSING_MESSAGE =
+  "The company type is missing from the merged requisites: name companyType.";
+
+export const LEGAL_NAME_MISSING_MESSAGE =
+  "The legal name is missing from the merged requisites: name legalName.";
 
 export const updateLegalInputSchema = z.strictObject({
   companyType: companyLegalTypeSchema.optional(),
