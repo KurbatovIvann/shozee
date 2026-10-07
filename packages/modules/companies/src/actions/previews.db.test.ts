@@ -13,6 +13,7 @@ import {
 } from "@showzy/core/testing";
 import { user } from "@showzy/db/schema/auth";
 import {
+  companies,
   companyLegalInfo,
   companyMembers,
   rolePermissionDefaults,
@@ -26,14 +27,30 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
 
 import { createCompany } from "./create.js";
+import {
+  LEGAL_NAME_MISSING_MESSAGE,
+  LEGAL_TYPE_MISSING_MESSAGE,
+} from "./update-legal.contract.js";
 import { updateLegal } from "./update-legal.js";
 
 const companyA = kitIdentities.companies.a;
 const companyB = kitIdentities.companies.b;
+const unregistered = randomUUID();
 const admin = randomUUID();
 
 const storedIban = "UA111111111111111111111111111";
 const foreignIban = "UA999999999999999999999999999";
+
+const FIRST_SAVE_WARNINGS: readonly string[] = [
+  LEGAL_TYPE_MISSING_MESSAGE,
+  LEGAL_NAME_MISSING_MESSAGE,
+];
+
+function firstSaveWarningsOf(preview: ActionPreview): string[] {
+  return (preview.notes ?? []).filter((note) =>
+    FIRST_SAVE_WARNINGS.includes(note),
+  );
+}
 
 let kit: TestKit;
 
@@ -77,12 +94,27 @@ beforeAll(async () => {
     email: `admin-${admin}@companies-previews.test`,
   });
 
-  await kit.db.runtime.db.insert(companyMembers).values({
-    companyId: companyA,
-    userId: admin,
-    role: "admin",
-    permissions: { granted: [], denied: [] },
+  await kit.db.runtime.db.insert(companies).values({
+    id: unregistered,
+    name: "Без реквізитів",
+    slug: `bez-${unregistered}`,
+    prefix: unregistered.slice(0, 6).toUpperCase(),
   });
+
+  await kit.db.runtime.db.insert(companyMembers).values([
+    {
+      companyId: companyA,
+      userId: admin,
+      role: "admin",
+      permissions: { granted: [], denied: [] },
+    },
+    {
+      companyId: unregistered,
+      userId: admin,
+      role: "admin",
+      permissions: { granted: [], denied: [] },
+    },
+  ]);
 
   await kit.db.runtime.db.insert(companyLegalInfo).values([
     {
@@ -190,6 +222,36 @@ describe("companies preview cards (core.md §7)", () => {
     expect(preview.lines).toEqual([
       { label: PREVIEW_CHANGES_LABEL, value: PREVIEW_NO_CHANGES },
     ]);
+  });
+
+  it("warns that the first save needs the type and the legal name", async () => {
+    const preview = await previewOf(
+      updateLegal,
+      { iban: "UA222222222222222222222222222" },
+      { userId: admin, companyId: unregistered },
+    );
+    expect(firstSaveWarningsOf(preview)).toEqual([
+      LEGAL_TYPE_MISSING_MESSAGE,
+      LEGAL_NAME_MISSING_MESSAGE,
+    ]);
+  });
+
+  it("warns only about the requisite the first save still misses", async () => {
+    const preview = await previewOf(
+      updateLegal,
+      { legalName: "ТОВ Нова" },
+      { userId: admin, companyId: unregistered },
+    );
+    expect(firstSaveWarningsOf(preview)).toEqual([LEGAL_TYPE_MISSING_MESSAGE]);
+  });
+
+  it("warns about nothing once the requisites exist", async () => {
+    const preview = await previewOf(
+      updateLegal,
+      { iban: "UA222222222222222222222222222" },
+      { userId: admin, companyId: companyA },
+    );
+    expect(firstSaveWarningsOf(preview)).toEqual([]);
   });
 
   it("never reads another company's stored requisites into the card", async () => {

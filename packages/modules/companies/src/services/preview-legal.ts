@@ -8,7 +8,11 @@ import type { z } from "zod";
 type PreviewTx = ActionPreviewEnv["tx"];
 
 import type { companyLegalTypeSchema } from "../actions/company-view.contract.js";
-import type { updateLegalInputSchema } from "../actions/update-legal.contract.js";
+import {
+  LEGAL_NAME_MISSING_MESSAGE,
+  LEGAL_TYPE_MISSING_MESSAGE,
+  type updateLegalInputSchema,
+} from "../actions/update-legal.contract.js";
 import {
   legalFactsReturning,
   namedLegalFields,
@@ -41,6 +45,17 @@ const LEGAL_FIELD_LABELS = {
 const LEGAL_FIELD_ORDER = Object.keys(LEGAL_FIELD_LABELS) as LegalField[];
 
 const CLEARED = "очистити";
+
+const LEGAL_DOCUMENTS_NOTE =
+  "Реквізити потрапляють у рахунки та накладні, які ви видасте після збереження.";
+
+const REQUIRED_ON_FIRST_SAVE = [
+  { field: "companyType", message: LEGAL_TYPE_MISSING_MESSAGE },
+  { field: "legalName", message: LEGAL_NAME_MISSING_MESSAGE },
+] as const satisfies readonly {
+  readonly field: LegalField;
+  readonly message: string;
+}[];
 
 export function companyTypeLabel(companyType: CompanyLegalType): string {
   return COMPANY_TYPE_LABELS[companyType];
@@ -87,6 +102,19 @@ function changeLine(
     return { label, value: next };
   }
   return { label, value: `${stored} → ${next}` };
+}
+
+export function legalPreviewNotes(
+  input: UpdateLegalInput,
+  stored: StoredLegalFacts | undefined,
+): string[] {
+  if (stored !== undefined) {
+    return [LEGAL_DOCUMENTS_NOTE];
+  }
+  const missing = REQUIRED_ON_FIRST_SAVE.filter(
+    ({ field }) => input[field] === undefined,
+  ).map(({ message }) => message);
+  return [...missing, LEGAL_DOCUMENTS_NOTE];
 }
 
 export function legalPreviewLines(

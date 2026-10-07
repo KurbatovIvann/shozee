@@ -91,14 +91,7 @@ const GOLD_EDRPOU = paramsOf("d70-edrpou-length")["edrpou"];
 const GOLD_IBAN = paramsOf("d70-iban-ok")["iban"];
 
 const ibanOnly = (params: Json = { iban: GOLD_IBAN }): ShoCommand =>
-  commandOf("d70-iban-ok", {
-    action: SHO_UPDATE_LEGAL,
-    domain: "company",
-    verb: "update",
-    params,
-    needs: [],
-    ready: true,
-  });
+  commandOf("d70-edrpou-length", { params, needs: [], ready: true });
 
 const updatingLegal = (fields: Json = {}): ShoCommand =>
   commandOf("d70-edrpou-length", {

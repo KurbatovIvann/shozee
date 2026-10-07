@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import {
   legalPreviewLines,
+  legalPreviewNotes,
   loadStoredLegalFacts,
 } from "../services/preview-legal.js";
 import { updateStaffLegal } from "../services/update-legal.js";
@@ -35,9 +36,7 @@ export const updateLegal = implementAction(updateLegalContract, {
     return {
       title: "Зберегти реквізити компанії",
       lines: changeLines(legalPreviewLines(input, stored)),
-      notes: [
-        "Реквізити потрапляють у рахунки та накладні, які ви видасте після збереження.",
-      ],
+      notes: legalPreviewNotes(input, stored),
     };
   },
   auditTarget: updateLegalAuditTarget,
