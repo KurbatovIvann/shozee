@@ -23,6 +23,7 @@ import {
 
 import {
   devShoBakeryCompany,
+  devShoBakeryCompanyCollision,
   devShoBakeryCompanyId,
   devShoBakeryCustomers,
   devShoBakeryGroups,
@@ -612,14 +613,16 @@ describe("dev bakery fixture seed", () => {
     }
   });
 
-  it("repeats after a dev row collides on a non-primary unique (db.md §9)", async () => {
+  it("repeats when dev rows hold customer_groups_company_slug_uq and price_lists_company_default_uq", async () => {
     const fresh = await createTestDatabase();
     try {
       const seeded = await seedDevShoBakery(fresh.runtime.db);
       const takenGroup = devShoBakeryGroups[0];
       const takenPriceList = devShoBakeryPriceLists[1];
-      assert(takenGroup !== undefined);
-      assert(takenPriceList !== undefined);
+      assert(
+        takenGroup !== undefined && takenPriceList !== undefined,
+        `fixture groups ${JSON.stringify(devShoBakeryGroups)}, fixture price lists ${JSON.stringify(devShoBakeryPriceLists)}`,
+      );
 
       await fresh.runtime.db
         .delete(customerGroups)
@@ -647,11 +650,9 @@ describe("dev bakery fixture seed", () => {
         .select({ slug: customerGroups.slug })
         .from(customerGroups)
         .where(eq(customerGroups.companyId, seeded.companyId));
-      expect(groupSlugs.map((row) => row.slug).sort()).toEqual([
-        "optovi",
-        "rozdrib",
-        "vip",
-      ]);
+      expect(groupSlugs.map((row) => row.slug).sort()).toEqual(
+        devShoBakeryGroups.map((group) => group.slug).sort(),
+      );
 
       const defaultLists = await fresh.runtime.db
         .select({ id: priceLists.id })
@@ -665,6 +666,37 @@ describe("dev bakery fixture seed", () => {
       expect(defaultLists).toEqual([
         { id: devShoBakeryId("devPriceList", takenPriceList) },
       ]);
+    } finally {
+      await fresh.close();
+    }
+  });
+
+  it("names the collision when another company holds companies_slug_uq", async () => {
+    const fresh = await createTestDatabase();
+    try {
+      const squatterId = devShoBakeryId("company", "squatter");
+      await fresh.runtime.db.insert(companies).values({
+        id: squatterId,
+        name: "Squatter",
+        slug: devShoBakeryCompany.slug,
+        prefix: "SQUATTER",
+      });
+
+      await expect(seedDevShoBakery(fresh.runtime.db)).rejects.toThrow(
+        devShoBakeryCompanyCollision,
+      );
+
+      const rows = await fresh.runtime.db
+        .select({ id: companies.id, slug: companies.slug })
+        .from(companies);
+      expect(rows).toEqual([
+        { id: squatterId, slug: devShoBakeryCompany.slug },
+      ]);
+
+      const members = await fresh.runtime.db
+        .select({ id: companyMembers.id })
+        .from(companyMembers);
+      expect(members).toEqual([]);
     } finally {
       await fresh.close();
     }

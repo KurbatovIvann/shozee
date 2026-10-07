@@ -123,6 +123,8 @@ export const devShoBakeryOwner = {
 export const devShoBakeryProductionRefusal =
   "dev-sho-bakery seed refuses to run with NODE_ENV=production";
 
+export const devShoBakeryCompanyCollision = `dev-sho-bakery seed: another company already holds slug ${devShoBakeryCompany.slug} or prefix ${devShoBakeryCompany.prefix}`;
+
 export function devShoBakeryId(kind: string, key: string): string {
   const hex = createHash("sha256")
     .update(`sho-dev-bakery:${kind}:${key}`)
@@ -176,6 +178,16 @@ export async function seedDevShoBakery(
       .insert(companies)
       .values({ id: companyId, ...devShoBakeryCompany })
       .onConflictDoNothing();
+
+    const [fixtureCompany] = await tx
+      .select({ id: companies.id })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .limit(1);
+
+    if (fixtureCompany === undefined) {
+      throw new Error(devShoBakeryCompanyCollision);
+    }
 
     const [signedUpOwner] = await tx
       .select({
