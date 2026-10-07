@@ -35,6 +35,25 @@ Unresolved comparison SHAs still run the audit. Do not pass
 `--ignore-registry-errors`, and do not add GitHub Actions job
 `retry` / rerun-on-failure. `workflow_dispatch` always runs the audit.
 
+## Testcontainers teardown 409 on a shared Docker daemon (SHO-879)
+
+testcontainers-node discovers any running Ryuk container on the daemon and
+**adopts its session id**. Two verify runs on one machine (two worktrees,
+or one run started while the previous one is shutting down) therefore
+labelled their containers with the same `org.testcontainers.session-id`,
+so the older run's reaper force-removed the newer run's live containers.
+The newer run's own `container.stop()` then raced that removal and the
+daemon answered 409. CI never saw it: one run per daemon, one session.
+
+`packages/db/src/testing/global-setup.ts` sets
+`TESTCONTAINERS_RYUK_TEST_LABEL=true` before the first container starts.
+Reapers created with that label are excluded from discovery, so every
+process gets its own reaper and its own session, and no run can reap
+another's containers. The cost is one small reaper container per process.
+`packages/db/src/testing/reaper-session.db.test.ts` fails if a test worker
+ever shares the harness process's session again. Do not replace this with
+a stop/remove retry or by swallowing the 409.
+
 ## What to do instead
 
 1. Treat the failure as a bug until proven otherwise.

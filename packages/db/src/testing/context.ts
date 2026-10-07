@@ -3,6 +3,7 @@ export interface DbHarnessContext {
   readonly templateDatabase: string;
   readonly runtimeRole: string;
   readonly runtimePassword: string;
+  readonly reaperSessionId: string;
 }
 
 declare module "vitest" {
