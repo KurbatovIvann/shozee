@@ -94,8 +94,9 @@ registry is injected into `createAssistantRuntime`; this package never imports
   `toolNames` — never a hand list — and an unsurfaced read is the
   `no_surface` fallback, so Haiku narrates it instead of the turn settling
   with a reply and no data. SHO-865 landed the `products-list` and
-  `price-lists` surfaces, so `catalog.listProducts` and
-  `pricing.listPriceLists` plan now; that leaves all of SHO-854 but
+  `price-lists` surfaces and SHO-872 the `price-list-entity` one, so
+  `catalog.listProducts`, `pricing.listPriceLists` and
+  `pricing.getPriceList` plan now; that leaves all of SHO-854 but
   `search.query` to the LLM, each becoming live the day its surface lands,
   with no planner change.
   `SHO_SURFACED_READ_ACTIONS` is what that rule currently yields and the list
