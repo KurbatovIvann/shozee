@@ -8,6 +8,7 @@ import {
   createCustomerContract,
   createGroupContract,
   getCustomerContract,
+  getGroupContract,
   listCustomersContract,
   listGroupsContract,
 } from "@showzy/customers/contract";
@@ -109,6 +110,11 @@ const MAPPED: readonly Mapped[] = [
     kind: "customer",
     output: listCustomersContract.output,
     map: mapCustomersListCustomersOutput,
+  },
+  {
+    tool: toProviderToolName("customers.getGroup"),
+    kind: "group",
+    output: getGroupContract.output,
   },
   {
     tool: CUSTOMERS_LIST_GROUPS_TOOL_NAME,

@@ -36,6 +36,15 @@ export {
   type AssistantCustomersListRowView,
 } from "./customers-list";
 export {
+  ASSISTANT_CUSTOMER_GROUPS_HREF,
+  ASSISTANT_CUSTOMER_GROUPS_ROW_MAX,
+  CUSTOMER_GROUPS_PROMPT_LINE,
+  CUSTOMER_GROUPS_SURFACE_TOOLS,
+  localizeCustomerGroupsCard,
+  type AssistantCustomerGroupsCardView,
+  type AssistantCustomerGroupsRowView,
+} from "./customer-groups";
+export {
   ASSISTANT_PRODUCTS_LIST_HREF,
   ASSISTANT_PRODUCTS_LIST_ROW_MAX,
   PRODUCTS_LIST_PROMPT_LINE,
@@ -69,6 +78,11 @@ export {
   CUSTOMER_ENTITY_SURFACE_TOOLS,
   localizeCustomerEntityCard,
 } from "./customer-entity";
+export {
+  CUSTOMER_GROUP_ENTITY_PROMPT_LINE,
+  CUSTOMER_GROUP_ENTITY_SURFACE_TOOLS,
+  localizeCustomerGroupEntityCard,
+} from "./customer-group-entity";
 export {
   PRODUCT_ENTITY_PROMPT_LINE,
   PRODUCT_ENTITY_SURFACE_TOOLS,

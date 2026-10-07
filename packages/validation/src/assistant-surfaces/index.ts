@@ -31,6 +31,27 @@ export {
   type AssistantCustomerEntityData,
 } from "./customer-entity.js";
 export {
+  CUSTOMER_GROUP_ENTITY_ACTION_NAMES,
+  CUSTOMER_GROUP_ENTITY_DESTINATION,
+  CUSTOMER_GROUP_ENTITY_GET_TOOL,
+  CUSTOMER_GROUP_ENTITY_PROMPT_LINE,
+  CUSTOMER_GROUP_ENTITY_SURFACE_TOOLS,
+  parseCustomerGroupEntitySurfaces,
+  type AssistantCustomerGroupEntityData,
+} from "./customer-group-entity.js";
+export {
+  ASSISTANT_CUSTOMER_GROUPS_ROW_MAX,
+  CUSTOMER_GROUPS_ACTION_NAME,
+  CUSTOMER_GROUPS_COLLECTION_COLUMNS,
+  CUSTOMER_GROUPS_DESTINATION,
+  CUSTOMER_GROUPS_LIST_TOOL,
+  CUSTOMER_GROUPS_PROMPT_LINE,
+  CUSTOMER_GROUPS_SURFACE_TOOLS,
+  parseCustomerGroupsSurface,
+  type AssistantCustomerGroupsData,
+  type AssistantCustomerGroupsRowData,
+} from "./customer-groups.js";
+export {
   ASSISTANT_CUSTOMERS_LIST_ROW_MAX,
   CUSTOMERS_LIST_ACTION_NAME,
   CUSTOMERS_LIST_COLLECTION_COLUMNS,

@@ -484,7 +484,7 @@ describe("SHO_READ_PLANNERS plans only a surfaced read", () => {
     },
   );
 
-  it("plans the catalog and price-list reads now that their surfaces compose (SHO-872)", () => {
+  it("plans the catalog, group and price-list reads now that their surfaces compose (SHO-873)", () => {
     expect([...SHO_SURFACED_READ_ACTIONS]).toEqual([
       "orders.list",
       "orders.count",
@@ -493,6 +493,8 @@ describe("SHO_READ_PLANNERS plans only a surfaced read", () => {
       "customers.listCustomers",
       "catalog.getProduct",
       "catalog.listProducts",
+      "customers.listGroups",
+      "customers.getGroup",
       "pricing.listPriceLists",
       "pricing.getPriceList",
       "search.query",
@@ -527,6 +529,34 @@ describe("SHO_READ_PLANNERS plans only a surfaced read", () => {
       toolName: "pricing_list_price_lists",
       input: {},
       reply: "Ось прайс-листи.",
+    });
+  });
+
+  it("plans the customer groups list instead of falling back to Haiku", () => {
+    expect(
+      SHO_READ_PLANNERS["customers.listGroups"]?.plan(
+        commandOf(gold("d72-read-groups")),
+        NOW,
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_list_groups",
+      input: {},
+      reply: "Ось групи.",
+    });
+  });
+
+  it("plans the customer group card instead of falling back to Haiku", () => {
+    expect(
+      SHO_READ_PLANNERS["customers.getGroup"]?.plan(
+        commandOf(borrowed("d79-group-case", "customers.getGroup", ["group"])),
+        NOW,
+      ),
+    ).toEqual({
+      kind: "call",
+      toolName: "customers_getGroup",
+      input: { id: GROUP_ID },
+      reply: "Ось група.",
     });
   });
 

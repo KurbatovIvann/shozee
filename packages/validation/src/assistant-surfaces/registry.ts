@@ -28,6 +28,20 @@ import {
   parseCustomerEntitySurfaces,
 } from "./customer-entity.js";
 import {
+  CUSTOMER_GROUP_ENTITY_ACTION_NAMES,
+  CUSTOMER_GROUP_ENTITY_DESTINATION,
+  CUSTOMER_GROUP_ENTITY_PROMPT_LINE,
+  CUSTOMER_GROUP_ENTITY_SURFACE_TOOLS,
+  parseCustomerGroupEntitySurfaces,
+} from "./customer-group-entity.js";
+import {
+  CUSTOMER_GROUPS_ACTION_NAME,
+  CUSTOMER_GROUPS_DESTINATION,
+  CUSTOMER_GROUPS_PROMPT_LINE,
+  CUSTOMER_GROUPS_SURFACE_TOOLS,
+  parseCustomerGroupsSurface,
+} from "./customer-groups.js";
+import {
   CUSTOMERS_LIST_ACTION_NAME,
   CUSTOMERS_LIST_DESTINATION,
   CUSTOMERS_LIST_PROMPT_LINE,
@@ -163,6 +177,15 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       parse: parsePriceListEntitySurfaces,
     },
     {
+      kind: "customer-group-entity",
+      version: 1,
+      toolNames: CUSTOMER_GROUP_ENTITY_SURFACE_TOOLS,
+      actionNames: CUSTOMER_GROUP_ENTITY_ACTION_NAMES,
+      promptLine: CUSTOMER_GROUP_ENTITY_PROMPT_LINE,
+      destination: CUSTOMER_GROUP_ENTITY_DESTINATION,
+      parse: parseCustomerGroupEntitySurfaces,
+    },
+    {
       kind: "customers-list",
       version: 1,
       toolNames: CUSTOMERS_LIST_SURFACE_TOOLS,
@@ -188,6 +211,15 @@ export const ASSISTANT_SURFACE_REGISTRY: readonly AssistantSurfaceDescriptor[] =
       promptLine: PRICE_LISTS_PROMPT_LINE,
       destination: PRICE_LISTS_DESTINATION,
       parse: parsePriceListsSurface,
+    },
+    {
+      kind: "customer-groups",
+      version: 1,
+      toolNames: CUSTOMER_GROUPS_SURFACE_TOOLS,
+      actionNames: [CUSTOMER_GROUPS_ACTION_NAME],
+      promptLine: CUSTOMER_GROUPS_PROMPT_LINE,
+      destination: CUSTOMER_GROUPS_DESTINATION,
+      parse: parseCustomerGroupsSurface,
     },
     {
       kind: "search-results",

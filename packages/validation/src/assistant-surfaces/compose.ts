@@ -10,6 +10,14 @@ import {
   type AssistantCustomerEntityData,
 } from "./customer-entity.js";
 import {
+  parseCustomerGroupEntitySurfaces,
+  type AssistantCustomerGroupEntityData,
+} from "./customer-group-entity.js";
+import {
+  parseCustomerGroupsSurface,
+  type AssistantCustomerGroupsData,
+} from "./customer-groups.js";
+import {
   parseCustomersListSurface,
   type AssistantCustomersListData,
 } from "./customers-list.js";
@@ -54,7 +62,9 @@ export type AssistantSurfaceData =
   | AssistantCustomerEntityData
   | AssistantProductEntityData
   | AssistantPriceListEntityData
+  | AssistantCustomerGroupEntityData
   | AssistantCustomersListData
+  | AssistantCustomerGroupsData
   | AssistantProductsListData
   | AssistantPriceListsData
   | AssistantSearchResultsData;
@@ -73,11 +83,13 @@ export function assistantSurfacesFromToolResults(
   const customers = parseCustomersListSurface(results);
   const products = parseProductsListSurface(results);
   const priceLists = parsePriceListsSurface(results);
+  const customerGroups = parseCustomerGroupsSurface(results);
   const searchResults = parseSearchResultsSurface(results);
   const entities = parseOrderEntitySurfaces(results);
   const customerEntities = parseCustomerEntitySurfaces(results);
   const productEntities = parseProductEntitySurfaces(results);
   const priceListEntities = parsePriceListEntitySurfaces(results);
+  const customerGroupEntities = parseCustomerGroupEntitySurfaces(results);
   const surfaces: AssistantSurfaceData[] = [];
   if (list !== null) {
     surfaces.push(list);
@@ -94,6 +106,9 @@ export function assistantSurfacesFromToolResults(
   if (priceLists !== null) {
     surfaces.push(priceLists);
   }
+  if (customerGroups !== null) {
+    surfaces.push(customerGroups);
+  }
   if (searchResults !== null) {
     surfaces.push(searchResults);
   }
@@ -102,6 +117,7 @@ export function assistantSurfacesFromToolResults(
     ...customerEntities,
     ...productEntities,
     ...priceListEntities,
+    ...customerGroupEntities,
   );
   return surfaces;
 }
@@ -129,9 +145,12 @@ export function assistantSurfaceSlot(surface: AssistantSurfaceData): string {
       return `product-entity:${surface.productId}`;
     case "price-list-entity":
       return `price-list-entity:${surface.priceListId}`;
+    case "customer-group-entity":
+      return `customer-group-entity:${surface.groupId}`;
     case "customers-list":
     case "products-list":
     case "price-lists":
+    case "customer-groups":
     case "search-results":
       return surface.kind;
   }

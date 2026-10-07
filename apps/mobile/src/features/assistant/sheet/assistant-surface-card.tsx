@@ -65,6 +65,7 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
     case "customers-list":
     case "products-list":
     case "price-lists":
+    case "customer-groups":
       return surface.emptyTitle !== null ? null : (
         <AssistantCollectionBlock
           collection={surface.collection}
@@ -80,6 +81,7 @@ const AssistantSurfaceBlock = memo(function AssistantSurfaceBlock(props: {
     case "customer-entity":
     case "product-entity":
     case "price-list-entity":
+    case "customer-group-entity":
       return <EntityCard card={surface} onOpenHref={onOpenHref} />;
     case "search-results":
       return surface.emptyTitle !== null ? null : (
@@ -110,7 +112,8 @@ type AssistantEntitySurface = Extract<
       | "order-entity"
       | "customer-entity"
       | "product-entity"
-      | "price-list-entity";
+      | "price-list-entity"
+      | "customer-group-entity";
   }
 >;
 
@@ -121,7 +124,8 @@ function isEntitySurface(
     surface.kind === "order-entity" ||
     surface.kind === "customer-entity" ||
     surface.kind === "product-entity" ||
-    surface.kind === "price-list-entity"
+    surface.kind === "price-list-entity" ||
+    surface.kind === "customer-group-entity"
   );
 }
 

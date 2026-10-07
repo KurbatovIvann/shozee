@@ -37,6 +37,13 @@ export type SharedAssistantProductsListCopy = {
   readonly clipped: string;
 };
 
+export type SharedAssistantCustomerGroupsCopy = {
+  readonly listEmptyTitle: string;
+  readonly listEmptyDescription: string;
+  readonly openList: string;
+  readonly clipped: string;
+};
+
 export type SharedAssistantPriceListsCopy = {
   readonly listEmptyTitle: string;
   readonly listEmptyDescription: string;
@@ -78,6 +85,7 @@ export type SharedAssistantCopy = {
   readonly customersList: SharedAssistantCustomersListCopy;
   readonly productsList: SharedAssistantProductsListCopy;
   readonly priceLists: SharedAssistantPriceListsCopy;
+  readonly customerGroups: SharedAssistantCustomerGroupsCopy;
   readonly aggregate: SharedAssistantAggregateCopy;
   readonly searchResults: SharedAssistantSearchResultsCopy;
 };
@@ -102,6 +110,7 @@ export type AssistantCardsCopy = {
   readonly openCustomer: string;
   readonly openProduct: string;
   readonly openPriceList: string;
+  readonly openCustomerGroup: string;
   readonly variantsClipped: string;
   readonly customerMatchTruncated: string;
   readonly clipped: string;
@@ -240,6 +249,12 @@ const en: SharedAssistantCopy = {
     openList: "Open price lists",
     clipped: "The list was clipped. Open price lists to see everything.",
   },
+  customerGroups: {
+    listEmptyTitle: "No customer groups",
+    listEmptyDescription: "No customer groups match this request.",
+    openList: "Open customers",
+    clipped: "The list was clipped. Open customers to see every group.",
+  },
   aggregate: {
     totals: "Total",
     countColumn: "Qty",
@@ -295,6 +310,12 @@ const uk: SharedAssistantCopy = {
     listEmptyDescription: "За цим запитом прайс-листів немає.",
     openList: "Відкрити прайс-листи",
     clipped: "Список обрізано. Відкрий прайс-листи, щоб побачити все.",
+  },
+  customerGroups: {
+    listEmptyTitle: "Немає груп клієнтів",
+    listEmptyDescription: "За цим запитом груп клієнтів немає.",
+    openList: "Відкрити клієнтів",
+    clipped: "Список обрізано. Відкрий клієнтів, щоб побачити всі групи.",
   },
   aggregate: {
     totals: "Разом",
@@ -419,6 +440,7 @@ const assistantEn: AssistantCopy = {
     openCustomer: "Open customer",
     openProduct: "Open product",
     openPriceList: "Open price list",
+    openCustomerGroup: "Open group",
     variantsClipped: "The variant list was clipped — the count is not shown.",
     customerMatchTruncated: en.ordersList.customerMatchTruncated,
     clipped: en.ordersList.clipped,
@@ -546,6 +568,7 @@ const assistantUk: AssistantCopy = {
     openCustomer: "Відкрити клієнта",
     openProduct: "Відкрити товар",
     openPriceList: "Відкрити прайс-лист",
+    openCustomerGroup: "Відкрити групу",
     variantsClipped: "Список варіантів обрізано — кількість не показано.",
     customerMatchTruncated: uk.ordersList.customerMatchTruncated,
     clipped: uk.ordersList.clipped,

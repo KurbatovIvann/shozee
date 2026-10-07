@@ -54,6 +54,7 @@ export const STAFF_ASSISTANT_RECORD_SHAPES: Readonly<
   [CATALOG_LIST_PRODUCTS_TOOL_NAME]: page(view("product"), "items"),
   [CUSTOMERS_GET_CUSTOMER_TOOL_NAME]: view("customer"),
   [CUSTOMERS_LIST_CUSTOMERS_TOOL_NAME]: page(view("customer"), "items"),
+  [toProviderToolName("customers.getGroup")]: view("group"),
   [CUSTOMERS_LIST_GROUPS_TOOL_NAME]: page(view("group"), "items"),
   [ORDERS_CREATE_TOOL_NAME]: ORDER,
   [ORDERS_LIST_PAGE_TOOL_NAME]: page(ORDER, "rows"),
