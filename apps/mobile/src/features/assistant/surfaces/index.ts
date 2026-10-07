@@ -52,6 +52,20 @@ export {
   type AssistantPriceListsRowView,
 } from "./price-lists";
 export {
+  CUSTOMER_GROUP_ENTITY_PROMPT_LINE,
+  CUSTOMER_GROUP_ENTITY_SURFACE_TOOLS,
+  localizeCustomerGroupEntityCard,
+} from "./customer-group-entity";
+export {
+  ASSISTANT_CUSTOMER_GROUPS_HREF,
+  ASSISTANT_CUSTOMER_GROUPS_ROW_MAX,
+  CUSTOMER_GROUPS_PROMPT_LINE,
+  CUSTOMER_GROUPS_SURFACE_TOOLS,
+  localizeCustomerGroupsCard,
+  type AssistantCustomerGroupsCardView,
+  type AssistantCustomerGroupsRowView,
+} from "./customer-groups";
+export {
   PRICE_LIST_ENTITY_PROMPT_LINE,
   PRICE_LIST_ENTITY_SURFACE_TOOLS,
   localizePriceListEntityCard,

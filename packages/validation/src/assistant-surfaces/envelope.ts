@@ -8,6 +8,7 @@ import {
   assistantSurfacesFromToolResults,
   type AssistantSurfaceData,
 } from "./compose.js";
+import { CUSTOMER_GROUPS_LIST_TOOL } from "./customer-groups.js";
 import { CUSTOMERS_LIST_CUSTOMERS_TOOL } from "./customers-list.js";
 import {
   lastSuccessfulResult,
@@ -75,7 +76,8 @@ function toolCallIdsForSurface(
     case "order-entity":
     case "customer-entity":
     case "product-entity":
-    case "price-list-entity": {
+    case "price-list-entity":
+    case "customer-group-entity": {
       pushUniqueId(ids, surface.toolCallId);
       return ids;
     }
@@ -112,6 +114,14 @@ function toolCallIdsForSurface(
       const page = lastSuccessfulResult(
         results,
         (name) => name === PRICE_LISTS_PRICE_LISTS_TOOL,
+      );
+      pushUniqueId(ids, page?.toolCallId);
+      return ids;
+    }
+    case "customer-groups": {
+      const page = lastSuccessfulResult(
+        results,
+        (name) => name === CUSTOMER_GROUPS_LIST_TOOL,
       );
       pushUniqueId(ids, page?.toolCallId);
       return ids;

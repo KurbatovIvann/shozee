@@ -1557,9 +1557,11 @@ describe("assistant result-card surface registry", () => {
       "customer-entity",
       "product-entity",
       "price-list-entity",
+      "customer-group-entity",
       "customers-list",
       "products-list",
       "price-lists",
+      "customer-groups",
       "search-results",
     ]);
     for (const entry of ASSISTANT_RESULT_SURFACE_REGISTRY) {
@@ -1576,6 +1578,8 @@ describe("assistant result-card surface registry", () => {
     expect(
       ASSISTANT_RESULT_SURFACE_REGISTRY.map((entry) => entry.destination),
     ).toEqual([
+      { kind: "screen" },
+      { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },
       { kind: "screen" },

@@ -10,6 +10,8 @@ import {
 import {
   ASSISTANT_SURFACE_REGISTRY,
   CUSTOMER_ENTITY_PROMPT_LINE,
+  CUSTOMER_GROUP_ENTITY_PROMPT_LINE,
+  CUSTOMER_GROUPS_PROMPT_LINE,
   CUSTOMERS_LIST_PROMPT_LINE,
   ORDER_ENTITY_PROMPT_LINE,
   ORDERS_AGGREGATE_PROMPT_LINE,
@@ -56,9 +58,11 @@ After orders.get or orders.create, the UI already shows an order entity card. Re
 ${CUSTOMER_ENTITY_PROMPT_LINE}
 ${PRODUCT_ENTITY_PROMPT_LINE}
 ${PRICE_LIST_ENTITY_PROMPT_LINE}
+${CUSTOMER_GROUP_ENTITY_PROMPT_LINE}
 After customers_list_customers, the UI already shows the customers list card. Reply with a short product-language summary. Do not dump a markdown table of the rows.
 ${PRODUCTS_LIST_PROMPT_LINE}
 ${PRICE_LISTS_PROMPT_LINE}
+${CUSTOMER_GROUPS_PROMPT_LINE}
 ${SEARCH_RESULTS_PROMPT_LINE}
 </presentation>`;
 
@@ -166,9 +170,11 @@ describe("staff assistant presentation cache prefix (SHO-457 / SHO-523)", () => 
         CUSTOMER_ENTITY_PROMPT_LINE,
         PRODUCT_ENTITY_PROMPT_LINE,
         PRICE_LIST_ENTITY_PROMPT_LINE,
+        CUSTOMER_GROUP_ENTITY_PROMPT_LINE,
         CUSTOMERS_LIST_PROMPT_LINE,
         PRODUCTS_LIST_PROMPT_LINE,
         PRICE_LISTS_PROMPT_LINE,
+        CUSTOMER_GROUPS_PROMPT_LINE,
         SEARCH_RESULTS_PROMPT_LINE,
       ],
     );
