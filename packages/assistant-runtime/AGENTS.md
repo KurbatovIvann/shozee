@@ -248,8 +248,12 @@ registry is injected into `createAssistantRuntime`; this package never imports
 - `sho-planners/company-writes.ts` — the company-legal write planner
   (SHO-862): `companies.updateLegal` onto its own action tool, `writes: true`,
   so it pauses on the ADR-0050 preview like every other Шо write. It requires
-  `company_type` and `legal_name`, because the action requires both on every
-  call and no planner may read-merge-write a stale name. Everything else
+  no particular param, only that the parse said at least one (SHO-870;
+  ADR-0033, 2026-10-03): `company_type` and `legal_name` are omittable once
+  the legal row exists, so «зміни IBAN на …» plans the IBAN alone and the
+  action merges it with the locked row — a planner still never reads a name
+  to re-send it, and the first save, where both are required, is the
+  action's `VALIDATION`. Everything else
   follows SHO-725: a field Шо did not parse is never sent, so it keeps its
   stored value, and `bankEdrpou`, which Шо has no param for, is always
   unchanged. ЄДРПОУ, IBAN, МФО, phone and e-mail come only from Шо's typed

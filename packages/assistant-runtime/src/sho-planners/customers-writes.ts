@@ -16,6 +16,7 @@ import {
   GROUP_DESCRIPTION_MAX,
   GROUP_NAME_MAX,
 } from "@showzy/validation/customers";
+import { z } from "zod";
 
 import { shoIsRef, type ShoActionPlanners } from "./kit.js";
 import {
@@ -25,7 +26,7 @@ import {
   shoRenamedName,
   shoSpanText,
   shoSpokenText,
-  shoTypedText,
+  shoTypedField,
   shoWriteActions,
   shoWritePlanners,
   shoWritePlannerParams,
@@ -116,14 +117,8 @@ const clippedSpan =
     return text === null ? "unsupported_param" : { [field]: text };
   };
 
-const identifier =
-  (field: string, max: number): ShoWriteParamMapper =>
-  (param) => {
-    const value = shoTypedText(param);
-    return value === null || value.length > max
-      ? "unsupported_param"
-      : { [field]: value };
-  };
+const identifier = (field: string, max: number): ShoWriteParamMapper =>
+  shoTypedField(field, z.string().max(max));
 
 const createdName = shoCreatedName("customer", CUSTOMER_NAME_MAX);
 

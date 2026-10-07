@@ -90,6 +90,9 @@ const GOLD_EDRPOU = paramsOf("d70-edrpou-length")["edrpou"];
 
 const GOLD_IBAN = paramsOf("d70-iban-ok")["iban"];
 
+const ibanOnly = (params: Json = { iban: GOLD_IBAN }): ShoCommand =>
+  commandOf("d70-edrpou-length", { params, needs: [], ready: true });
+
 const updatingLegal = (fields: Json = {}): ShoCommand =>
   commandOf("d70-edrpou-length", {
     params: {
@@ -127,6 +130,15 @@ describe("SHO_COMPANY_WRITE_PLANNERS plans companies.updateLegal", () => {
     });
   });
 
+  it("plans the IBAN alone, leaving the stored type and name unnamed (SHO-870)", () => {
+    expect(planOf(ibanOnly())).toEqual({
+      kind: "call",
+      toolName: "companies_updateLegal",
+      reply: "Реквізити оновлено.",
+      input: { iban: "UA213223130000026007233566001" },
+    });
+  });
+
   it("sends no key for a field the parse never named (SHO-725)", () => {
     const plan = planOf(updatingLegal({ edrpou: GOLD_EDRPOU }));
     expect(plan.kind === "call" ? Object.keys(plan.input).sort() : []).toEqual([
@@ -138,8 +150,8 @@ describe("SHO_COMPANY_WRITE_PLANNERS plans companies.updateLegal", () => {
 });
 
 describe("a legal update is refused rather than guessed", () => {
-  it("refuses d70-edrpou-length as parsed: no type and no legal name", () => {
-    expect(planOf(commandOf("d70-edrpou-length"))).toEqual({
+  it("refuses a parse that names no requisite at all", () => {
+    expect(planOf(ibanOnly({}))).toEqual({
       kind: "fallback",
       reason: "blocking_need",
     });
@@ -223,6 +235,16 @@ describe("every company write pauses on the preview", () => {
       reply: "Реквізити оновлено.",
       writes: true,
       input: { companyType: "tov", legalName: "тов сота спейс" },
+    });
+  });
+
+  it("pauses a field-only legal update on the preview card (SHO-870)", () => {
+    expect(whitelisted(resultOf(ibanOnly()), NOW)).toEqual({
+      kind: "call",
+      toolName: "companies_updateLegal",
+      reply: "Реквізити оновлено.",
+      writes: true,
+      input: { iban: "UA213223130000026007233566001" },
     });
   });
 

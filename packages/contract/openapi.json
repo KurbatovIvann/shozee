@@ -12562,7 +12562,7 @@
     "/companies/updateLegal": {
       "post": {
         "operationId": "companies.updateLegal",
-        "summary": "Upsert seller legal requisites for the staff member's active company (ФОП/ТОВ, legal name, ЄДРПОУ, address, IBAN/bank, document phone and email). Changes only the fields it names: once requisites exist, an omitted optional field keeps its stored value and an explicit null or empty string clears it; on the first save an omitted field is stored as null. Does not change the company's trade name, slug, or numbering prefix. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second legal row.",
+        "summary": "Upsert seller legal requisites for the staff member's active company (ФОП/ТОВ, legal name, ЄДРПОУ, address, IBAN/bank, document phone and email). Changes only the fields it names: once requisites exist, an omitted field keeps its stored value — including companyType and legalName — and an explicit null or empty string clears an optional one; on the first save an omitted optional field is stored as null and omitting companyType or legalName is a validation error. companyType and legalName reject null: they are cleared by nothing. Does not change the company's trade name, slug, or numbering prefix. Company id is never input. Re-submitting the identical payload with the same idempotency key returns the same view without a second legal row.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12671,10 +12671,6 @@
                     ]
                   }
                 },
-                "required": [
-                  "companyType",
-                  "legalName"
-                ],
                 "additionalProperties": false
               }
             }

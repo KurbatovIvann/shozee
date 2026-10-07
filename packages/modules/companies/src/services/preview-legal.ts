@@ -1,16 +1,24 @@
 import type { ActionPreviewEnv } from "@showzy/core";
 import type { ActionPreviewLine } from "@showzy/core/errors";
 import { companyLegalInfo } from "@showzy/db/schema/companies";
-import { parseDbEnum } from "@showzy/module-kit/parse-db-enum";
 import { PREVIEW_ABSENT } from "@showzy/module-kit/preview-changes";
 import { eq } from "drizzle-orm";
 import type { z } from "zod";
 
 type PreviewTx = ActionPreviewEnv["tx"];
 
-import { companyLegalTypeSchema } from "../actions/company-view.contract.js";
-import type { updateLegalInputSchema } from "../actions/update-legal.contract.js";
-import { namedLegalFields } from "./company-view.js";
+import type { companyLegalTypeSchema } from "../actions/company-view.contract.js";
+import {
+  LEGAL_NAME_MISSING_MESSAGE,
+  LEGAL_TYPE_MISSING_MESSAGE,
+  type updateLegalInputSchema,
+} from "../actions/update-legal.contract.js";
+import {
+  legalFactsReturning,
+  namedLegalFields,
+  parseCompanyType,
+  type StoredLegalFacts,
+} from "./company-view.js";
 
 type UpdateLegalInput = z.output<typeof updateLegalInputSchema>;
 type CompanyLegalType = z.output<typeof companyLegalTypeSchema>;
@@ -38,21 +46,19 @@ const LEGAL_FIELD_ORDER = Object.keys(LEGAL_FIELD_LABELS) as LegalField[];
 
 const CLEARED = "очистити";
 
+const LEGAL_DOCUMENTS_NOTE =
+  "Реквізити потрапляють у рахунки та накладні, які ви видасте після збереження.";
+
+const REQUIRED_ON_FIRST_SAVE = [
+  { field: "companyType", message: LEGAL_TYPE_MISSING_MESSAGE },
+  { field: "legalName", message: LEGAL_NAME_MISSING_MESSAGE },
+] as const satisfies readonly {
+  readonly field: LegalField;
+  readonly message: string;
+}[];
+
 export function companyTypeLabel(companyType: CompanyLegalType): string {
   return COMPANY_TYPE_LABELS[companyType];
-}
-
-export interface StoredLegalFacts {
-  readonly companyType: string;
-  readonly legalName: string | null;
-  readonly edrpou: string | null;
-  readonly legalAddress: string | null;
-  readonly iban: string | null;
-  readonly bankName: string | null;
-  readonly bankMfo: string | null;
-  readonly bankEdrpou: string | null;
-  readonly phone: string | null;
-  readonly email: string | null;
 }
 
 export async function loadStoredLegalFacts(env: {
@@ -60,18 +66,7 @@ export async function loadStoredLegalFacts(env: {
   readonly companyId: string;
 }): Promise<StoredLegalFacts | undefined> {
   const rows = await env.tx
-    .select({
-      companyType: companyLegalInfo.companyType,
-      legalName: companyLegalInfo.legalName,
-      edrpou: companyLegalInfo.edrpou,
-      legalAddress: companyLegalInfo.legalAddress,
-      iban: companyLegalInfo.iban,
-      bankName: companyLegalInfo.bankName,
-      bankMfo: companyLegalInfo.bankMfo,
-      bankEdrpou: companyLegalInfo.bankEdrpou,
-      phone: companyLegalInfo.phone,
-      email: companyLegalInfo.email,
-    })
+    .select(legalFactsReturning)
     .from(companyLegalInfo)
     .where(eq(companyLegalInfo.companyId, env.companyId))
     .limit(1);
@@ -86,13 +81,7 @@ function storedLabel(
     return null;
   }
   if (field === "companyType") {
-    return companyTypeLabel(
-      parseDbEnum(
-        companyLegalTypeSchema,
-        stored.companyType,
-        `company_legal_info row has illegal company_type "${stored.companyType}"`,
-      ),
-    );
+    return companyTypeLabel(parseCompanyType(stored.companyType));
   }
   return stored[field];
 }
@@ -115,6 +104,19 @@ function changeLine(
   return { label, value: `${stored} → ${next}` };
 }
 
+export function legalPreviewNotes(
+  input: UpdateLegalInput,
+  stored: StoredLegalFacts | undefined,
+): string[] {
+  if (stored !== undefined) {
+    return [LEGAL_DOCUMENTS_NOTE];
+  }
+  const missing = REQUIRED_ON_FIRST_SAVE.filter(
+    ({ field }) => input[field] === undefined,
+  ).map(({ message }) => message);
+  return [...missing, LEGAL_DOCUMENTS_NOTE];
+}
+
 export function legalPreviewLines(
   input: UpdateLegalInput,
   stored: StoredLegalFacts | undefined,
@@ -128,7 +130,7 @@ export function legalPreviewLines(
     }
     const storedValue = storedLabel(field, stored);
     const next =
-      field === "companyType"
+      input.companyType !== undefined && field === "companyType"
         ? companyTypeLabel(input.companyType)
         : patchedLabel(patch[field] ?? null, storedValue);
     lines.push(changeLine(LEGAL_FIELD_LABELS[field], storedValue, next));
