@@ -1,5 +1,6 @@
 export {
   devShoBakeryCompany,
+  devShoBakeryCompanyCollision,
   devShoBakeryCompanyId,
   devShoBakeryCustomers,
   devShoBakeryGroups,

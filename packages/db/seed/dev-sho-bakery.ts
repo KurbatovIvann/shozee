@@ -123,6 +123,8 @@ export const devShoBakeryOwner = {
 export const devShoBakeryProductionRefusal =
   "dev-sho-bakery seed refuses to run with NODE_ENV=production";
 
+export const devShoBakeryCompanyCollision = `dev-sho-bakery seed: another company already holds slug ${devShoBakeryCompany.slug} or prefix ${devShoBakeryCompany.prefix}`;
+
 export function devShoBakeryId(kind: string, key: string): string {
   const hex = createHash("sha256")
     .update(`sho-dev-bakery:${kind}:${key}`)
@@ -175,7 +177,17 @@ export async function seedDevShoBakery(
     await tx
       .insert(companies)
       .values({ id: companyId, ...devShoBakeryCompany })
-      .onConflictDoNothing({ target: companies.id });
+      .onConflictDoNothing();
+
+    const [fixtureCompany] = await tx
+      .select({ id: companies.id })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .limit(1);
+
+    if (fixtureCompany === undefined) {
+      throw new Error(devShoBakeryCompanyCollision);
+    }
 
     const [signedUpOwner] = await tx
       .select({
@@ -210,7 +222,7 @@ export async function seedDevShoBakery(
           phoneNumber: devShoBakeryOwner.phone,
           phoneNumberVerified: true,
         })
-        .onConflictDoNothing({ target: user.id });
+        .onConflictDoNothing();
     }
 
     await tx
@@ -221,9 +233,7 @@ export async function seedDevShoBakery(
         userId: resolvedOwner.id,
         role: "owner",
       })
-      .onConflictDoNothing({
-        target: [companyMembers.companyId, companyMembers.userId],
-      });
+      .onConflictDoNothing();
 
     await tx
       .insert(priceLists)
@@ -236,7 +246,7 @@ export async function seedDevShoBakery(
           createdVia: SEEDED_VIA,
         })),
       )
-      .onConflictDoNothing({ target: priceLists.id });
+      .onConflictDoNothing();
 
     await tx
       .insert(customerGroups)
@@ -250,7 +260,7 @@ export async function seedDevShoBakery(
           createdVia: SEEDED_VIA,
         })),
       )
-      .onConflictDoNothing({ target: customerGroups.id });
+      .onConflictDoNothing();
 
     await tx
       .insert(companyCustomers)
@@ -263,7 +273,7 @@ export async function seedDevShoBakery(
           createdVia: SEEDED_VIA,
         })),
       )
-      .onConflictDoNothing({ target: companyCustomers.id });
+      .onConflictDoNothing();
 
     await tx
       .insert(products)
@@ -276,12 +286,9 @@ export async function seedDevShoBakery(
           createdVia: SEEDED_VIA,
         })),
       )
-      .onConflictDoNothing({ target: products.id });
+      .onConflictDoNothing();
 
-    await tx
-      .insert(productVariants)
-      .values(variants)
-      .onConflictDoNothing({ target: productVariants.id });
+    await tx.insert(productVariants).values(variants).onConflictDoNothing();
 
     return resolvedOwner;
   });
