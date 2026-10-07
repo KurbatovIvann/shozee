@@ -49,6 +49,26 @@ describe("doc-generation source guards (SHO-236)", () => {
     }
   });
 
+  it("imports money formatters only from module-kit (SHO-806)", () => {
+    expect(executableSource("services/format-pdf-text.ts")).not.toMatch(
+      /money-format/,
+    );
+    const consumers = [
+      "templates/pdf-faces.ts",
+      "templates/invoice-branded-pdf.tsx",
+      "templates/waybill-parties-pdf.tsx",
+    ];
+    for (const relative of consumers) {
+      const source = executableSource(relative);
+      expect(source, relative).toContain(
+        'from "@showzy/module-kit/money-format"',
+      );
+      expect(source, relative).not.toMatch(
+        /import\s*\{[^}]*format(MinorUnits|MoneyUah|QuantityMilli)[^}]*\}\s*from\s*"[^"]*format-pdf-text\.js"/,
+      );
+    }
+  });
+
   it("PUTs generated PDFs with files documentObjectKey, not a local copy", () => {
     const put = executableSource("services/put-generated-pdf.ts");
     expect(put).toContain('from "@showzy/files/storage"');
