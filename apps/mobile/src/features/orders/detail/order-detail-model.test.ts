@@ -1,8 +1,8 @@
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "@showzy/contract";
 import { describe, expect, it } from "vitest";
 
 import { ordersCopy } from "../../../i18n/orders";
 import type { GetOrderOutput } from "../api/order-detail-query";
-import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "../shared/customer-name";
 import { orderThumbnailView } from "../shared/order-thumbnails";
 import {
   catalogPrimaryImageFileId,

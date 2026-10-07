@@ -1,9 +1,7 @@
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "@showzy/contract";
 import { describe, expect, it } from "vitest";
 
-import {
-  localizeCustomerNameSnapshot,
-  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
-} from "./customer-name";
+import { localizeCustomerNameSnapshot } from "./customer-name";
 
 describe("localizeCustomerNameSnapshot", () => {
   it("keeps the stored snapshot the order was placed for", () => {

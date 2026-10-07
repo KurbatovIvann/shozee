@@ -16,5 +16,6 @@ export {
   LIST_ORDERS_SUMMARY_DEFAULT_LIMIT,
   LIST_ORDERS_SUMMARY_MAX_LIMIT,
   listOrdersContract,
+  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
 } from "./actions/list.contract.js";
 export { startOrderContract } from "./actions/start.contract.js";

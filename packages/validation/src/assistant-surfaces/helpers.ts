@@ -33,9 +33,6 @@ export type AssistantMoneyMinor = {
   readonly currency: string;
 };
 
-/** Protocol sentinel on order/customer snapshots — not UI copy. */
-export const UNLINKED_CUSTOMER_NAME_SNAPSHOT = "unlinked";
-
 const QUANTITY_WIRE = /^(0|[1-9][0-9]*)$/;
 
 const NON_RESULT_STATUS = new Set<string>(ASSISTANT_TOOL_NON_RESULT_STATUSES);

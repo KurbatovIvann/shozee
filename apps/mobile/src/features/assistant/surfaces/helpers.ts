@@ -2,15 +2,13 @@
  * Localized formatters for assistant result cards. Unlocalized parse
  * lives in `@showzy/validation/assistant-surfaces` (SHO-456).
  */
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "@showzy/contract";
 import {
-  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
   moneyMinorFromFields,
   type AssistantMoneyMinor,
 } from "@showzy/validation/assistant-surfaces";
 
 import { formatMoneyMinor, groupDigits } from "../../../format/money";
-
-export { UNLINKED_CUSTOMER_NAME_SNAPSHOT };
 
 const QUANTITY_MILLI_SCALE = 1000n;
 const QUANTITY_WIRE = /^(0|[1-9][0-9]*)$/;

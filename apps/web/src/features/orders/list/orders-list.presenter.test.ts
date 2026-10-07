@@ -1,11 +1,9 @@
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "@showzy/contract";
 import { describe, expect, it } from "vitest";
 
 import { ordersCopy } from "../../../i18n/orders";
 import type { OrderListItem } from "../api/list";
-import {
-  localizeCustomerNameSnapshot,
-  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
-} from "../shared/customer-name";
+import { localizeCustomerNameSnapshot } from "../shared/customer-name";
 import {
   classifyOrdersList,
   formatOrderCreatedAt,
