@@ -54,6 +54,12 @@ another's containers. The cost is one small reaper container per process.
 ever shares the harness process's session again. Do not replace this with
 a stop/remove retry or by swallowing the 409.
 
+The flag is undocumented: read from `testcontainers@12.1.0`
+`build/reaper/reaper.js`, where `findReaperContainers` skips a reaper
+labelled `TESTCONTAINERS_RYUK_TEST_LABEL=true` and `createNewReaper` stamps
+that label. Recheck both on a testcontainers upgrade; the test above goes
+red if either changes.
+
 ## What to do instead
 
 1. Treat the failure as a bug until proven otherwise.

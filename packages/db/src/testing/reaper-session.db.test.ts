@@ -11,6 +11,7 @@ it("never shares a reaper session with another process", async () => {
 
   try {
     expect(harness.reaperSessionId).toMatch(/^[0-9a-f]+$/);
+    expect(container.getLabels()[sessionIdLabel]).toMatch(/^[0-9a-f]+$/);
     expect(container.getLabels()[sessionIdLabel]).not.toBe(
       harness.reaperSessionId,
     );
