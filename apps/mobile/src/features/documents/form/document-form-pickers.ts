@@ -4,11 +4,10 @@
  * primary order label; a linked legal face is a subtitle when it
  * differs from the CRM snapshot.
  */
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "@showzy/contract";
+
 import { formatMoneyMinor } from "../../../format/money";
 import type { DocumentOrderListItem } from "../api/order-list-query";
-
-/** Sentinel persisted on unlinked headers; matches `orders.list`. */
-export const UNLINKED_CUSTOMER_NAME_SNAPSHOT = "unlinked";
 
 export function documentOrderOptionName(
   order: DocumentOrderListItem,

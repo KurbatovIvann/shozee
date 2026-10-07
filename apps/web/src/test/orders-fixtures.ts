@@ -1,3 +1,5 @@
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "@showzy/contract";
+
 export const ANNA_ORDER_ID = "11111111-1111-4111-8111-111111111111";
 export const DONE_ORDER_ID = "22222222-2222-4222-8222-222222222222";
 export const CONFIRMED_ORDER_ID = "33333333-3333-4333-8333-333333333333";
@@ -27,7 +29,7 @@ export const DONE_ORDER = {
   orderId: DONE_ORDER_ID,
   orderNumber: "KL-CLOSED",
   customer: {
-    nameSnapshot: "unlinked",
+    nameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
     linkedCustomerId: null,
   },
   status: "done",

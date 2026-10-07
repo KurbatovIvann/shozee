@@ -19,7 +19,6 @@ import {
   ORDERS_LIST_PAGE_TOOL,
   SEARCH_QUERY_TOOL,
   SEARCH_RESULTS_PROMPT_LINE,
-  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
   assistantAggregateBreakdown,
   assistantAggregateSummary,
   assistantCollectionDescriptor,
@@ -1284,12 +1283,6 @@ describe("aggregate layouts (SHO-473)", () => {
     );
     expect(registeredKinds.includes("orders-breakdown")).toBe(false);
     expect(ASSISTANT_AGGREGATE_LAYOUTS).toEqual(["summary", "breakdown"]);
-  });
-});
-
-describe("UNLINKED_CUSTOMER_NAME_SNAPSHOT", () => {
-  it("is the protocol sentinel, not a localized label", () => {
-    expect(UNLINKED_CUSTOMER_NAME_SNAPSHOT).toBe("unlinked");
   });
 });
 

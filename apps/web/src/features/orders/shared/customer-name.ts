@@ -1,4 +1,4 @@
-export const UNLINKED_CUSTOMER_NAME_SNAPSHOT = "unlinked";
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "@showzy/contract";
 
 export function localizeCustomerNameSnapshot(
   nameSnapshot: string,

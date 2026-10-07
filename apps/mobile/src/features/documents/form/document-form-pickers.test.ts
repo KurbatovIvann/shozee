@@ -1,3 +1,4 @@
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "@showzy/contract";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,7 +6,6 @@ import {
   documentCounterpartyOptionDescription,
   documentOrderOptionDescription,
   documentOrderOptionName,
-  UNLINKED_CUSTOMER_NAME_SNAPSHOT,
 } from "./document-form-pickers";
 
 const ORDER_ID = "11111111-1111-4111-8111-111111111111";

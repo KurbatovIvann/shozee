@@ -23,6 +23,7 @@ export type {
   ContractRouterFor,
 } from "./contract-router.js";
 export { contractModules, contractRouter } from "./modules.js";
+export { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "@showzy/orders/contract";
 export { createContractClient, RPC_PREFIX } from "./create-client.js";
 export type {
   AccessTokenProvider,
