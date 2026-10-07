@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+import { UNLINKED_CUSTOMER_NAME_SNAPSHOT } from "@showzy/contract";
 import { sharedAssistantCopy } from "@showzy/copy/assistant";
 import {
   ASSISTANT_CUSTOMERS_LIST_SCREEN_HREF,
@@ -1521,9 +1522,9 @@ describe("assistantSurfacesFromParts aggregate (SHO-370 / SHO-395)", () => {
                 identity: {
                   kind: "customer",
                   customerId: null,
-                  nameSnapshot: "unlinked",
+                  nameSnapshot: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
                 },
-                label: "unlinked",
+                label: UNLINKED_CUSTOMER_NAME_SNAPSHOT,
                 orderCount: 1,
                 grossByCurrency: [],
               },
