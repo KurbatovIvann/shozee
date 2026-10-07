@@ -18,9 +18,3 @@ export function formatIssuedOn(issuedOn: string): string {
   }
   return `${day}.${month}.${year}`;
 }
-
-export {
-  formatMinorUnits,
-  formatMoneyUah,
-  formatQuantityMilli,
-} from "@showzy/module-kit/money-format";

@@ -1,4 +1,5 @@
-import { formatMoneyUah } from "../services/format-pdf-text.js";
+import { formatMoneyUah } from "@showzy/module-kit/money-format";
+
 import type { BuyerFace, DocumentPdfModel, SellerFace } from "./model.js";
 
 /** Hardcoded unit: `document_items` has no unit column (SHO-362). */

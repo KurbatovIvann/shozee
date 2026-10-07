@@ -1,12 +1,13 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
-import { uahAmountInWords } from "../services/amount-in-words.js";
 import {
-  formatIssuedOn,
   formatMinorUnits,
   formatMoneyUah,
   formatQuantityMilli,
-} from "../services/format-pdf-text.js";
+} from "@showzy/module-kit/money-format";
+
+import { uahAmountInWords } from "../services/amount-in-words.js";
+import { formatIssuedOn } from "../services/format-pdf-text.js";
 import { ensureLiberationSans, LIBERATION_SANS } from "./liberation-sans.js";
 import type { DocumentPdfModel } from "./model.js";
 import {
